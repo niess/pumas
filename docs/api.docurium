@@ -1,0 +1,8 @@
+{
+ "name":   "PUMAS",
+ "input":  "include/pumas.h",
+ "prefix": "pumas_",
+ "branch": "gh-pages",
+ "examples": "examples",
+ "legacy": {"input": {"include": ["HEAD"]}}
+}
