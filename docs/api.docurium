@@ -1,8 +1,12 @@
 {
  "name":   "PUMAS",
+ "github": "niess/pumas",
  "input":  "include/pumas.h",
+ "output": "docs",
+ "favicon": "../favicon.ico",
+ "logo": ["../images/pumas-black.png", "../index.html"],
  "prefix": "pumas_",
- "branch": "gh-pages",
+ "branch": "docs-pages",
  "examples": "examples",
  "legacy": {"input": {"include": ["HEAD"]}}
 }
