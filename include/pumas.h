@@ -1,7 +1,38 @@
 /*
- * C API for PUMAS: Semi-Analytical Propagation of MUons with forward or
- * backward Monte-Carlo.
+ * Copyright Valentin NIESS (June 2016)
+ *
+ * niess@in2p3.fr
+ *
+ * This software is a C library whose purpose is to transport high energy
+ * muons in arbitrary media.
+ *
+ * This software is governed by the CeCILL  license under French law and
+ * abiding by the rules of distribution of free software.  You can  use,
+ * modify and/ or redistribute the software under the terms of the CeCILL
+ * license as circulated by CEA, CNRS and INRIA at the following URL
+ * "http://www.cecill.info".
+ *
+ * As a counterpart to the access to the source code and  rights to copy,
+ * modify and redistribute granted by the license, users are provided only
+ * with a limited warranty  and the software's author,  the holder of the
+ * economic rights,  and the successive licensors  have only  limited
+ * liability.
+ *
+ * In this respect, the user's attention is drawn to the risks associated
+ * with loading,  using,  modifying and/or developing or reproducing the
+ * software by the user in light of its specific status of free software,
+ * that may mean  that it is complicated to manipulate,  and  that  also
+ * therefore means  that it is reserved for developers  and  experienced
+ * professionals having in-depth computer knowledge. Users are therefore
+ * encouraged to load and test the software's suitability as regards their
+ * requirements in conditions enabling the security of their systems and/or
+ * data to be ensured and,  more generally, to use and operate it in the
+ * same conditions as regards security.
+ *
+ * The fact that you are presently reading this means that you have had
+ * knowledge of the CeCILL license and that you accept its terms.
  */
+
 #ifndef pumas_h
 #define pumas_h
 #ifdef __cplusplus
@@ -14,7 +45,7 @@ extern "C" {
 #endif
 
 /**
- * Key tabulated properties used by PUMAS.
+ * Keys for some of the tabulated properties used by PUMAS.
  */
 enum pumas_property {
 	/** The macroscopic inelastic cross-section, in m^(2)/kg. */
@@ -35,7 +66,7 @@ enum pumas_property {
 };
 
 /**
- * Monte-Carlo schemes for the computation of energy losses.
+ * Schemes for the computation of energy losses.
  */
 enum pumas_scheme {
 	/** All energy losses are disabled.
@@ -45,16 +76,17 @@ enum pumas_scheme {
 	 * `pumas_locator_cb` callback.
 	 */
 	PUMAS_SCHEME_NO_LOSS = -1,
-	/** Energy losses are purely continuous, as given by the Continuously
+	/** Energy losses are purely determinstic as given by the Continuously
 	 * Slowing Down Approximation (CSDA).
 	 */
 	PUMAS_SCHEME_CSDA,
 	/** Energy losses are simulated using an hybrid Monte-Carlo scheme with
-	 * hard stochastic interactions and soft continuous energy loss.
+	 * hard stochastic interactions and a deterministic Continuous Energy
+	 * Loss (CEL).
 	 */
 	PUMAS_SCHEME_HYBRID,
-	/** In addition to the hybrid scheme small fluctuations of the soft
-	 * energy loss are also simulated.
+	/** In addition to the hybrid scheme small fluctuations of the CEL are
+	 * also simulated.
 	 */
 	PUMAS_SCHEME_DETAILED
 };
@@ -68,25 +100,25 @@ enum pumas_return {
 };
 
 /**
- * Container for a Muon Monte-Carlo state.
+ * Container for a muon Monte-Carlo state.
  */
 struct pumas_state {
 	/** The particle's electric charge. Note that non physical values,
-	 * i.e. different from 1 or -1, can be set if needed. */
+	 * i.e. different from 1 or -1, could be set. */
 	double charge;
-	/** The kinetic energy, in GeV. */
+	/** The current kinetic energy, in GeV. */
 	double kinetic;
 	/** The total travelled distance, in m. */
 	double distance;
-	/** The total travelled grammage, in kg/m<sup>2</sup>. */
+	/** The total travelled grammage, in kg/m^2. */
 	double grammage;
 	/** The particle's proper time, in m/c. */
 	double time;
-	/** The particle's Monte-Carlo weight. */
+	/** The muon Monte-Carlo weight. */
 	double weight;
-	/** The particle's absolute location, in m. */
+	/** The muon absolute location, in m. */
 	double position[3];
-	/** The particle's momentum direction. */
+	/** The muon momentum's direction. */
 	double direction[3];
 };
 
@@ -94,7 +126,7 @@ struct pumas_state {
  * The local properties of a propagation medium.
  */
 struct pumas_locals {
-	/*! The material's local density, in kg/m^3. */
+	/*! The material local density, in kg/m^3. */
 	double density;
 	/*! The local magnetic field components, in T. */
 	double magnet[3];
@@ -350,13 +382,14 @@ enum pumas_return pumas_propagate(struct pumas_context * context,
 enum pumas_return pumas_inform(FILE * stream);
 
 /*!
- * Get the hash identifier of the library.
+ * Get the version tag of the library.
  *
- * @return The library hash encoded on an `int`.
+ * @return The library tag encoded on an `int`.
  *
- * The library hash is given by the short version of the source code git's hash.
+ * The library tag is encoded on an `int` as tag = 10^(3)*V+S, with V the
+ * version index and S the subversion index.
  */
-int pumas_hash();
+int pumas_tag();
 
 /*!
  * Create a simulation context.
@@ -519,7 +552,7 @@ double pumas_muon_lifetime(void);
  * @return A `C string` with the material name or `NULL` in case of a bad
  * index value.
  *
- * The material name is defined in the MDF.
+ * The material name is defined in the Material Description File (MDF).
  * **Note** : if the material index is out of bounds a library error is
  * registered.
  */
@@ -533,7 +566,7 @@ const char* pumas_material_name(int material);
  * returned.
  *
  * The material index corresponds to the order of declaration specified in the
- * MDF.
+ * Material Description File (MDF).
  * **Note** : if the material is not found an error is registered.
  */
 int pumas_material_index(const char * material);

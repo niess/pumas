@@ -1,2 +1,2 @@
 # pumas
-A C99 library for the transportation of high energy muons.
+A C library for the transport of high energy muons.
