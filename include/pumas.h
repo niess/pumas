@@ -1,10 +1,10 @@
 /*
- * Copyright Valentin NIESS (June 2016)
+ * Copyright (c) Valentin NIESS (June 2016)
  *
- * niess@in2p3.fr
+ * email: niess@in2p3.fr
  *
  * This software is a C library whose purpose is to transport high energy
- * muons in arbitrary media.
+ * muons in various media.
  *
  * This software is governed by the CeCILL  license under French law and
  * abiding by the rules of distribution of free software.  You can  use,
@@ -93,10 +93,46 @@ enum pumas_scheme {
 
 /** Return codes for the API functions. */
 enum pumas_return {
-	/*! An error occured. */
-	PUMAS_ERROR = -1,
-	/*! Execution was successful. */
-	PUMAS_SUCCESS = 0
+	/** Execution was successful. */
+	PUMAS_RETURN_SUCCESS = 0,
+	/** End of file was reached. */
+	PUMAS_RETURN_END_OF_FILE,
+	/** Some medium has a wrong density value. */
+	PUMAS_RETURN_DENSITY_ERROR,
+	/** Some data file is not complete. */
+	PUMAS_RETURN_INCOMPLETE_FILE,
+	/** Some index is out of validity range. */
+	PUMAS_RETURN_INDEX_ERROR,
+	/** The library is not/already initialised. */
+	PUMAS_RETURN_INITIALISATION_ERROR,
+	/** An internal library error occured. */
+	PUMAS_RETURN_INTERNAL_ERROR,
+	/** Some read /write error occured. */
+	PUMAS_RETURN_IO_ERROR,
+	/** Some file is badly formated. */
+	PUMAS_RETURN_FORMAT_ERROR,
+	/** Wrong propagation medium. */
+	PUMAS_RETURN_MEDIUM_ERROR,
+	/** Some memory couldn't be allocated. */
+	PUMAS_RETURN_MEMORY_ERROR,
+	/** The locator callback is not defined. */
+	PUMAS_RETURN_MISSING_LOCATOR,
+	/** The random callback is not defined. */
+	PUMAS_RETURN_MISSING_RANDOM,
+	/** Some file couldn't be found. */
+	PUMAS_RETURN_PATH_ERROR,
+	/** Some input string is too long. */
+	PUMAS_RETURN_TOO_LONG,
+	/** No MDF file specified. */
+	PUMAS_RETURN_UNDEFINED_MDF,
+	/** An unkwon element was specified. */
+	PUMAS_RETURN_UNKNOWN_ELEMENT,
+	/** An unkwon material was specified. */
+	PUMAS_RETURN_UNKNOWN_MATERIAL,
+	/** Some input value is not valid. */
+	PUMAS_RETURN_VALUE_ERROR,
+	/** The number of PUMAS return codes.  */
+	PUMAS_N_RETURNS
 };
 
 /**
@@ -126,17 +162,17 @@ struct pumas_state {
  * The local properties of a propagation medium.
  */
 struct pumas_locals {
-	/*! The material local density, in kg/m^3. */
+	/** The material local density, in kg/m^3. */
 	double density;
-	/*! The local magnetic field components, in T. */
+	/** The local magnetic field components, in T. */
 	double magnet[3];
 };
 
 /**
  * Callback for setting the local properties of a propagation medium.
  *
- * @param state The muon Monte-Carlo state for which the local properties
- * are requested.
+ * @param state  The muon Monte-Carlo state for which the local properties
+ *               are requested.
  * @param locals A pointer to a `pumas_locals` structure to update.
  * @return A local stepping limit.
  *
@@ -219,18 +255,52 @@ struct pumas_recorder {
 	int period;
 };
 
-/*!
+/**
  * Callback for locating the propagation medium of a `pumas_state`.
  *
  * @param state The muon Monte-Carlo state for which the local properties
- * are requested.
- * @return The corresponding medium index or a negative number if the state has
- * exit the simulation area.
+ *              are requested.
+ * @return The corresponding medium index or a negative number if the state
+ * has exit the simulation area.
  */
 typedef int (pumas_locator_cb)(const struct pumas_state * state);
 
+/**
+ * Generic function pointer.
+ *
+ * This is a generic function pointer used to identify the library functions,
+ * e.g. for error handling.
+ */
+typedef void pumas_function_t(void);
+
+/**
+ * A container for additional info on errors during initialisation.
+ *
+ * This structure is a container for getting additional info when an error
+ * occurs at initialisation, e.g. when parsing the MDF.
+ */
+struct pumas_error {
+	/** The faulty file if any. */
+	const char * file;
+	/** The faulty line if a parsing error occurs. */
+	int line;
+};
+
+/**
+ * Callback for error handling.
+ *
+ * @param rc        The PUMAS return code.
+ * @param caller    The caller function where the error occured.
+ * @param error     Additional info in case of an initialisation error.
+ *
+ * The user can provide its own error handler. It will be called at the
+ * return of any PUMAS library function providing an error code.
+ */
+typedef void pumas_handler_cb(enum pumas_return rc, pumas_function_t * caller,
+	struct pumas_error * error);
+
 struct pumas_context;
-/*!
+/**
  * Callback providing a stream of pseudo random numbers.
  *
  * @param context The simulation context requiring a random number.
@@ -245,7 +315,7 @@ struct pumas_context;
  */
 typedef double (pumas_random_cb)(struct pumas_context * context);
 
-/*!
+/**
  * A handle for a simulation stream.
  *
  * This structure is a proxy to thread specific data for a simulation stream.
@@ -257,131 +327,166 @@ typedef double (pumas_random_cb)(struct pumas_context * context);
  * `pumas_context_create` and prior to any call to `pumas_propagate`. At least
  * one medium must be registered. There is no soft limitation to the number of
  * media.
+ *
  * + The `locator` callback is optional. Setting it to `NULL` implies that the
  * simulation area is composed of a single medium, `*media`, uniform and of
  * infinite extension.
+ *
  * + Depending on the level of detail of the simulation a random stream must
  * be provided by the user before any call to `pumas_propagate`.
+ *
  * + For `kinetic_limit`, `distance_max` or `grammage_max` a strictly positive
  * value activates the corresponding limitation. Setting it to `0` or less
  * disables it however.
  */
 struct pumas_context {
-	/*! An array of possible propagation media. */
+	/** An array of possible propagation media. */
 	const struct pumas_medium * media;
-	/*! A medium locator callback. */
+	/** A medium locator callback. */
 	pumas_locator_cb * locator;
-	/*! The pseudo random generator callback. */
+	/** The pseudo random generator callback. */
 	pumas_random_cb * random;
-	/*! A `pumas_frame` recorder. */
+	/** A `pumas_frame` recorder. */
 	struct pumas_recorder * recorder;
-	/*! A pointer to additional memory, if any is requested at
+	/** A pointer to additional memory, if any is requested at
 	 * initialisation.
 	 */
 	void * user_data;
 
-	/*! Flag to enable or disable transverse transportation. */
+	/** Flag to enable or disable transverse transportation. */
 	int longitudinal;
-	/*! Flag to switch between forward and reverse propagation. */
+	/** Flag to switch between forward and reverse propagation. */
 	int forward;
-	/*! The scheme used for the computation of energy losses. */
+	/** The scheme used for the computation of energy losses. */
 	enum pumas_scheme scheme;
 
-	/*! The minimum kinetic energy for forward propagation, or maximum one
+	/** The minimum kinetic energy for forward propagation, or maximum one
 	 * for backward propagation.
 	 */
 	double kinetic_limit;
-	/*! The maximum propagation distance. */
+	/** The maximum propagation distance. */
 	double distance_max;
-	/*! The maximum propagation grammage. */
+	/** The maximum propagation grammage. */
 	double grammage_max;
+	/** The maximum proper time for propagation. */
+	double time_max;
 };
 
-/*!
- * A handle to a structured error summary.
- *
- * This is a proxy to public error data exposed to the user. It also encloses
- * additional opaque data. Therefore, it must be handled with the `pumas_error`
- * functions.
- */
-struct pumas_error {
-	/*! The line in the source code where the error occurred. */
-	int line;
-	/*! Standard [error number](http://en.wikipedia.org/wiki/Errno.h) if
-	 * provided.
-	 */
-	int errnum;
-	/*! The name of the function where the error occurred. */
-	char * function;
-	/*! Any additional error message. It might be `NULL`. */
-	char *message;
-	/*! A link to the next error in the stack. */
-	struct pumas_error* next;
-};
-
-/*!
+/**
  * Initialise the PUMAS library.
  *
- * @param path The path to a Material Description File (MDF).
- * @param error_size The size of the error buffer.
- * @return `PUMAS_SUCCESS` on success, `PUMAS_ERROR` otherwise.
+ * @param path       The path to a Material Description File (MDF), or `NULL`.
+ * @param error      A structure to fill with parsing errors, or `NULL`.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
  *
  * Initialise the library from a MDF. Load the materials data and precompute
  * various properties. If `path` is `NULL` the MDF is read from the `PUMAS_MDF`
- * environment variable. If `error_size` is less or equal to zero no errors
- * details will be logged, though `pumas_error_count` will still report if any
- * error occured. Call `pumas_finalise` in order to unload the library and
- * release all alocated memory.
+ * environment variable. Call `pumas_finalise` in order to unload the library
+ * and release all alocated memory.
  *
  * **Warnings** : this function is not thread safe. Trying to (re-)initialise an
  * already initialised library will generate an error. `pumas_finalise` must
  * be called first.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_END_OF_FILE             And unexpected EOF occured.
+ *
+ *     PUMAS_RETURN_FORMAT_ERROR            A file has a wrong format.
+ *
+ *     PUMAS_RETURN_INCOMPLETE_FILE         There are missing entries in
+ * the MDF.
+ *
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The library is already initialised.
+ *
+ *     PUMAS_RETURN_IO_ERROR                A file couldn't be read.
+ *
+ *     PUMAS_RETURN_MEMORY_ERROR            Couldn't allocate memory.
+ *
+ *     PUMAS_RETURN_PATH_ERROR              A file couldn't be opened.
+ *
+ *     PUMAS_RETURN_TOO_LONG                Some XML node in the MDF is
+ * too long.
+ *
+ *     PUMAS_RETURN_UNDEFINED_MDF           No MDF was provided.
+ *
+ *     PUMAS_RETURN_UNKNOWN_ELEMENT         An elemnt in the MDF wasn't defined.
+ *
+ *     PUMAS_RETURN_UNKNOWN_MATERIAL        An material in the MDF wasn't
+ * defined.
  */
-enum pumas_return pumas_initialise(const char * path, int error_size);
+enum pumas_return pumas_initialise(const char * path,
+	struct pumas_error * error);
 
-/*!
+/**
  * Finalise the PUMAS library.
  *
- * @param stream An output stream where to log errors.
- *
- * Finalise the library. Free the shared memory and dump the error stack. Call
- * `pumas_initialise` in order to reload the library. The argument `stream` can
- * be `NULL` in which case no error will be reported, though the error stack
- * will still be cleared.
+ * Finalise the library and free the shared memory. Call `pumas_initialise` in
+ * order to reload the library.
  *
  * **Warnings** : This function is not thread safe. Finalising the library
  * doesn't release the memory allocated for any `pumas_context`.
- *
- * @see pumas_initialise
  */
-void pumas_finalise(FILE * stream);
+void pumas_finalise(void);
 
-/*!
+/**
  * Propagate a muon according to the configured `pumas_context`.
  *
  * @param context The simulation context.
- * @param state The muon initial and final state.
- * @return `PUMAS_SUCCESS` on success or `PUMAS_ERROR` otherwise.
+ * @param state   The muon initial and final state.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
  *
  * Depending on the `context` configuration the muon is propagated through a
  * single infinite `pumas_medium` or using a `pumas_locator_cb` function. At
  * return, the muon `state` is updated.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_DENSITY_ERROR           A null or negative density was
+ * encountered.
+ *
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initalised.
+ *
+ *     PUMAS_RETURN_MEDIUM_ERROR            No propagation medium.
+ *
+ *     PUMAS_RETURN_MISSING_LOCATOR         A *locator* callback is needed.
+ *
+ *     PUMAS_RETURN_MISSING_RANDOM          A *random* callback is needed.
  */
 enum pumas_return pumas_propagate(struct pumas_context * context,
 	struct pumas_state * state);
 
-/*!
- * Write a summary of the current library configuration.
+/**
+ * Print a summary of the current library configuration.
  *
- * @param stream A stream where the summary will be formated to.
- * @return `PUMAS_SUCCESS` on success or `PUMAS_ERROR` otherwise.
+ * @param stream        A stream where the summary will be formated to.
+ * @param tabulation    The tabulation separator or `NULL`.
+ * @param newline       The newline separator or `NULL`.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
  *
  * The summary provides information on loaded materials as well as some basic
- * statistics.
+ * statistics. The *tabulation* and *newline* parameters allow to control the
+ * output rendering.
+ *
+ * __Warnings__
+ *
+ * This function is **not** thread safe. A lock must be set to ensure proper
+ * printout in multithreaded applications, if writing concurrently to a same
+ * *stream*.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initalised.
+ *
+ *     PUMAS_RETURN_IO_ERROR                Couldn't write to *stream*.
  */
-enum pumas_return pumas_inform(FILE * stream);
+enum pumas_return pumas_print(FILE * stream, const char * tabulation,
+	const char * newline);
 
-/*!
+/**
  * Get the version tag of the library.
  *
  * @return The library tag encoded on an `int`.
@@ -391,142 +496,265 @@ enum pumas_return pumas_inform(FILE * stream);
  */
 int pumas_tag();
 
-/*!
+/**
+ * Return a string describing a `pumas_return` code.
+ *
+ * @param rc    The return code.
+ * @return A static string.
+ *
+ * This function is analog to the standard C `strerror` function but specific
+ * to PUMAS return codes. It is thread safe.
+ */
+const char * pumas_error_string(enum pumas_return rc);
+
+/**
+ * Return a string describing a PUMAS library function.
+ *
+ * @param function    The library function.
+ * @return a static string.
+ *
+ * This function is meant for verbosing when handling errors. It is thread
+ * safe.
+ */
+const char * pumas_error_function(pumas_function_t * function);
+
+/**
+ * Set or clear the error handler.
+ *
+ * @param handler    The error handler to set or `NULL`.
+ *
+ * Set the error handler callback for PUMAS library functions. If *handler* is
+ * set to `NULL` error callbacks are disabled.
+ *
+ * __Warnings__
+ *
+ * This function is **not** thread safe.
+ */
+void pumas_error_handler(pumas_handler_cb * handler);
+
+/**
+ * Print a formated summary of error data.
+ *
+ * @param stream      The output stream where to print.
+ * @param rc          The error return code.
+ * @param function    The faulty function or `NULL`.
+ * @param error       The additional error data or `NULL`.
+ *
+ * The *function* and *error* parameters are optional and can be set to `NULL`.
+ * The output summary is formated in JSON.
+ *
+ * __Warnings__
+ *
+ * This function is **not** thread safe. A lock must be set to ensure proper
+ * printout in multithreaded applications, if writing concurrently to a same
+ * *stream*.
+ */
+void pumas_error_print(FILE*  stream, enum pumas_return rc,
+	pumas_function_t * function, struct pumas_error * error);
+
+/**
  * Create a simulation context.
  *
- * @param error_size The size of the error buffer.
- * @param extended_memory The size of the user extended memory, if any is
- * claimed.
- * @return On success, a handle to the simulation context is returned.
- * Otherwise `NULL` is returned.
+ * @param extra_memory    The size of the user extra memory, if any is claimed.
+ * @param context         A handle for the simulation context.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
  *
- * Create a new simulation context with a default configuration. If
- * `error_size` is less or equal to zero no errors will be logged, though
- * `pumas_error_count` will still report a positive number if any error occured.
- * Call `pumas_context_destroy` in order to release all the memory allocated for
+ * Create a new simulation context with a default configuration. Call
+ * `pumas_context_destroy` in order to release all the memory allocated for
  * the context.
  *
- * If `extended_memory` is strictly positive the context will be extended by
- * `extended_memory` bytes for user usage. This memory can then be accessed with
+ * If `extra_memory` is strictly positive the context will be extended by
+ * `extra_memory` bytes for user usage. This memory can then be accessed with
  * the `user_data` field of the returned `pumas_context` structure.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
+ *
+ *     PUMAS_RETURN_MEMORY_ERROR            Couldn't allocate memory.
  */
-struct pumas_context * pumas_context_create(int error_size,
-	int extended_memory);
+enum pumas_return pumas_context_create(int extra_memory,
+	struct pumas_context ** context);
 
-/*!
+/**
  * Destroy a simulation context.
  *
  * @param context The simulation context.
- * @param stream An output stream where to log errors.
- * @return On success `context` is set to `NULL`.
  *
  * Call on a previously created context with `pumas_context_create` in order to
- * release the corresponding dynamicaly allocated memory. The argument `stream`
- * can be `NULL` in which case no error will be reported, though
- * `pumas_error_count` will still report if any error occured.
+ * release the corresponding dynamicaly allocated memory. On return `context`
+ * is set to `NULL`.
  */
-void pumas_context_destroy(struct pumas_context ** context,
-	FILE * stream);
+void pumas_context_destroy(struct pumas_context ** context);
 
-/*!
- * @brief Compute the total grammage that a muon can travel assuming continuous
+/**
+ * Compute the total grammage that a muon can travel assuming continuous
  * energy loss.
  *
- * @param scheme The energy loss scheme: `PUMAS_SCHEME_CSDA` or
- * `PUMAS_SCHEME_HYBRID`.
- * @param material The material index.
- * @param kinetic The muon initial kinetic energy, in GeV.
- * @return The grammage in kg/m^(2) or a negative value if an error occured.
+ * @param scheme      The energy loss scheme.
+ * @param material    The material index.
+ * @param kinetic     The muon initial kinetic energy, in GeV.
+ * @param grammage    The grammage in kg/m^(2).
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
  *
- * For a uniform medium, divide the return value by the density in order to get
- * the corresponding total travelled distance.
+ * The energy loss scheme must be one of `PUMAS_SCHEME_CSDA` or
+ * `PUMAS_SCHEME_HYBRID`. For a uniform medium, divide the return value by the
+ * density in order to get the corresponding total travelled distance.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INDEX_ERROR             The scheme of material index is
+ * not valid.
+ *
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
  */
-double pumas_property_grammage(enum pumas_scheme scheme, int material,
-	double kinetic);
+enum pumas_return pumas_property_grammage(enum pumas_scheme scheme,
+	int material, double kinetic, double * grammage);
 
-/*!
+/**
  * Compute the normalised total proper time spent by a muon assuming continuous
  * energy loss.
  *
- * @param scheme The energy loss scheme: `PUMAS_SCHEME_CSDA` or
- * `PUMAS_SCHEME_HYBRID`.
- * @param material The material index.
- * @param kinetic The muon initial kinetic energy, in GeV.
- * @return The normalised proper time in kg/m^(2) or a negative value if an
- * error occured.
+ * @param scheme      The energy loss scheme.
+ * @param material    The material index.
+ * @param kinetic     The muon initial kinetic energy, in GeV.
+ * @param time        The normalised proper time in kg/m^(2).
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
  *
- * Divide the returned value by the medium density times *c* in order to get the
- * proper time in unit of time.
+ * The energy loss scheme must be one of `PUMAS_SCHEME_CSDA` or
+ * `PUMAS_SCHEME_HYBRID`. Divide the returned value by the medium density
+ * times *c* in order to get the proper time in unit of time.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INDEX_ERROR             The scheme of material index is
+ * not valid.
+ *
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
  */
-double pumas_property_proper_time(enum pumas_scheme scheme, int material,
-	double kinetic);
+enum pumas_return pumas_property_proper_time(enum pumas_scheme scheme,
+	int material, double kinetic, double * time);
 
-/*!
+/**
  * Compute the normalised rotation angle due to a uniform magnetic field for
  * a CSDA muon.
  *
- * @param material The material index.
- * @param kinetic The muon initial kinetic energy, in GeV.
- * @return The normalised rotation angle in kg/m^(2)/T.
+ * @param material    The material index.
+ * @param kinetic     The muon initial kinetic energy, in GeV.
+ * @param angle       The normalised rotation angle in kg/m^(2)/T.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
  *
  * Multiply the returned value by the transverse magnetic field amplitude and
  * divide by the density in order to get the rotation angle in radian.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INDEX_ERROR             The material index is not valid.
+ *
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
  */
-double pumas_property_magnetic_rotation(int material, double kinetic);
+enum pumas_return pumas_property_magnetic_rotation(int material, double kinetic,
+	double * angle);
 
-/*!
+/**
  * Compute the minimum kinetic energy required for travelling over a given
  * `grammage`, assuming continuous energy loss.
  *
- * @param scheme The energy loss scheme: `PUMAS_SCHEME_CSDA` or
+ * @param scheme      The energy loss scheme
+ * @param material    The material index.
+ * @param grammage    The requested grammage, in kg/m^(2).
+ * @param kinetic     The required kinetic energy in GeV.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
+ *
+ *  The energy loss scheme must be one of `PUMAS_SCHEME_CSDA` or
  * `PUMAS_SCHEME_HYBRID`.
- * @param material The material index.
- * @param grammage The requested grammage, in kg/m^(2).
- * @return The kinetic energy in GeV or a negative value if an error occured.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INDEX_ERROR             The scheme of material index is
+ * not valid.
+ *
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
  */
-double pumas_property_kinetic_energy(enum pumas_scheme scheme, int material,
-	double grammage);
+enum pumas_return pumas_property_kinetic_energy(enum pumas_scheme scheme,
+	int material, double grammage, double * kinetic);
 
-/*!
+/**
  * Compute the average energy loss per unit weight of material.
  *
- * @param scheme The energy loss scheme
- * @param material The material index.
- * @param kinetic The muon kinetic energy, in GeV.
- * @return The energy loss in GeV/(kg/m^(2)) or a negative value if an error
- * occured.
+ * @param scheme      The energy loss scheme
+ * @param material    The material index.
+ * @param kinetic     The muon kinetic energy, in GeV.
+ * @param dedx        The computed energy loss in GeV/(kg/m^(2)).
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
+ *
+ * The energy loss scheme must be one of `PUMAS_SCHEME_CSDA` or
+ * `PUMAS_SCHEME_HYBRID`.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INDEX_ERROR             The scheme of material index is
+ * not valid.
+ *
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
  */
-double pumas_property_energy_loss(enum pumas_scheme scheme, int material,
-	double kinetic);
+enum pumas_return pumas_property_energy_loss(enum pumas_scheme scheme,
+	int material, double kinetic, double * deddx);
 
-/*!
- * Compute the elastic scattering 1^(st) transport path length for a unit
- * weight.
+/**
+ * Compute the Multiple SCattering (MSC) 1^(st) transport path length for a
+ * unit weight.
  *
- * @param material The material index.
- * @param kinetic The muon kinetic energy, in GeV.
- * @return The path length in kg/m^(2).
+ * @param material    The material index.
+ * @param kinetic     The muon kinetic energy, in GeV.
+ * @param length      The computed MSC length in kg/m^(2).
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
  *
- * The elastic 1^(st) transport path length, &lambda;, is related to
- * the plan multiple scattering angle's standard deviation as &theta;^(2) =
- * 2&lambda;.
+ * The MSC 1^(st) transport path length, &lambda;, is related to the standard
+ * deviation of the polar scattering angle's as &theta;^(2) = X/(2&lambda;),
+ * with X the column depth.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INDEX_ERROR             The material index is not valid.
+ *
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
+ *
+ *     PUMAS_RETURN_VALUE_ERROR             The MSC path length is infinite.
  */
-double pumas_property_scattering_length(int material, double kinetic);
+enum pumas_return pumas_property_scattering_length(int material,
+	double kinetic, double * length);
 
-/*!
- * The macroscopic inelastic total cross section.
+/**
+ * The macroscopic inelastic total cross-section.
  *
- * @param material The material index.
- * @param kinetic The muon kinetic energy, in GeV.
- * @return the normalised cross section in m^(2)/kg or a negative value if an
- * error occured.
+ * @param material         The material index.
+ * @param kinetic          The muon kinetic energy, in GeV.
+ * @param cross_section    The computed cross-section value.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
  *
- * Multiply the return value by the density in order to get the inverse of the
- * interaction length in unit of distance.
+ * The returned cross-section value is in unit m^(2)/kg. Multiply by the
+ * density in order to get the inverse of the interaction length in unit of
+ * distance.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INDEX_ERROR             The material index is not valid.
+ *
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
  */
-double pumas_property_cross_section(int material, double kinetic);
+enum pumas_return pumas_property_cross_section(int material, double kinetic,
+	double * cross_section);
 
-/*!
+/**
  * The library muon mass.
  *
  * @return The mass value in GeV/c^(2).
@@ -535,7 +763,7 @@ double pumas_property_cross_section(int material, double kinetic);
  */
 double pumas_muon_mass(void);
 
-/*!
+/**
  * The library muon proper lifetime.
  *
  * @return The lifetime, in m.
@@ -545,180 +773,192 @@ double pumas_muon_mass(void);
  */
 double pumas_muon_lifetime(void);
 
-/*!
+/**
  * The name of a material.
  *
- * @param material The material index.
- * @return A `C string` with the material name or `NULL` in case of a bad
- * index value.
+ * @param index The material index.
+ * @param material The corresponding material name.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
  *
  * The material name is defined in the Material Description File (MDF).
- * **Note** : if the material index is out of bounds a library error is
- * registered.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INDEX_ERROR               The provided index isn't valid.
+ *
+ *     PUMAS_RETURN_INITIALISATION_ERROR      The library isn't initialised.
  */
-const char* pumas_material_name(int material);
+enum pumas_return pumas_material_name(int index, const char ** material);
 
-/*!
+/**
  * The index of a material.
  *
- * @param material The material name.
- * @return On success the material index is returned, otherwise `PUMAS_ERROR` is
- * returned.
+ * @param material    The material name.
+ * @param index       The corresponding index.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
  *
  * The material index corresponds to the order of declaration specified in the
  * Material Description File (MDF).
- * **Note** : if the material is not found an error is registered.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INITIALISATION_ERROR      The library isn't initialised.
+ *
+ *     PUMAS_RETURN_UNKNOWN_MATERIAL          The material isn't defined.
  */
-int pumas_material_index(const char * material);
+enum pumas_return pumas_material_index(const char * material, int * index);
 
-/*!
+/**
  * The total number of materials.
  *
  * @return The total number of known materials, basic plus composite.
  */
 int pumas_material_length(void);
 
-/*!
+/**
  * The number of composite materials.
  *
  * @return The number of composite materials.
  */
 int pumas_composite_length(void);
 
-/*!
+/**
  * Update the properties of a composite material.
  *
- * @param material The composite material index.
+ * @param material  The composite material index.
  * @param fractions The vector of mass fractions of the base materials
- * components.
- * @param densities The vector of densities of the base materials components.
- * @return `PUMAS_ERROR` if the update failled, `PUMAS_SUCCESS` otherwise.
+ *                  components.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
  *
  * Update the composition and/or the density of a composite material.
  * `fractions` or `densities` can be `NULL` in which case the corresponding
  * property is not updated.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_DENSITY_ERROR             Some density value is null
+ * or less.
+ *
+ *     PUMAS_RETURN_INDEX_ERROR               The provided index isn't valid.
+ *
+ *     PUMAS_RETURN_INITIALISATION_ERROR      The library isn't initialised.
+ *
+ *     PUMAS_RETURN_MEMORY_ERROR              Couldn't allocate memory.
  */
 enum pumas_return pumas_composite_update(int material, const double * fractions,
 	const double * densities);
 
-/*!
+/**
  * Get the properties of a composite material.
  *
- * @param material The composite material index.
- * @param density The composite material reference density.
+ * @param index      The composite material index.
+ * @param density    The composite material reference density.
  * @param components The number of base material components of the composite.
- * @param fractions The vector of mass fractions of the base materials
- * components.
- * @param densities The vector of densities of the base materials components.
- * @return `PUMAS_ERROR` if the update failled, `PUMAS_SUCCESS` otherwise.
+ * @param fractions  The vector of mass fractions of the base materials
+ *                   components.
+ * @param densities  The vector of densities of the base materials components.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
  *
  * Get the properties of a composite material. `density`, `components`,
  * `fractions` or `densities` can be `NULL` in which case the corresponding
  * property is not retrieved.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INDEX_ERROR               The provided index isn't valid.
+ *
+ *     PUMAS_RETURN_INITIALISATION_ERROR      The library isn't initialised.
  */
-enum pumas_return pumas_composite_properties(int material, double * density,
+enum pumas_return pumas_composite_properties(int index, double * density,
 	int * components, double * fractions, double * densities);
 
-/*!
+/**
  * Accessor to the tabulated shared data.
  *
- * @param property The column index of a property of interest.
- * @param scheme The energy loss scheme.
- * @param material The material index.
- * @param row The kinetic value row index in the table.
- * @return the table value or a negative value if an error occured.
+ * @param property    The column index of a property of interest.
+ * @param scheme      The energy loss scheme.
+ * @param material    The material index.
+ * @param row         The kinetic value row index in the table.
+ * @param value       The corresponding table value.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
  *
  * For a given `material` and energy loss `scheme`, this function returns the
  * tabulated data corresponding to the given `property` column and `row` index.
  * Each row of the table corresponds to a different kinetic energy value.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INDEX_ERROR             Some input index is not valid
+ * (property, material or scheme).
+ *
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
  */
-double pumas_table_value(enum pumas_property property, enum pumas_scheme scheme,
-	int material, int row);
+enum pumas_return pumas_table_value(enum pumas_property property,
+	enum pumas_scheme scheme, int material, int row, double * value);
 
-/*!
+/**
  * The depth, i.e. number of kinetic values, of the tabulated data.
  *
  * @return The number of rows in data tables.
  */
 int pumas_table_length(void);
 
-/*!
- * Compute the the table row index for a given property and its value.
+/**
+ * Compute the table row index for a given property and its value.
  *
- * @param property The column index of the property.
- * @param scheme The energy loss scheme.
- * @param material The material index.
- * @param value The property value.
- * @return The row index from below for the given value or a negative value if
- * an error occured.
+ * @param property    The column index of the property.
+ * @param scheme      The energy loss scheme.
+ * @param material    The material index.
+ * @param value       The property value.
+ * @param index       The row index from below for the given value.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
  *
- * In the case of an out of bounds value the closest index value is
- * returned. If any of the other parameters `property`, `scheme` or `material`
- * takes a bad value, a negative index is returned.
+ * In the case of an out of bounds value the closest index value is provided
+ * and `PUMAS_RETURN_VALUE_ERROR` is returned.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INDEX_ERROR             Some input index is not valid
+ * (property, material or scheme).
+ *
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
+ *
+ *     PUMAS_RETURN_VALUE_ERROR             The provided value is out of the
+ * table.
  */
-int pumas_table_index(enum pumas_property property, enum pumas_scheme scheme,
-	int material, double value);
+enum pumas_return pumas_table_index(enum pumas_property property,
+	enum pumas_scheme scheme, int material, double value, int * index);
 
-/*!
- * Get the current count of occurred errors.
- *
- * @param context The simulation context.
- * @return The number of occured errors.
- *
- * If `context` is `NULL` the count of library errors is returned. Otherwise,
- * the count of errors related to the given context is returned.
- */
-int pumas_error_count(struct pumas_context * context);
-
-/*!
- * Get the first error in the stack.
- *
- * @param context The simulation context.
- * @return If any error occcured a pointer to the first `pumas_error` is
- * returned, otherwise `NULL` is returned.
- *
- * If `context` is `NULL` the error is taken from the libraries' error stack.
- * Otherwise, the error is taken from the given context's error stack.
- */
-struct pumas_error * pumas_error_get(struct pumas_context * context);
-
-/*!
- * Clear all errors.
- *
- * @param context The simulation context.
- *
- * Remove all errors from the stack and reset the error counter. If `context` is
- * `NULL` the libraries' error stack is cleared. Otherwise, the given context's
- * error stack is cleared.
- */
-void pumas_error_clear(struct pumas_context * context);
-
-/*!
- * Format an error summary to a stream.
- *
- * @param stream The stream where to format the error.
- * @param error The error summary.
- */
-void pumas_error_format(FILE* stream, struct pumas_error * error);
-
-/*!
+/**
  * Create a new muon recorder.
  *
- * @param context The simulation context.
- * @return On success the new recorder is returned, otherwise `NULL` is
- * returned.
+ * @param context The simulation context or `NULL`.
+ * @param recorder A handle for the recorder.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
  *
- * The recorder is configured for a fresh start with default settings. It is
- * initially linked to the provided context.
+ * The recorder is configured for a fresh start with default settings. If a
+ * non `NULL` context is provided, the recorder will be linked to it.
  *
- * **Note** : though the recorder's creation requires a simulation context, the
+ * **Note** : though the recorder's creation requests a simulation context, the
  * returned proxy might be moved to any other context after creation. However
  * it should not be linked simultaneously to multiple concurent simulation
  * streams.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_MEMORY_ERROR    Couldn't allocate memory.
  */
-struct pumas_recorder * pumas_recorder_create(struct pumas_context * context);
+enum pumas_return pumas_recorder_create(struct pumas_context * context,
+	struct pumas_recorder ** recorder);
 
-/*!
+/**
  * Clear all recorded frames.
  *
  * @param recorder The recorder handle.
@@ -727,7 +967,7 @@ struct pumas_recorder * pumas_recorder_create(struct pumas_context * context);
  */
 void pumas_recorder_clear(struct pumas_recorder * recorder);
 
-/*!
+/**
  * Destroy a muon recorder releasing all associated memory.
  *
  * @param recorder The recorder handle.
