@@ -121,6 +121,8 @@ enum pumas_return {
 	PUMAS_RETURN_MISSING_RANDOM,
 	/** Some file couldn't be found. */
 	PUMAS_RETURN_PATH_ERROR,
+	/** A raise was called without any catch. */
+	PUMAS_RETURN_RAISE_ERROR,
 	/** Some input string is too long. */
 	PUMAS_RETURN_TOO_LONG,
 	/** No MDF file specified. */
@@ -431,6 +433,54 @@ enum pumas_return pumas_initialise(const char * path,
 void pumas_finalise(void);
 
 /**
+ * Dump the PUMAS library configuration to a stream.
+ *
+ * @param stream    The stream where to dump.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
+ *
+ * Dump the current library configuration to a stream as a binary object. Note
+ * that only globally shared data are dumped, i.e. material properties and
+ * tables as read from a MDF. Simulation contexts, media, recorders, ect ...
+ * are not. This binary dump allows for a fast initialisation of the library
+ * in subsequent uses.
+ *
+ * **Warnings** : The binary dump is raw formated, hence *a priori* platform
+ * dependent.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
+ *
+ *     PUMAS_RETURN_IO_ERROR                Couldn't write to the stream.
+ */
+enum pumas_return pumas_dump(FILE * stream);
+
+/**
+ * Load the configuration from a binary dump.
+ *
+ * @param stream    The stream where to dump.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
+ *
+ * Load the library configuration from a binary dump and initialise accordingly.
+ *
+ * **Warnings** : The binary dump is raw formated, hence *a priori* platform
+ * dependent. Trying to (re-)initialise an already initialised library will
+ * generate an error. `pumas_finalise` must be called first.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_FORMAT_ERROR            The binary dump is not compatible
+ * with the current version.
+ *
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The library is already initialised.
+ *
+ *     PUMAS_RETURN_IO_ERROR                Couldn't read from the stream.
+ */
+enum pumas_return pumas_load(FILE * stream);
+
+/**
  * Propagate a muon according to the configured `pumas_context`.
  *
  * @param context The simulation context.
@@ -530,7 +580,54 @@ const char * pumas_error_function(pumas_function_t * function);
  *
  * This function is **not** thread safe.
  */
-void pumas_error_handler(pumas_handler_cb * handler);
+void pumas_error_handler_set(pumas_handler_cb * handler);
+
+/**
+ * Get the current error handler.
+ *
+ * @return The current error handler or `NULL` if none.
+ */
+pumas_handler_cb * pumas_error_handler_get(void);
+
+/**
+ * Catch the next error.
+ *
+ * @param catch   A flag for enabling or disabling error catch.
+ *
+ * Enable or disable the catch of the next PUMAS library error. While enabled
+ * library errors will **not** trigger the error handler. Note however that only
+ * the first occuring error will be caught. Call `pumas_error_raise` to enable
+ * the error handler again and raise any caught error.
+ *
+ * __Warnings__
+ *
+ * This function is not thread safe. Only a single error stream can be handled
+ * at a time.
+ */
+void pumas_error_catch(int catch);
+
+/**
+ * Raise any caught error.
+ *
+ * @return If no error was caught `PUMAS_RETURN_SUCCESS` is returned otherwise
+ * an error code is returned as detailed below.
+ *
+ * Raise any caught error. Error catching must have been enabled first with
+ * `pumas_error_catch` otherwise a specfic `PUMAS_RETURN_RAISE_ERROR` is
+ * returned. Note that calling this function disables further error's catching.
+ *
+ * __Warnings__
+ *
+ * This function is not thread safe. Only a single error stream can be handled
+ * at a time.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_RAISE_ERROR    Error catching hasn't been enabled.
+ *
+ *     PUMAS_RETURN_*              Any caught error's code.
+ */
+enum pumas_return pumas_error_raise(void);
 
 /**
  * Print a formated summary of error data.
