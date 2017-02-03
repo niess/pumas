@@ -82,8 +82,7 @@ enum pumas_scheme {
         /** All energy losses are disabled.
          *
          * **Note** : This mode is provided for test purpose only. Running
-         * without energy losses requires specifying a geometry through a
-         * `pumas_locator_cb` callback.
+         * without energy losses requires specifying a range or grammage limit.
          */
         PUMAS_SCHEME_NO_LOSS = -1,
         /** Energy losses are purely determinstic as given by the Continuously
@@ -144,8 +143,8 @@ enum pumas_return {
         PUMAS_RETURN_MEDIUM_ERROR,
         /** Some memory couldn't be allocated. */
         PUMAS_RETURN_MEMORY_ERROR,
-        /** The locator callback is not defined. */
-        PUMAS_RETURN_MISSING_LOCATOR,
+        /** A user supplied limit is required. */
+        PUMAS_RETURN_MISSING_LIMIT,
         /** The random callback is not defined. */
         PUMAS_RETURN_MISSING_RANDOM,
         /** Some file couldn't be found. */
@@ -257,7 +256,7 @@ struct pumas_frame {
         /** The recorded state. */
         struct pumas_state state;
         /** The corresponding propagation medium. */
-        int medium;
+        struct pumas_medium * medium;
         /** Link to the next frame in the record. */
         struct pumas_frame * next;
 };
@@ -292,15 +291,25 @@ struct pumas_recorder {
         int period;
 };
 
+struct pumas_context;
 /**
  * Callback for locating the propagation medium of a `pumas_state`.
  *
- * @param state    The Monte-Carlo state for which the local properties
- *                 are requested.
- * @return The corresponding medium index or a negative number if the state
+ * @param context   The Monte-Carlo context requiring a medium.
+ * @param state     The Monte-Carlo state for which the medium is requested.
+ * @param medium    A pointer to the corresponding medium or `NULL` if the state
  * has exit the simulation area.
+ * @return The proposed step size or `0` for an infinite medium.
+ *
+ * The callback must propose a Monte-Carlo stepping distance, in m,
+ * consistent with the geometry. Note that returning zero or less
+ * signs that the corresponding medium has no boundaries.
+ *
+ * **Warning** : it is an error to return zero or less for any state if the
+ * extension is finite.
  */
-typedef int(pumas_locator_cb)(const struct pumas_state * state);
+typedef double pumas_medium_cb(struct pumas_context * context,
+    struct pumas_state * state, struct pumas_medium ** medium);
 
 /**
  * Generic function pointer.
@@ -336,7 +345,6 @@ struct pumas_error {
 typedef void pumas_handler_cb(enum pumas_return rc, pumas_function_t * caller,
     struct pumas_error * error);
 
-struct pumas_context;
 /**
  * Callback providing a stream of pseudo random numbers.
  *
@@ -360,14 +368,8 @@ typedef double(pumas_random_cb)(struct pumas_context * context);
  * However, it also encloses other opaque data. Therefore, it **must** be
  * initialised and released with the `pumas_context` functions.
  *
- * + The `media` field must be set after any initialisation with
- * `pumas_context_create` and prior to any call to `pumas_transport`. At least
- * one medium must be registered. There is no soft limitation to the number of
- * media.
- *
- * + The `locator` callback is optional. Setting it to `NULL` implies that the
- * simulation area is composed of a single medium, `*media`, uniform and of
- * infinite extension.
+ * + The `medium` field must be set after any initialisation with
+ * `pumas_context_create` and prior to any call to `pumas_transport`.
  *
  * + Depending on the level of detail of the simulation a random stream must
  * be provided by the user before any call to `pumas_transport`.
@@ -377,10 +379,8 @@ typedef double(pumas_random_cb)(struct pumas_context * context);
  * disables it however.
  */
 struct pumas_context {
-        /** An array of possible media. */
-        const struct pumas_medium * media;
-        /** A medium locator callback. */
-        pumas_locator_cb * locator;
+        /** A medium callback. */
+        pumas_medium_cb * medium;
         /** The pseudo random generator callback. */
         pumas_random_cb * random;
         /** A `pumas_frame` recorder. */
@@ -547,8 +547,8 @@ enum pumas_return pumas_load(FILE * stream);
  * code is returned as detailed below.
  *
  * Depending on the *context* configuration the particle is transported through
- * a single infinite `pumas_medium` or using a `pumas_locator_cb` function. At
- * return, the particle *state* is updated.
+ * one or more media, as provided by the *medium* callback. At return, the
+ * particle *state* is updated.
  *
  * __Error codes__
  *
@@ -559,7 +559,7 @@ enum pumas_return pumas_load(FILE * stream);
  *
  *     PUMAS_RETURN_MEDIUM_ERROR            No propagation medium.
  *
- *     PUMAS_RETURN_MISSING_LOCATOR         A *locator* callback is needed.
+ *     PUMAS_RETURN_MISSING_LIMIT           An external limit is needed.
  *
  *     PUMAS_RETURN_MISSING_RANDOM          A *random* callback is needed.
  */
@@ -1131,6 +1131,81 @@ void pumas_recorder_clear(struct pumas_recorder * recorder);
  * `recorder` is set to `NULL`.
  */
 void pumas_recorder_destroy(struct pumas_recorder ** recorder);
+
+/**
+ * User supplied callback for memory allocation.
+ *
+ * @param size    The number of memory bytes to allocate.
+ * @return The address of the allocated memory or `NULL` in case of faillure.
+ *
+ * The provided callback must conform to the `malloc` semantic and behaviour.
+ */
+typedef void * pumas_allocate_cb(size_t size);
+
+/**
+ * Set the memory allocation function for the PUMAS library.
+ *
+ * @param allocator    The user supplied memory allocator, or `NULL`.
+ *
+ * This function allows to specify a custom memory allocation function for
+ * PUMAS. Passing a `NULL` value results in PUMAS using its default allocator,
+ * i.e. `malloc`.
+ *
+ * __Warnings__
+ *
+ * This function is **not** thread safe.
+ */
+void pumas_memory_allocator(pumas_allocate_cb * allocator);
+
+/**
+ * User supplied callback for memory re-allocation.
+ *
+ * @param ptr     The address of the memory to reallocate.
+ * @param size    The number of memory bytes requested for the reallocation.
+ * @return The address of the re-allocated memory or `NULL` in case of faillure.
+ *
+ * The provided callback must conform to the `realloc` semantic and behaviour.
+ */
+typedef void * pumas_reallocate_cb(void * ptr, size_t size);
+
+/**
+ * Set the memory re-allocation function for the PUMAS library.
+ *
+ * @param reallocator    The user supplied memory reallocator, or `NULL`.
+ *
+ * This function allows to specify a custom memory re-allocation function for
+ * PUMAS. Passing a `NULL` value results in PUMAS using its default
+ * reallocator, i.e. `realloc`.
+ *
+ * __Warnings__
+ *
+ * This function is **not** thread safe.
+ */
+void pumas_memory_reallocator(pumas_reallocate_cb * reallocator);
+
+/**
+ * User supplied callback for memory deallocation.
+ *
+ * @param size    The address of the memory to deallocate.
+ *
+ * The provided callback must conform to the `free` semantic and behaviour.
+ */
+typedef void pumas_deallocate_cb(void * ptr);
+
+/**
+ * Set the memory deallocation function for the PUMAS library.
+ *
+ * @param deallocator    The user supplied memory deallocator, or `NULL`.
+ *
+ * This function allows to specify a custom memory deallocation function for
+ * PUMAS. Passing a `NULL` value results in PUMAS using its default
+ * deallocator, i.e. `free`.
+ *
+ * __Warnings__
+ *
+ * This function is **not** thread safe.
+ */
+void pumas_memory_deallocator(pumas_deallocate_cb * deallocator);
 
 #ifdef __cplusplus
 }
