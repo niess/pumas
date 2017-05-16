@@ -1,0 +1,10 @@
+# Ignore any library object.
+lib
+*.so
+
+# Ignore any binary object.
+bin
+*.o
+
+# Ignore ctags.
+.tags
