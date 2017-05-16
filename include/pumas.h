@@ -1,42 +1,32 @@
 /*
- * Copyright (c) Valentin NIESS (June 2016)
- *
- * email: niess@in2p3.fr
+ * Copyright (C) 2017 Université Clermont Auvergne, CNRS/IN2P3, LPC
+ * Author: Valentin NIESS (niess@in2p3.fr)
  *
  * This software is a C library whose purpose is to transport high energy
  * muons or taus in various media.
  *
- * This software is governed by the CeCILL  license under French law and
- * abiding by the rules of distribution of free software.  You can  use,
- * modify and/ or redistribute the software under the terms of the CeCILL
- * license as circulated by CEA, CNRS and INRIA at the following URL
- * "http://www.cecill.info".
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
  *
- * As a counterpart to the access to the source code and  rights to copy,
- * modify and redistribute granted by the license, users are provided only
- * with a limited warranty  and the software's author,  the holder of the
- * economic rights,  and the successive licensors  have only  limited
- * liability.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
  *
- * In this respect, the user's attention is drawn to the risks associated
- * with loading,  using,  modifying and/or developing or reproducing the
- * software by the user in light of its specific status of free software,
- * that may mean  that it is complicated to manipulate,  and  that  also
- * therefore means  that it is reserved for developers  and  experienced
- * professionals having in-depth computer knowledge. Users are therefore
- * encouraged to load and test the software's suitability as regards their
- * requirements in conditions enabling the security of their systems and/or
- * data to be ensured and,  more generally, to use and operate it in the
- * same conditions as regards security.
- *
- * The fact that you are presently reading this means that you have had
- * knowledge of the CeCILL license and that you accept its terms.
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
 
 #ifndef pumas_h
 #define pumas_h
 #ifdef __cplusplus
 extern "C" {
+#endif
+
+#ifndef PUMAS_API
+#define PUMAS_API
 #endif
 
 /* For C standard streams. */
@@ -204,9 +194,11 @@ struct pumas_locals {
         double magnet[3];
 };
 
+struct pumas_medium;
 /**
  * Callback for setting the local properties of a propagation medium.
  *
+ * @param medium    The propagation medium.
  * @param state     The Monte-Carlo state for which the local properties are
  *                  requested.
  * @param locals    A pointer to a `pumas_locals` structure to update.
@@ -222,8 +214,8 @@ struct pumas_locals {
  * different media even though they have the same material base.
  *
  */
-typedef double(pumas_locals_cb)(
-    const struct pumas_state * state, struct pumas_locals * locals);
+typedef double(pumas_locals_cb)(struct pumas_medium * medium,
+    struct pumas_state * state, struct pumas_locals * locals);
 
 /**
  * Description of a propagation medium.
@@ -244,7 +236,7 @@ struct pumas_medium {
         /**
          * The user supplied callback for setting the medium local properties.
          */
-        pumas_locals_cb * setter;
+        pumas_locals_cb * locals;
 };
 
 /** A handle to a recorded Monte-Carlo frame.
@@ -476,7 +468,7 @@ struct pumas_context {
  *
  *     PUMAS_RETURN_UNKNOWN_PARTICLE        The given type is not supported.
  */
-enum pumas_return pumas_initialise(enum pumas_particle particle,
+PUMAS_API enum pumas_return pumas_initialise(enum pumas_particle particle,
     const char * mdf_path, const char * dedx_path, struct pumas_error * error);
 
 /**
@@ -488,7 +480,7 @@ enum pumas_return pumas_initialise(enum pumas_particle particle,
  * **Warnings** : This function is not thread safe. Finalising the library
  * doesn't release the memory allocated for any `pumas_context`.
  */
-void pumas_finalise(void);
+PUMAS_API void pumas_finalise(void);
 
 /**
  * Dump the PUMAS library configuration to a stream.
@@ -512,7 +504,7 @@ void pumas_finalise(void);
  *
  *     PUMAS_RETURN_IO_ERROR                Couldn't write to the stream.
  */
-enum pumas_return pumas_dump(FILE * stream);
+PUMAS_API enum pumas_return pumas_dump(FILE * stream);
 
 /**
  * Load the configuration from a binary dump.
@@ -536,7 +528,7 @@ enum pumas_return pumas_dump(FILE * stream);
  *
  *     PUMAS_RETURN_IO_ERROR                Couldn't read from the stream.
  */
-enum pumas_return pumas_load(FILE * stream);
+PUMAS_API enum pumas_return pumas_load(FILE * stream);
 
 /**
  * Transport a particle according to the configured `pumas_context`.
@@ -563,7 +555,7 @@ enum pumas_return pumas_load(FILE * stream);
  *
  *     PUMAS_RETURN_MISSING_RANDOM          A *random* callback is needed.
  */
-enum pumas_return pumas_transport(
+PUMAS_API enum pumas_return pumas_transport(
     struct pumas_context * context, struct pumas_state * state);
 
 /**
@@ -591,7 +583,7 @@ enum pumas_return pumas_transport(
  *
  *     PUMAS_RETURN_IO_ERROR                Couldn't write to *stream*.
  */
-enum pumas_return pumas_print(
+PUMAS_API enum pumas_return pumas_print(
     FILE * stream, const char * tabulation, const char * newline);
 
 /**
@@ -602,7 +594,7 @@ enum pumas_return pumas_print(
  * The library tag is encoded on an `int` as tag = 10^(3)*V+S, with V the
  * version index and S the subversion index.
  */
-int pumas_tag();
+PUMAS_API int pumas_tag();
 
 /**
  * Get info on the transported particle.
@@ -620,7 +612,7 @@ int pumas_tag();
  *
  *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initalised.
  */
-enum pumas_return pumas_particle(
+PUMAS_API enum pumas_return pumas_particle(
     enum pumas_particle * particle, double * lifetime, double * mass);
 
 /**
@@ -632,7 +624,7 @@ enum pumas_return pumas_particle(
  * This function is analog to the standard C `strerror` function but specific
  * to PUMAS return codes. It is thread safe.
  */
-const char * pumas_error_string(enum pumas_return rc);
+PUMAS_API const char * pumas_error_string(enum pumas_return rc);
 
 /**
  * Return a string describing a PUMAS library function.
@@ -643,7 +635,7 @@ const char * pumas_error_string(enum pumas_return rc);
  * This function is meant for verbosing when handling errors. It is thread
  * safe.
  */
-const char * pumas_error_function(pumas_function_t * function);
+PUMAS_API const char * pumas_error_function(pumas_function_t * function);
 
 /**
  * Set or clear the error handler.
@@ -657,14 +649,14 @@ const char * pumas_error_function(pumas_function_t * function);
  *
  * This function is **not** thread safe.
  */
-void pumas_error_handler_set(pumas_handler_cb * handler);
+PUMAS_API void pumas_error_handler_set(pumas_handler_cb * handler);
 
 /**
  * Get the current error handler.
  *
  * @return The current error handler or `NULL` if none.
  */
-pumas_handler_cb * pumas_error_handler_get(void);
+PUMAS_API pumas_handler_cb * pumas_error_handler_get(void);
 
 /**
  * Catch the next error.
@@ -681,7 +673,7 @@ pumas_handler_cb * pumas_error_handler_get(void);
  * This function is not thread safe. Only a single error stream can be handled
  * at a time.
  */
-void pumas_error_catch(int catch);
+PUMAS_API void pumas_error_catch(int catch);
 
 /**
  * Raise any caught error.
@@ -704,7 +696,7 @@ void pumas_error_catch(int catch);
  *
  *     PUMAS_RETURN_*              Any caught error's code.
  */
-enum pumas_return pumas_error_raise(void);
+PUMAS_API enum pumas_return pumas_error_raise(void);
 
 /**
  * Print a formated summary of error data.
@@ -723,7 +715,7 @@ enum pumas_return pumas_error_raise(void);
  * printout in multithreaded applications, if writing concurrently to a same
  * *stream*.
  */
-void pumas_error_print(FILE * stream, enum pumas_return rc,
+PUMAS_API void pumas_error_print(FILE * stream, enum pumas_return rc,
     pumas_function_t * function, struct pumas_error * error);
 
 /**
@@ -748,7 +740,7 @@ void pumas_error_print(FILE * stream, enum pumas_return rc,
  *
  *     PUMAS_RETURN_MEMORY_ERROR            Couldn't allocate memory.
  */
-enum pumas_return pumas_context_create(
+PUMAS_API enum pumas_return pumas_context_create(
     int extra_memory, struct pumas_context ** context);
 
 /**
@@ -760,7 +752,7 @@ enum pumas_return pumas_context_create(
  * release the corresponding dynamicaly allocated memory. On return `context`
  * is set to `NULL`.
  */
-void pumas_context_destroy(struct pumas_context ** context);
+PUMAS_API void pumas_context_destroy(struct pumas_context ** context);
 
 /**
  * Compute the total grammage that a particle can travel assuming continuous
@@ -784,7 +776,7 @@ void pumas_context_destroy(struct pumas_context ** context);
  *
  *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
  */
-enum pumas_return pumas_property_grammage(
+PUMAS_API enum pumas_return pumas_property_grammage(
     enum pumas_scheme scheme, int material, double kinetic, double * grammage);
 
 /**
@@ -809,7 +801,7 @@ enum pumas_return pumas_property_grammage(
  *
  *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
  */
-enum pumas_return pumas_property_proper_time(
+PUMAS_API enum pumas_return pumas_property_proper_time(
     enum pumas_scheme scheme, int material, double kinetic, double * time);
 
 /**
@@ -831,7 +823,7 @@ enum pumas_return pumas_property_proper_time(
  *
  *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
  */
-enum pumas_return pumas_property_magnetic_rotation(
+PUMAS_API enum pumas_return pumas_property_magnetic_rotation(
     int material, double kinetic, double * angle);
 
 /**
@@ -855,7 +847,7 @@ enum pumas_return pumas_property_magnetic_rotation(
  *
  *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
  */
-enum pumas_return pumas_property_kinetic_energy(
+PUMAS_API enum pumas_return pumas_property_kinetic_energy(
     enum pumas_scheme scheme, int material, double grammage, double * kinetic);
 
 /**
@@ -878,7 +870,7 @@ enum pumas_return pumas_property_kinetic_energy(
  *
  *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
  */
-enum pumas_return pumas_property_energy_loss(
+PUMAS_API enum pumas_return pumas_property_energy_loss(
     enum pumas_scheme scheme, int material, double kinetic, double * deddx);
 
 /**
@@ -903,7 +895,7 @@ enum pumas_return pumas_property_energy_loss(
  *
  *     PUMAS_RETURN_VALUE_ERROR             The MSC path length is infinite.
  */
-enum pumas_return pumas_property_scattering_length(
+PUMAS_API enum pumas_return pumas_property_scattering_length(
     int material, double kinetic, double * length);
 
 /**
@@ -925,7 +917,7 @@ enum pumas_return pumas_property_scattering_length(
  *
  *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
  */
-enum pumas_return pumas_property_cross_section(
+PUMAS_API enum pumas_return pumas_property_cross_section(
     int material, double kinetic, double * cross_section);
 
 /**
@@ -944,7 +936,8 @@ enum pumas_return pumas_property_cross_section(
  *
  *     PUMAS_RETURN_INITIALISATION_ERROR      The library isn't initialised.
  */
-enum pumas_return pumas_material_name(int index, const char ** material);
+PUMAS_API enum pumas_return pumas_material_name(
+    int index, const char ** material);
 
 /**
  * The index of a material.
@@ -963,21 +956,22 @@ enum pumas_return pumas_material_name(int index, const char ** material);
  *
  *     PUMAS_RETURN_UNKNOWN_MATERIAL          The material isn't defined.
  */
-enum pumas_return pumas_material_index(const char * material, int * index);
+PUMAS_API enum pumas_return pumas_material_index(
+    const char * material, int * index);
 
 /**
  * The total number of materials.
  *
  * @return The total number of known materials, basic plus composite.
  */
-int pumas_material_length(void);
+PUMAS_API int pumas_material_length(void);
 
 /**
  * The number of composite materials.
  *
  * @return The number of composite materials.
  */
-int pumas_composite_length(void);
+PUMAS_API int pumas_composite_length(void);
 
 /**
  * Update the properties of a composite material.
@@ -1003,7 +997,7 @@ int pumas_composite_length(void);
  *
  *     PUMAS_RETURN_MEMORY_ERROR              Couldn't allocate memory.
  */
-enum pumas_return pumas_composite_update(
+PUMAS_API enum pumas_return pumas_composite_update(
     int material, const double * fractions, const double * densities);
 
 /**
@@ -1028,8 +1022,8 @@ enum pumas_return pumas_composite_update(
  *
  *     PUMAS_RETURN_INITIALISATION_ERROR      The library isn't initialised.
  */
-enum pumas_return pumas_composite_properties(int index, double * density,
-    int * components, double * fractions, double * densities);
+PUMAS_API enum pumas_return pumas_composite_properties(int index,
+    double * density, int * components, double * fractions, double * densities);
 
 /**
  * Accessor to the tabulated shared data.
@@ -1053,7 +1047,7 @@ enum pumas_return pumas_composite_properties(int index, double * density,
  *
  *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
  */
-enum pumas_return pumas_table_value(enum pumas_property property,
+PUMAS_API enum pumas_return pumas_table_value(enum pumas_property property,
     enum pumas_scheme scheme, int material, int row, double * value);
 
 /**
@@ -1061,7 +1055,7 @@ enum pumas_return pumas_table_value(enum pumas_property property,
  *
  * @return The number of rows in data tables.
  */
-int pumas_table_length(void);
+PUMAS_API int pumas_table_length(void);
 
 /**
  * Compute the table row index for a given property and its value.
@@ -1087,7 +1081,7 @@ int pumas_table_length(void);
  *     PUMAS_RETURN_VALUE_ERROR             The provided value is out of the
  * table.
  */
-enum pumas_return pumas_table_index(enum pumas_property property,
+PUMAS_API enum pumas_return pumas_table_index(enum pumas_property property,
     enum pumas_scheme scheme, int material, double value, int * index);
 
 /**
@@ -1110,7 +1104,7 @@ enum pumas_return pumas_table_index(enum pumas_property property,
  *
  *     PUMAS_RETURN_MEMORY_ERROR    Couldn't allocate memory.
  */
-enum pumas_return pumas_recorder_create(
+PUMAS_API enum pumas_return pumas_recorder_create(
     struct pumas_context * context, struct pumas_recorder ** recorder);
 
 /**
@@ -1120,7 +1114,7 @@ enum pumas_return pumas_recorder_create(
  *
  * Erase all recorded states from the recorder and reset the frame count.
  */
-void pumas_recorder_clear(struct pumas_recorder * recorder);
+PUMAS_API void pumas_recorder_clear(struct pumas_recorder * recorder);
 
 /**
  * Destroy a particle recorder releasing all associated memory.
@@ -1130,7 +1124,7 @@ void pumas_recorder_clear(struct pumas_recorder * recorder);
  * **Note** : The recorder is cleared before beeing destroyed. At return
  * `recorder` is set to `NULL`.
  */
-void pumas_recorder_destroy(struct pumas_recorder ** recorder);
+PUMAS_API void pumas_recorder_destroy(struct pumas_recorder ** recorder);
 
 /**
  * User supplied callback for memory allocation.
@@ -1155,7 +1149,7 @@ typedef void * pumas_allocate_cb(size_t size);
  *
  * This function is **not** thread safe.
  */
-void pumas_memory_allocator(pumas_allocate_cb * allocator);
+PUMAS_API void pumas_memory_allocator(pumas_allocate_cb * allocator);
 
 /**
  * User supplied callback for memory re-allocation.
@@ -1181,7 +1175,7 @@ typedef void * pumas_reallocate_cb(void * ptr, size_t size);
  *
  * This function is **not** thread safe.
  */
-void pumas_memory_reallocator(pumas_reallocate_cb * reallocator);
+PUMAS_API void pumas_memory_reallocator(pumas_reallocate_cb * reallocator);
 
 /**
  * User supplied callback for memory deallocation.
@@ -1205,7 +1199,7 @@ typedef void pumas_deallocate_cb(void * ptr);
  *
  * This function is **not** thread safe.
  */
-void pumas_memory_deallocator(pumas_deallocate_cb * deallocator);
+PUMAS_API void pumas_memory_deallocator(pumas_deallocate_cb * deallocator);
 
 #ifdef __cplusplus
 }
