@@ -661,7 +661,7 @@ PUMAS_API pumas_handler_cb * pumas_error_handler_get(void);
 /**
  * Catch the next error.
  *
- * @param catch   A flag for enabling or disabling error catch.
+ * @param enable   A flag for enabling or disabling error catch.
  *
  * Enable or disable the catch of the next PUMAS library error. While enabled
  * library errors will **not** trigger the error handler. Note however that only
@@ -673,7 +673,7 @@ PUMAS_API pumas_handler_cb * pumas_error_handler_get(void);
  * This function is not thread safe. Only a single error stream can be handled
  * at a time.
  */
-PUMAS_API void pumas_error_catch(int catch);
+PUMAS_API void pumas_error_catch(int enable);
 
 /**
  * Raise any caught error.
