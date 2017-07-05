@@ -4450,7 +4450,18 @@ enum pumas_return step_transport(struct pumas_context * context,
         double invlb1 = 0.;
         if (!straight) {
                 /* Compute the kinetic step length. */
-                step_loc = RATIO_ENERGY_LOSS * density_i * Xtot;
+                double r = RATIO_ENERGY_LOSS;
+                const double k_threshold = 1E+09;
+                if ((context->scheme == PUMAS_SCHEME_DETAILED) &&
+                    (state->kinetic > k_threshold)) {
+                        /* In detailed mode, at very high energies shorter
+                         * steps are needed.
+                         */
+                        double f = k_threshold / state->kinetic;
+                        if (f < 0.1) f = 0.1;
+                        r *= f;
+                }
+                step_loc = r * density_i * Xtot;
 
                 if (context->longitudinal == 0) {
                         /* Compute the soft scattering path length. */
