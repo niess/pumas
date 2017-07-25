@@ -4366,7 +4366,8 @@ void del_randomise_target(struct pumas_context * context,
                                 const double csf1 = *table_get_CSf(ip, ic, i1);
                                 const double csf2 = *table_get_CSf(ip, ic, i2);
                                 const double csf = (csf2 - csf1) * h + csf1;
-                                if (!(zeta > s)) {
+                                if (!(zeta > s) ||
+                                    (ip == N_DEL_PROCESSES - 1)) {
                                         double csn;
                                         double csn1 =
                                             *table_get_CSn(ip, iel, i1);
