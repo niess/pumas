@@ -4362,8 +4362,12 @@ void del_randomise_target(struct pumas_context * context,
                         }
                 }
 
-                double zeta = context->random(context) * stot;
-                if (zeta > stot) zeta = stot; /* Prevent rounding error. */
+                double zeta;
+                for (;;) {
+                        /* Prevent rounding errors. */
+                        zeta = context->random(context) * stot;
+                        if ((zeta > 0.) && (zeta < stot)) break;
+                }
                 double s = 0., csf_last = 0.;
                 component = s_shared->composition[material];
                 for (ic = ic0; ic < ic0 + s_shared->elements_in[material];
@@ -4380,8 +4384,7 @@ void del_randomise_target(struct pumas_context * context,
                                 const double csf1 = *table_get_CSf(ip, ic, i1);
                                 const double csf2 = *table_get_CSf(ip, ic, i2);
                                 const double csf = (csf2 - csf1) * h + csf1;
-                                if (!(zeta > s) ||
-                                    (ip == N_DEL_PROCESSES - 1)) {
+                                if (!(zeta > s)) {
                                         double csn;
                                         double csn1 =
                                             *table_get_CSn(ip, iel, i1);
