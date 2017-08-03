@@ -4581,14 +4581,14 @@ enum pumas_return step_transport(struct pumas_context * context,
                 position[1] = pi[1] + s2 * sgn * direction[1];
                 position[2] = pi[2] + s2 * sgn * direction[2];
                 struct pumas_medium * tmp_medium;
-                const double smax = context->medium(context, state, &tmp_medium);
+                const double smax =
+                    context->medium(context, state, &tmp_medium);
                 if (tmp_medium != medium) {
                         /* Locate the medium change by dichotomy. */
                         *step_max_medium = smax;
                         if (*step_max_medium > 0.)
                                 *step_max_medium += 0.5 * STEP_MIN;
-                        if (tmp_medium != end_medium)
-                                end_medium = tmp_medium;
+                        if (tmp_medium != end_medium) end_medium = tmp_medium;
                         s1 = s2;
                         s2 = -step;
                         while (fabs(s1 - s2) > STEP_MIN) {
@@ -8325,9 +8325,11 @@ double dcs_pair_production(
         double I = 0.;
         int i;
         for (i = 0; i < 8; i++) {
-                const double rho = 1. - exp(xGQ[i] * tmin);
+                const double eps = exp(xGQ[i] * tmin);
+                const double rho = 1. - eps;
                 const double rho2 = rho * rho;
-                const double xi = xi_factor * (1. - rho2);
+                const double rho21 = eps * (2. - eps);
+                const double xi = xi_factor * rho21;
                 const double xi_i = 1. / xi;
 
                 /* Compute the e-term. */
@@ -8338,12 +8340,12 @@ double dcs_pair_production(
                 else
                         Be = ((2. + rho2) * (1. + beta) + xi * (3. + rho2)) *
                                 log(1. + xi_i) +
-                            (1. - rho2 - beta) / (1. + xi) - 3. - rho2;
+                            (rho21 - beta) / (1. + xi) - 3. - rho2;
                 const double Ye = (5. - rho2 + 4. * beta * (1. + rho2)) /
                     (2. * (1. + 3. * beta) * log(3. + xi_i) - rho2 -
                                       2. * beta * (2. - rho2));
                 const double xe = (1. + xi) * (1. + Ye);
-                const double cLi = cL / (1. - rho2);
+                const double cLi = cL / rho21;
                 const double Le = log(AZ13 * sqrt(xe) * q / (q + cLi * xe)) -
                     0.5 * log(1. + cLe * xe);
                 double Phi_e = Be * Le;
@@ -8355,10 +8357,10 @@ double dcs_pair_production(
                         Bmu = 0.5 * xi * (5. - rho2 + beta * (3. + rho2));
                 else
                         Bmu = ((1. + rho2) * (1. + 1.5 * beta) -
-                                  xi_i * (1. + 2. * beta) * (1. - rho2)) *
+                                  xi_i * (1. + 2. * beta) * rho21) *
                                 log(1. + xi) +
-                            xi * (1. - rho2 - beta) / (1. + xi) +
-                            (1. + 2. * beta) * (1. - rho2);
+                            xi * (rho21 - beta) / (1. + xi) +
+                            (1. + 2. * beta) * rho21;
                 const double Ymu = (4. + rho2 + 3. * beta * (1. + rho2)) /
                     ((1. + rho2) * (1.5 + 2. * beta) * log(3. + xi) + 1. -
                                        1.5 * rho2);
