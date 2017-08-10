@@ -4764,7 +4764,7 @@ enum pumas_return step_transport(struct pumas_context * context,
         double h_int = 0.;
         if ((grammage_max > 0.) && (state->grammage >= grammage_max)) {
                 const double dX_ = grammage_max - Xi;
-                if (density == locals->api.density) {
+                if (fabs(density - locals->api.density) <= FLT_EPSILON) {
                         step = dX_ * density_i;
                         h_int = dX_ / (state->grammage - Xi);
                 } else {
