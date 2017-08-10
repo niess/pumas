@@ -3648,6 +3648,14 @@ enum pumas_return transport_with_stepping(struct pumas_context * context,
                                     1 :
                                     0;
 
+                                /* Update the kinetic limit converted
+                                 * to grammage for this material.
+                                 */
+                                context_->step_X_limit =
+                                    (context->kinetic_limit <= 0.) ? 0. :
+                                        cel_grammage(context, scheme, material,
+                                            context->kinetic_limit);
+
                                 /* Reset the stepping data memory. */
                                 context_->step_first = 1;
                                 context_->step_invlb1 = 0;
@@ -4764,15 +4772,15 @@ enum pumas_return step_transport(struct pumas_context * context,
         double h_int = 0.;
         if ((grammage_max > 0.) && (state->grammage >= grammage_max)) {
                 const double dX_ = grammage_max - Xi;
-                if (fabs(density - locals->api.density) <= FLT_EPSILON) {
+                if ((fabs(density - locals->api.density) <= FLT_EPSILON) ||
+                    (sf0 <= FLT_EPSILON)) {
                         step = dX_ * density_i;
                         h_int = dX_ / (state->grammage - Xi);
                 } else {
                         const double drho = density - locals->api.density;
-                        h_int =
-                            (sqrt(density * density + 2. * dX_ * drho / sf0) -
-                                density) /
-                            drho;
+                        const double tmp =
+                            density * density + 2. * dX_ * drho / sf0;
+                        h_int = (sqrt(tmp) - density) / drho;
                         step *= h_int;
                 }
                 state->grammage = grammage_max;
