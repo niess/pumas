@@ -1402,8 +1402,10 @@ void pumas_finalise()
 
         /* Free the shared data. */
         int i;
-        for (i = 0; i < s_shared->n_materials; i++)
+        for (i = 0; i < s_shared->n_materials - s_shared->n_composites; i++) {
                 deallocate(s_shared->dedx_filename[i]);
+                s_shared->dedx_filename[i] = NULL;
+        }
         deallocate(s_shared);
         s_shared = NULL;
 }
