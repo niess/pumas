@@ -45,7 +45,7 @@
 
 /* For the versioning. */
 #define PUMAS_VERSION 0
-#define PUMAS_SUBVERSION 8
+#define PUMAS_SUBVERSION 10
 
 /* Some tuning factors as macros. */
 /**
@@ -713,6 +713,8 @@ static inline double dcs_photonuclear_r_whitlow(double x, double Q2);
 static inline int dcs_photonuclear_check(double K, double q);
 static double dcs_ionisation(
     const struct atomic_element * element, double K, double q);
+static double dcs_ionisation_integrate(
+    int mode, const struct atomic_element * element, double K, double xlow);
 static double dcs_evaluate(struct pumas_context * context,
     dcs_function_t * dcs_func, const struct atomic_element * element, double K,
     double q);
@@ -1615,8 +1617,9 @@ enum pumas_return pumas_print(
                 PUMAS_RETURN(PUMAS_RETURN_INITIALISATION_ERROR, pumas_print);
 
         /* Print the particle info. */
-        if (fprintf(stream, "{%s%s\"particle\" : {%s%s%s\"mass (GeV/c^2)\""
-                            " : %.6lf",
+        if (fprintf(stream,
+                "{%s%s\"particle\" : {%s%s%s\"mass (GeV/c^2)\""
+                " : %.6lf",
                 cr, tab, cr, tab, tab, s_shared->mass) < 0)
                 goto error;
         if (fprintf(stream, ",%s%s%s\"lifetime (m/c)\" : %.3lf%s%s}", cr, tab,
@@ -1659,7 +1662,8 @@ enum pumas_return pumas_print(
                             s_shared->composition[material][iel].element;
                         if (fprintf(stream, "%s%s%s%s%s\"%s (%%)\" : %.5lg",
                                 head2, cr, tab, tab, tab,
-                                s_shared->element[element]->name, 100. *
+                                s_shared->element[element]->name,
+                                100. *
                                     s_shared->composition[material][iel]
                                         .fraction) < 0)
                                 goto error;
@@ -1696,13 +1700,15 @@ enum pumas_return pumas_print(
                                 tab, tab, tab, tab,
                                 s_shared->material_name[c->material]) < 0)
                                 goto error;
-                        if (fprintf(stream, "%s%s%s%s%s%s\"density (g/cm^3)\" "
-                                            ": %.5lg",
+                        if (fprintf(stream,
+                                "%s%s%s%s%s%s\"density (g/cm^3)\" "
+                                ": %.5lg",
                                 cr, tab, tab, tab, tab, tab,
                                 c->density * 1E-03) < 0)
                                 goto error;
-                        if (fprintf(stream, ",%s%s%s%s%s%s\"fraction (%%)\" "
-                                            ": %.5lg%s%s%s%s%s}",
+                        if (fprintf(stream,
+                                ",%s%s%s%s%s%s\"fraction (%%)\" "
+                                ": %.5lg%s%s%s%s%s}",
                                 cr, tab, tab, tab, tab, tab, 100. * c->fraction,
                                 cr, tab, tab, tab, tab) < 0)
                                 goto error;
@@ -1924,7 +1930,7 @@ enum pumas_return pumas_property_scattering_length(
                 coefficient[1] *= d;
                 path += component->fraction /
                     coulomb_wentzel_path(
-                            kinetic, element->Z, element->A, screening[0]) *
+                        kinetic, element->Z, element->A, screening[0]) *
                     coefficient[1];
         }
 
@@ -2512,9 +2518,9 @@ double del_interaction_length(
                 const double b0 =
                     *table_get_b_max(PUMAS_SCHEME_HYBRID, material);
                 const double cs = *table_get_CS(material, imax);
-                const double dZ =
-                    cs / b0 * log((a0 + b0 * (kinetic + s_shared->mass)) /
-                                  (a0 + b0 * (k0 + s_shared->mass)));
+                const double dZ = cs / b0 *
+                    log((a0 + b0 * (kinetic + s_shared->mass)) /
+                        (a0 + b0 * (k0 + s_shared->mass)));
                 return *table_get_NI_in(material, imax) + dZ;
         }
 
@@ -2651,10 +2657,12 @@ void table_get_msc(struct pumas_context * context, int material, double kinetic,
                 double h = (kinetic - *table_get_K(i1)) /
                     (*table_get_K(i2) - *table_get_K(i1));
                 *mu0 = *table_get_Mu0(material, i1) +
-                    h * (*table_get_Mu0(material, i2) -
+                    h *
+                        (*table_get_Mu0(material, i2) -
                             *table_get_Mu0(material, i1));
                 *invlb1 = *table_get_Ms1(material, i1) +
-                    h * (*table_get_Ms1(material, i2) -
+                    h *
+                        (*table_get_Ms1(material, i2) -
                             *table_get_Ms1(material, i1));
         }
 }
@@ -3139,9 +3147,9 @@ enum pumas_return transport_with_csda(struct pumas_context * context,
                         const double sgn = context->forward ? 1. : -1.;
                         const double Tf = Ti - sgn * dt * density;
                         if (Tf > 0.) {
-                                const double xT = fabs(
-                                    xi - cel_grammage_as_time(context,
-                                             PUMAS_SCHEME_CSDA, material, Tf));
+                                const double xT = fabs(xi -
+                                    cel_grammage_as_time(context,
+                                        PUMAS_SCHEME_CSDA, material, Tf));
                                 if (xT < xB) {
                                         xB = xT;
                                         event = EVENT_TIME;
@@ -3202,8 +3210,9 @@ enum pumas_return transport_with_csda(struct pumas_context * context,
                 state->time = time_max;
                 state->decayed = decayed;
         } else
-                state->time += fabs(Ti - cel_proper_time(context,
-                                             PUMAS_SCHEME_CSDA, material, kf)) /
+                state->time += fabs(Ti -
+                                   cel_proper_time(context, PUMAS_SCHEME_CSDA,
+                                       material, kf)) /
                     density;
         if (!context->forward)
                 state->weight *=
@@ -3282,9 +3291,10 @@ enum pumas_return transport_csda_deflect(struct pumas_context * context,
                     b0_i;
 
                 {
-                        double d = b0_i * b0_i * (magnet[0] * direction[0] +
-                                                     magnet[1] * direction[1] +
-                                                     magnet[2] * direction[2]);
+                        double d = b0_i * b0_i *
+                            (magnet[0] * direction[0] +
+                                magnet[1] * direction[1] +
+                                magnet[2] * direction[2]);
                         ez[0] = magnet[0] * d;
                         ez[1] = magnet[1] * d;
                         ez[2] = magnet[2] * d;
@@ -3557,10 +3567,10 @@ enum pumas_return transport_with_stepping(struct pumas_context * context,
                             (context->decay == PUMAS_DECAY_WEIGHT) ?
                             wi * exp(-fabs(state->time - ti) / s_shared->ctau) :
                             wi;
-                        state->weight = context->forward ?
-                            w0 :
-                            w0 * cel_energy_loss(context, scheme, material,
-                                     state->kinetic) *
+                        state->weight = context->forward ? w0 :
+                                                           w0 *
+                                cel_energy_loss(
+                                    context, scheme, material, state->kinetic) *
                                 dei;
                 }
 
@@ -3654,9 +3664,10 @@ enum pumas_return transport_with_stepping(struct pumas_context * context,
                                  * to grammage for this material.
                                  */
                                 context_->step_X_limit =
-                                    (context->kinetic_limit <= 0.) ? 0. :
-                                        cel_grammage(context, scheme, material,
-                                            context->kinetic_limit);
+                                    (context->kinetic_limit <= 0.) ?
+                                    0. :
+                                    cel_grammage(context, scheme, material,
+                                        context->kinetic_limit);
 
                                 /* Reset the stepping data memory. */
                                 context_->step_first = 1;
@@ -3684,8 +3695,9 @@ enum pumas_return transport_with_stepping(struct pumas_context * context,
                                 if (scheme > PUMAS_SCHEME_NO_LOSS) {
                                         Xf = cel_grammage(
                                             context, scheme, material, ki);
-                                        dei = 1. / cel_energy_loss(context,
-                                                       scheme, material, ki);
+                                        dei = 1. /
+                                            cel_energy_loss(
+                                                context, scheme, material, ki);
                                 }
                         }
                         transport_limit(
@@ -3922,15 +3934,15 @@ void transport_do_ehs(
                     context, kinetic0, component->element, data->screening);
                 coulomb_pole_decomposition(data->screening, data->a, data->b);
                 data->invlambda = component->fraction /
-                    coulomb_wentzel_path(kinetic0, element->Z, element->A,
-                                      data->screening[0]);
+                    coulomb_wentzel_path(
+                        kinetic0, element->Z, element->A, data->screening[0]);
 
                 /* Compute the restricted Coulomb cross-section in the
                  * CM frame.
                  */
-                data->cs_hard =
-                    data->invlambda * coulomb_restricted_cs(mu0, data->fspin,
-                                          data->screening, data->a, data->b);
+                data->cs_hard = data->invlambda *
+                    coulomb_restricted_cs(
+                        mu0, data->fspin, data->screening, data->a, data->b);
                 cs_tot += data->cs_hard;
         }
 
@@ -3998,9 +4010,9 @@ double transport_hard_coulomb_objective(double mu, void * parameters)
         struct coulomb_data * data = workspace->data + workspace->ihard;
 
         /* Compute the restricted cross section. */
-        double cs_exp =
-            data->invlambda * coulomb_restricted_cs(mu, data->fspin,
-                                  data->screening, data->a, data->b);
+        double cs_exp = data->invlambda *
+            coulomb_restricted_cs(
+                mu, data->fspin, data->screening, data->a, data->b);
 
         /* Return the difference with the expectation. */
         return cs_exp - workspace->cs_h;
@@ -4060,8 +4072,7 @@ polar_function_t * del_randomise_forward(
                 const double P2 =
                     state->kinetic * (state->kinetic + 2. * s_shared->mass);
                 const double E = state->kinetic + s_shared->mass;
-                const double Wmax =
-                    2. * ELECTRON_MASS * P2 /
+                const double Wmax = 2. * ELECTRON_MASS * P2 /
                     (s_shared->mass * s_shared->mass +
                         ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
                 xmax = Wmax / state->kinetic;
@@ -4790,8 +4801,9 @@ enum pumas_return step_transport(struct pumas_context * context,
                         /*  Update the kinetic energy. */
                         if (scheme <= PUMAS_SCHEME_HYBRID) {
                                 if (scheme != PUMAS_SCHEME_NO_LOSS)
-                                        k1 = cel_kinetic_energy(
-                                            context, scheme, material, Xtot -
+                                        k1 = cel_kinetic_energy(context, scheme,
+                                            material,
+                                            Xtot -
                                                 sgn * (state->grammage - Xi));
                                 event = context_->step_foreseen;
                         } else if (!(event & (EVENT_EHS | EVENT_DEL))) {
@@ -4831,9 +4843,9 @@ enum pumas_return step_transport(struct pumas_context * context,
                         const double Tf =
                             Ti - sgn * (time_max - state->time) * density;
                         if (Tf > 0.) {
-                                const double dxT =
-                                    fabs(Xtot - cel_grammage_as_time(context,
-                                                    scheme, material, Tf));
+                                const double dxT = fabs(Xtot -
+                                    cel_grammage_as_time(
+                                        context, scheme, material, Tf));
                                 if (Xi + dxT < state->grammage) {
                                         /* A proper time limit is reached. */
                                         event = EVENT_TIME;
@@ -4895,10 +4907,11 @@ enum pumas_return step_transport(struct pumas_context * context,
                                 state->grammage = Xi + step * density;
                         else
                                 state->grammage = Xi +
-                                    step * (density +
-                                               0.5 * step / sf0 *
-                                                   (locals->api.density -
-                                                       density));
+                                    step *
+                                        (density +
+                                            0.5 * step / sf0 *
+                                                (locals->api.density -
+                                                    density));
                         if (state->grammage > Xf) state->grammage = Xf;
                 }
         }
@@ -5053,9 +5066,9 @@ static void step_fluctuate(struct pumas_context * context,
         double k1, dk = 0.;
         k1 = cel_kinetic_energy(context, scheme, material, Xtot - sgn * dX);
         if (k1 > 0.) {
-                const double dk1 = sqrt(
-                    0.5 * dX * (step_fluctuations2(material, state->kinetic) +
-                                   step_fluctuations2(material, k1)));
+                const double dk1 = sqrt(0.5 * dX *
+                    (step_fluctuations2(material, state->kinetic) +
+                        step_fluctuations2(material, k1)));
                 const double dk0 = fabs(state->kinetic - k1);
                 if (dk0 >= 3. * dk1) {
                         double u;
@@ -5167,26 +5180,26 @@ void step_rotate_direction(struct pumas_context * context,
         const double a2 = fabs(direction[2]);
         if (a0 > a1) {
                 if (a0 > a2) {
-                        const double nrm =
-                            1. / sqrt(direction[0] * direction[0] +
-                                     direction[2] * direction[2]);
+                        const double nrm = 1. /
+                            sqrt(direction[0] * direction[0] +
+                                direction[2] * direction[2]);
                         u0x = -direction[2] * nrm, u0z = direction[0] * nrm;
                 } else {
-                        const double nrm =
-                            1. / sqrt(direction[1] * direction[1] +
-                                     direction[2] * direction[2]);
+                        const double nrm = 1. /
+                            sqrt(direction[1] * direction[1] +
+                                direction[2] * direction[2]);
                         u0y = direction[2] * nrm, u0z = -direction[1] * nrm;
                 }
         } else {
                 if (a1 > a2) {
-                        const double nrm =
-                            1. / sqrt(direction[0] * direction[0] +
-                                     direction[1] * direction[1]);
+                        const double nrm = 1. /
+                            sqrt(direction[0] * direction[0] +
+                                direction[1] * direction[1]);
                         u0x = direction[1] * nrm, u0y = -direction[0] * nrm;
                 } else {
-                        const double nrm =
-                            1. / sqrt(direction[1] * direction[1] +
-                                     direction[2] * direction[2]);
+                        const double nrm = 1. /
+                            sqrt(direction[1] * direction[1] +
+                                direction[2] * direction[2]);
                         u0y = direction[2] * nrm, u0z = -direction[1] * nrm;
                 }
         }
@@ -5323,7 +5336,8 @@ double coulomb_ehs_length(
                 double h = (kinetic - *table_get_K(i1)) /
                     (*table_get_K(i2) - *table_get_K(i1));
                 return (*table_get_Lb(material, i1) +
-                           h * (*table_get_Lb(material, i2) -
+                           h *
+                               (*table_get_Lb(material, i2) -
                                    *table_get_Lb(material, i1))) /
                     p2;
         }
@@ -5526,7 +5540,7 @@ double transverse_transport_ionisation(
         const double E = kinetic + s_shared->mass;
         const double Wmax = 2. * ELECTRON_MASS * momentum2 /
             (s_shared->mass * s_shared->mass +
-                                ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
+                ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
         const double W0 = 2. * momentum2 / ELECTRON_MASS;
         const double mu_max = Wmax / W0;
         double mu3 = kinetic * X_FRACTION / W0;
@@ -5539,7 +5553,7 @@ double transverse_transport_ionisation(
         const double cs0 = 1.535336E-05 / element->A; /* m^2/kg/GeV. */
         return 2. * cs0 * element->Z *
             (0.5 * a0 * (mu3 * mu3 - mu2 * mu2) + a1 * (mu3 - mu2) +
-                   a2 * log(mu3 / mu2));
+                a2 * log(mu3 / mu2));
 }
 
 /**
@@ -5589,9 +5603,9 @@ double transverse_transport_photonuclear(
                 L2 *= m02;
                 const double I2 =
                     (tmax - tmin) * (b1 * q2 + c1 * m02) - L1 - L2;
-                const double ratio =
-                    (I1 * tmax - I2) / ((I0 * tmax - I1) * kinetic *
-                                           (kinetic + 2. * s_shared->mass));
+                const double ratio = (I1 * tmax - I2) /
+                    ((I0 * tmax - I1) * kinetic *
+                        (kinetic + 2. * s_shared->mass));
 
                 /* Update the double integral value.  */
                 lbipn += ratio * nu *
@@ -6215,9 +6229,7 @@ int mdf_settings_index(int operation, int value)
         } else if (operation == MDF_INDEX_UPDATE_COMPOSITE) {
                 /* Update the composite index table. */
                 int i, *table = buffer;
-                for (i = 0; i < value; i++) {
-                        table += (*table) + 1;
-                }
+                for (i = 0; i < value; i++) { table += (*table) + 1; }
                 const int n = *(table++);
                 int * has_element =
                     buffer + (total_size - free_size - n_elements);
@@ -6458,8 +6470,8 @@ enum pumas_return mdf_parse_elements(struct mdf_buffer * mdf)
                 if (iel == 0) {
                         char * tmp = (char *)s_shared->element +
                             memory_padded_size(s_shared->n_elements *
-                                             sizeof(s_shared->element[0]),
-                                         pad_size);
+                                    sizeof(s_shared->element[0]),
+                                pad_size);
                         s_shared->element[0] = (struct atomic_element *)tmp;
                 } else {
                         const struct atomic_element * e =
@@ -6467,8 +6479,8 @@ enum pumas_return mdf_parse_elements(struct mdf_buffer * mdf)
                         s_shared->element[iel] =
                             (struct atomic_element *)((char *)(e) +
                                 sizeof(struct atomic_element) + c_mem +
-                                memory_padded_size(strlen(e->name) + 1,
-                                                          pad_size));
+                                memory_padded_size(
+                                    strlen(e->name) + 1, pad_size));
                 }
                 struct atomic_element * e = s_shared->element[iel];
                 e->dcs_data = (float *)e->data;
@@ -6529,9 +6541,9 @@ enum pumas_return mdf_parse_materials(struct mdf_buffer * mdf)
         int imat = 0;
         const int pad_size = sizeof(*(s_shared->data));
         void * tmp_ptr = ((char *)s_shared->composition) +
-            memory_padded_size(s_shared->n_materials *
-                                 sizeof(struct material_component *),
-                             pad_size);
+            memory_padded_size(
+                s_shared->n_materials * sizeof(struct material_component *),
+                pad_size);
         struct material_component * data = tmp_ptr;
 
         for (;;) {
@@ -6689,9 +6701,9 @@ enum pumas_return mdf_parse_composites(struct mdf_buffer * mdf)
                     sizeof(struct material_component));
         const int pad_size = sizeof(*(s_shared->data));
         void * tmp_ptr = ((char *)s_shared->composite) +
-            memory_padded_size(s_shared->n_composites *
-                                 sizeof(struct composite_material *),
-                             pad_size);
+            memory_padded_size(
+                s_shared->n_composites * sizeof(struct composite_material *),
+                pad_size);
         struct composite_material * data_ma = tmp_ptr;
 
         enum pumas_return rc;
@@ -6760,8 +6772,8 @@ enum pumas_return mdf_parse_composites(struct mdf_buffer * mdf)
                                 int already_listed = 0;
                                 for (j = 0; j < n; j++) {
                                         if (iel ==
-                                            s_shared->composition[i0]
-                                                                 [j].element) {
+                                            s_shared->composition[i0][j]
+                                                .element) {
                                                 already_listed = 1;
                                                 break;
                                         }
@@ -7647,8 +7659,8 @@ enum pumas_return compute_coulomb_parameters(int material, int row)
                 coulomb_transport_coefficients(
                     1., data->fspin, data->screening, data->a, data->b, G);
                 const double invlb = component->fraction /
-                    coulomb_wentzel_path(kinetic0, element->Z, element->A,
-                                         data->screening[0]);
+                    coulomb_wentzel_path(
+                        kinetic0, element->Z, element->A, data->screening[0]);
 
                 invlb_m += invlb * G[0];
                 s_m_h += data->screening[0] * invlb;
@@ -7803,8 +7815,7 @@ enum pumas_return compute_coulomb_parameters(int material, int row)
                                     data->screening, data->a, data->b);
                                 coulomb_transport_coefficients(1., data->fspin,
                                     data->screening, data->a, data->b, G);
-                                const double invlb =
-                                    component->fraction /
+                                const double invlb = component->fraction /
                                     coulomb_wentzel_path(kinetic0, element->Z,
                                         element->A, data->screening[0]);
 
@@ -7909,9 +7920,9 @@ double compute_cutoff_objective(double mu, void * parameters)
         int i, n = s_shared->elements_in[workspace->material];
         struct coulomb_data * data;
         for (i = 0, data = workspace->data; i < n; i++, data++) {
-                cs_tot +=
-                    data->invlambda * coulomb_restricted_cs(mu, data->fspin,
-                                          data->screening, data->a, data->b);
+                cs_tot += data->invlambda *
+                    coulomb_restricted_cs(
+                        mu, data->fspin, data->screening, data->a, data->b);
         }
 
         /* Return the difference with the expectation. */
@@ -8049,7 +8060,7 @@ once. */
  * @param dcs     Handle to the dcs function.
  * @param xlow    The lower bound of the fractional energy transfer.
  * @param nint    The requested number of point for the integral.
- * @return The integrated dcs, in m^2/kg.
+ * @return The integrated dcs, in m^2/kg or the energy loss in GeV m^2/kg.
  *
  * The parameter *mode* controls the integration mode as following. If *mode*
  * is `0` the restricted cross section is computed, for energy losses larger
@@ -8059,9 +8070,15 @@ once. */
 double compute_dcs_integral(int mode, const struct atomic_element * element,
     double kinetic, dcs_function_t * dcs, double xlow, int nint)
 {
-        double dcsint = 0.;
 
-        /*  We integrate over the photon energy using a logarithmic sampling. */
+        /* Let us use the analytical form for ionisation when radiative
+         * corrections can be neglected.
+         */
+        if ((kinetic <= 10.) && (dcs == &dcs_ionisation))
+                return dcs_ionisation_integrate(mode, element, kinetic, xlow);
+
+        /*  We integrate over the recoil energy using a logarithmic sampling. */
+        double dcsint = 0.;
         double x0 = log(kinetic * xlow), x1 = log(kinetic);
         math_gauss_quad(nint, &x0, &x1); /* Initialisation. */
 
@@ -8353,7 +8370,7 @@ double dcs_pair_production(
                             (rho21 - beta) / (1. + xi) - 3. - rho2;
                 const double Ye = (5. - rho2 + 4. * beta * (1. + rho2)) /
                     (2. * (1. + 3. * beta) * log(3. + xi_i) - rho2 -
-                                      2. * beta * (2. - rho2));
+                        2. * beta * (2. - rho2));
                 const double xe = (1. + xi) * (1. + Ye);
                 const double cLi = cL / rho21;
                 const double Le = log(AZ13 * sqrt(xe) * q / (q + cLi * xe)) -
@@ -8373,7 +8390,7 @@ double dcs_pair_production(
                             (1. + 2. * beta) * rho21;
                 const double Ymu = (4. + rho2 + 3. * beta * (1. + rho2)) /
                     ((1. + rho2) * (1.5 + 2. * beta) * log(3. + xi) + 1. -
-                                       1.5 * rho2);
+                        1.5 * rho2);
                 const double xmu = (1. + xi) * (1. + Ymu);
                 const double Lmu =
                     log(r * AZ13 * q / (1.5 * Z13 * (q + cLi * xmu)));
@@ -8660,7 +8677,8 @@ double dcs_ionisation(const struct atomic_element * element, double K, double q)
         /* Below this limit the model leads to  an un-physical energy loss at
          * low energies.
          */
-        if ((q < 1E-03) || (q < 2E-02 * K)) return 0.;
+#define IONISATION_X_LOW 5E-02
+        if (q < IONISATION_X_LOW * K) return 0.;
 
         const double Z = element->Z;
         const double A = element->A;
@@ -8668,7 +8686,7 @@ double dcs_ionisation(const struct atomic_element * element, double K, double q)
         const double E = K + s_shared->mass;
         const double Wmax = 2. * ELECTRON_MASS * P2 /
             (s_shared->mass * s_shared->mass +
-                                ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
+                ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
         const double Wmin = 0.62 * element->I;
         if ((q <= Wmin) || (q > Wmax)) return 0.;
 
@@ -8685,6 +8703,56 @@ double dcs_ionisation(const struct atomic_element * element, double K, double q)
             (log(4. * E * (E - q) / (s_shared->mass * s_shared->mass)) - L1);
 
         return cs * (1. + Delta);
+}
+
+/**
+ * The analytical form for the partial integral of the ionisation DCS.
+ *
+ * @param mode    Flag to select the integration mode.
+ * @param element The target atomic element.
+ * @param K       The projectile initial kinetic energy.
+ * @param xlow    The lower bound of the fractional energy transfer.
+ * @return The integrated dcs, in m^2/kg or the energy loss in GeV m^2/kg.
+ *
+ * The parameter *mode* controls the integration mode as following. If *mode*
+ * is `0` the restricted cross section is computed, for energy losses larger
+ * than *xlow*. Else, the restricted energy loss is computed, for losses
+ * larger than *xlow*
+ */
+double dcs_ionisation_integrate(
+    int mode, const struct atomic_element * element, double K, double xlow)
+{
+        if (xlow < IONISATION_X_LOW) xlow = IONISATION_X_LOW;
+        double qlow = K * xlow;
+
+        const double Z = element->Z;
+        const double A = element->A;
+        const double P2 = K * (K + 2. * s_shared->mass);
+        const double E = K + s_shared->mass;
+        const double Wmax = 2. * ELECTRON_MASS * P2 /
+            (s_shared->mass * s_shared->mass +
+                ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
+        double Wmin = 0.62 * element->I;
+        if (qlow >= Wmin) Wmin = qlow;
+
+        /* Check the bounds. */
+        if (Wmax <= Wmin) return 0.;
+
+        /* Close interactions for Q >> atomic binding energies. */
+        const double a0 = 0.5 / P2;
+        const double a1 = -1. / Wmax;
+        const double a2 = E * E / P2;
+
+        double I;
+        if (mode == 0) {
+                I = a0 * (Wmax - Wmin) + a1 * log(Wmax / Wmin) +
+                    a2 * (1. / Wmin - 1. / Wmax);
+        } else {
+                I = 0.5 * a0 * (Wmax * Wmax - Wmin * Wmin) +
+                    a1 * (Wmax - Wmin) + a2 * log(Wmax / Wmin);
+        }
+
+        return 1.535336E-05 * Z / A * I;
 }
 
 /**
@@ -8903,9 +8971,11 @@ double polar_photonuclear(struct pumas_context * context, double ki, double kf)
         const double r = tmax * (tmin + t1) / (tmin * (tmax + t1));
         const double tp = tmax * t1 / ((tmax + t1) * pow(r, p) - tmax);
         const double ct = 1. -
-            (tp - tmin) / (2. * (e * (kf + s_shared->mass) -
-                                    s_shared->mass * s_shared->mass) -
-                              tmin);
+            (tp - tmin) /
+                (2. *
+                        (e * (kf + s_shared->mass) -
+                            s_shared->mass * s_shared->mass) -
+                    tmin);
 
         if (ct < 0.)
                 return 0.;
@@ -9183,9 +9253,7 @@ int math_svd(int m, int n, double * a, double * w, double * v, double * work)
                 s = 0.0;
                 scale = 0.0;
                 if (i < m && i != n - 1) {
-                        for (k = l; k < n; k++) {
-                                scale += fabs(ai[k]);
-                        }
+                        for (k = l; k < n; k++) { scale += fabs(ai[k]); }
                         if (scale != 0.0) {
                                 for (k = l; k < n; k++) {
                                         x = ai[k] / scale;
@@ -9196,9 +9264,7 @@ int math_svd(int m, int n, double * a, double * w, double * v, double * work)
                                 g = -dsign(sqrt(s), f);
                                 h = f * g - s;
                                 ai[l] = f - g;
-                                for (k = l; k < n; k++) {
-                                        work[k] = ai[k] / h;
-                                }
+                                for (k = l; k < n; k++) { work[k] = ai[k] / h; }
                                 if (i != m - 1) {
                                         for (j = l, aj = a + l * n; j < m;
                                              j++, aj += n) {
@@ -9211,9 +9277,7 @@ int math_svd(int m, int n, double * a, double * w, double * v, double * work)
                                                 }
                                         }
                                 }
-                                for (k = l; k < n; k++) {
-                                        ai[k] *= scale;
-                                }
+                                for (k = l; k < n; k++) { ai[k] *= scale; }
                         }
                 }
 
@@ -9258,9 +9322,7 @@ int math_svd(int m, int n, double * a, double * w, double * v, double * work)
                 l = i + 1;
                 g = w[i];
                 if (i != n - 1) {
-                        for (j = l; j < n; j++) {
-                                ai[j] = 0.0;
-                        }
+                        for (j = l; j < n; j++) { ai[j] = 0.0; }
                 }
                 if (g != 0.0) {
                         if (i != n - 1) {
@@ -9306,9 +9368,7 @@ int math_svd(int m, int n, double * a, double * w, double * v, double * work)
                                 /* (Following never attempted for l=0 because
                                  * work[0] is zero).
                                  */
-                                if (an + fabs(w[l1]) == an) {
-                                        break;
-                                }
+                                if (an + fabs(w[l1]) == an) { break; }
                         }
 
                         /* Cancellation of work[l] if l>0. */
@@ -9317,9 +9377,7 @@ int math_svd(int m, int n, double * a, double * w, double * v, double * work)
                                 s = 1.0;
                                 for (i = l; i <= k; i++) {
                                         f = s * work[i];
-                                        if (an + fabs(f) == an) {
-                                                break;
-                                        }
+                                        if (an + fabs(f) == an) { break; }
                                         g = w[i];
                                         h = math_rms(f, g);
                                         w[i] = h;
@@ -9356,9 +9414,7 @@ int math_svd(int m, int n, double * a, double * w, double * v, double * work)
                                 /* Not converged yet: set status if iteration
                                  * limit reached.
                                  */
-                                if (its >= ITMAX) {
-                                        jstat = k + 1;
-                                }
+                                if (its >= ITMAX) { jstat = k + 1; }
 
                                 /* Shift from bottom 2 x 2 minor. */
                                 x = w[l];
@@ -9484,9 +9540,7 @@ void math_svdsol(int m, int n, double * b, double * u, double * w, double * v,
         const double * vj;
         for (j = 0, vj = v; j < n; j++, vj += n) {
                 double s = 0.0;
-                for (jj = 0; jj < n; jj++) {
-                        s += vj[jj] * work[jj];
-                }
+                for (jj = 0; jj < n; jj++) { s += vj[jj] * work[jj]; }
                 x[j] = s;
         }
 }
@@ -9544,10 +9598,10 @@ static double electronic_energy_loss(
         /* Bethe-Bloch equation. */
         return 0.307075E-04 * s_shared->material_ZoA[m->index] *
             (0.5 / beta2 *
-                       (log(2. * ELECTRON_MASS * P2 * Qmax /
-                            (s_shared->mass * s_shared->mass * m->I * m->I)) -
-                           m->delta) -
-                   1. + 0.125 * Qmax * Qmax / P2 + Delta);
+                    (log(2. * ELECTRON_MASS * P2 * Qmax /
+                         (s_shared->mass * s_shared->mass * m->I * m->I)) -
+                        m->delta) -
+                1. + 0.125 * Qmax * Qmax / P2 + Delta);
 }
 
 static void tabulate_element(
@@ -9767,18 +9821,21 @@ enum pumas_return _pumas_tabulate(struct tabulation_data * data)
             s_shared->material_name[m->index]);
         fprintf(stream, "      Absorber with <Z/A> = %.5lf\n",
             s_shared->material_ZoA[m->index]);
-        fprintf(stream, " Sternheimer coef:  a     k=m_s   x_0    x_1    "
-                        "I[eV]   Cbar  delta0\n");
-        fprintf(stream, "                %7.4lf %7.4lf %7.4lf %7.4lf %6.1lf "
-                        "%7.4lf %.2lf\n",
+        fprintf(stream,
+            " Sternheimer coef:  a     k=m_s   x_0    x_1    "
+            "I[eV]   Cbar  delta0\n");
+        fprintf(stream,
+            "                %7.4lf %7.4lf %7.4lf %7.4lf %6.1lf "
+            "%7.4lf %.2lf\n",
             m->a, m->k, m->x_0, m->x_1, m->I * 1E+09, m->Cbar, m->delta0);
         fprintf(stream, "\n *** Table generated with PUMAS v%d.%d ***\n\n",
             PUMAS_VERSION, PUMAS_SUBVERSION);
         fprintf(stream,
             "      T         p     Ionization  brems     pair     "
             "photonuc  Radloss    dE/dx   CSDA Range  delta   beta\n");
-        fprintf(stream, "    [MeV]    [MeV/c]  -----------------------"
-                        "[MeV cm^2/g]------------------------  [g/cm^2]\n");
+        fprintf(stream,
+            "    [MeV]    [MeV/c]  -----------------------"
+            "[MeV cm^2/g]------------------------  [g/cm^2]\n");
 
         /* Loop on the kinetic energy values and print the table. */
         double X = 0., dedx_last = 0.;
@@ -9815,8 +9872,9 @@ enum pumas_return _pumas_tabulate(struct tabulation_data * data)
                 const double beta = p / (data->kinetic[i] + s_shared->mass);
                 const double MeV = 1E+03;
                 const double cmgs = 1E+04;
-                fprintf(stream, "  %.3lE %.3lE %.3lE %.3lE %.3lE %.3lE "
-                                "%.3lE %.3lE %.3lE %7.4lf %7.5lf\n",
+                fprintf(stream,
+                    "  %.3lE %.3lE %.3lE %.3lE %.3lE %.3lE "
+                    "%.3lE %.3lE %.3lE %7.4lf %7.5lf\n",
                     data->kinetic[i] * MeV, p * MeV, elec * cmgs,
                     brad[0] * cmgs, brad[1] * cmgs, brad[2] * cmgs,
                     radloss * cmgs, dedx * cmgs, X * MeV / cmgs, m->delta,
