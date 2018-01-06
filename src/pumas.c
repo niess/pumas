@@ -768,7 +768,7 @@ static polar_function_t * del_randomise_reverse(
     struct pumas_context * context, struct pumas_state * state, int material);
 static void del_randomise_power_law(struct pumas_context * context,
     double alpha, double xmin, double xmax, double * p_r, double * p_w);
-static void del_randomise_zigourat(struct pumas_context * context,
+static void del_randomise_ziggurat(struct pumas_context * context,
     struct pumas_state * state, dcs_function_t * dcs_func,
     const struct atomic_element * element, double xmin, double xmax,
     float * cdf_sampling);
@@ -4030,7 +4030,7 @@ double transport_hard_coulomb_objective(double mu, void * parameters)
  * `NULL` if none.
  *
  * Below 10 GeV the DEL is randomised from a power law bias PDF. Above,
- * a Zigourat algorithm is used.
+ * a ziggurat algorithm is used.
  */
 
 polar_function_t * del_randomise_forward(
@@ -4122,7 +4122,7 @@ polar_function_t * del_randomise_forward(
                                             (float)(hK * y[i]);
                         }
                 }
-                del_randomise_zigourat(
+                del_randomise_ziggurat(
                     context, state, dcs_func, element, xmin, xmax, dcs_samples);
         }
 
@@ -4228,7 +4228,7 @@ void del_randomise_power_law(struct pumas_context * context, double alpha,
 }
 
 /**
- * Randomise the DEL using a Zigourat like algorithm.
+ * Randomise the DEL using a ziggurat like algorithm.
  *
  * @param context The simulation context.
  * @param alpha   The power law exponent.
@@ -4239,7 +4239,7 @@ void del_randomise_power_law(struct pumas_context * context, double alpha,
  * be a decreasing function of the energy loss. It is bounded by a piecewise
  * uniform pdf.
  */
-void del_randomise_zigourat(struct pumas_context * context,
+void del_randomise_ziggurat(struct pumas_context * context,
     struct pumas_state * state, dcs_function_t * dcs_func,
     const struct atomic_element * element, double xmin, double xmax,
     float * dcs_sampling)
@@ -8129,7 +8129,7 @@ void compute_ZoA(int material)
  * @param [in] dcs_func The DCS function.
  * @param [in] element  The target atomic element.
  *
- * The DCS is also tabulated at specific values for the Zigourat algorithm.
+ * The DCS is also tabulated at specific values for the ziggurat algorithm.
  */
 enum pumas_return compute_dcs_model(
     dcs_function_t * dcs_func, struct atomic_element * element)
