@@ -715,6 +715,8 @@ static double dcs_ionisation(
     const struct atomic_element * element, double K, double q);
 static double dcs_ionisation_integrate(
     int mode, const struct atomic_element * element, double K, double xlow);
+static double dcs_ionisation_randomise(struct pumas_context * context,
+        const struct atomic_element * element, double K, double xlow);
 static double dcs_evaluate(struct pumas_context * context,
     dcs_function_t * dcs_func, const struct atomic_element * element, double K,
     double q);
@@ -4063,6 +4065,12 @@ polar_function_t * del_randomise_forward(
                         hK = (state->kinetic - k[0]) / (k[1] - k[0]);
                         xmin = hK * y[1] + (1. - hK) * y[0];
                 }
+        }
+
+        if ((info.process == 3) && (state->kinetic <= 1.E+01)) {
+                state->kinetic = dcs_ionisation_randomise(
+                    context, element, state->kinetic, xmin);
+                return polar_get(info.process);
         }
 
         /* Set the upper fractionnal threshold. */
@@ -8674,12 +8682,6 @@ int dcs_photonuclear_check(double K, double q)
  */
 double dcs_ionisation(const struct atomic_element * element, double K, double q)
 {
-        /* Below this limit the model leads to  an un-physical energy loss at
-         * low energies.
-         */
-#define IONISATION_X_LOW 5E-02
-        if (q < IONISATION_X_LOW * K) return 0.;
-
         const double Z = element->Z;
         const double A = element->A;
         const double P2 = K * (K + 2. * s_shared->mass);
@@ -8687,8 +8689,11 @@ double dcs_ionisation(const struct atomic_element * element, double K, double q)
         const double Wmax = 2. * ELECTRON_MASS * P2 /
             (s_shared->mass * s_shared->mass +
                 ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
+#define IONISATION_SEL_CUT 3.
+        if ((Wmax < IONISATION_SEL_CUT * X_FRACTION * K) || (q > Wmax))
+                return 0.;
         const double Wmin = 0.62 * element->I;
-        if ((q <= Wmin) || (q > Wmax)) return 0.;
+        if (q <= Wmin) return 0.;
 
         /* Close interactions for Q >> atomic binding energies. */
         const double a0 = 0.5 / P2;
@@ -8722,9 +8727,6 @@ double dcs_ionisation(const struct atomic_element * element, double K, double q)
 double dcs_ionisation_integrate(
     int mode, const struct atomic_element * element, double K, double xlow)
 {
-        if (xlow < IONISATION_X_LOW) xlow = IONISATION_X_LOW;
-        double qlow = K * xlow;
-
         const double Z = element->Z;
         const double A = element->A;
         const double P2 = K * (K + 2. * s_shared->mass);
@@ -8732,7 +8734,10 @@ double dcs_ionisation_integrate(
         const double Wmax = 2. * ELECTRON_MASS * P2 /
             (s_shared->mass * s_shared->mass +
                 ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
+        if (Wmax < IONISATION_SEL_CUT * X_FRACTION * K)
+                return 0.;
         double Wmin = 0.62 * element->I;
+        const double qlow = K * xlow;
         if (qlow >= Wmin) Wmin = qlow;
 
         /* Check the bounds. */
@@ -8753,6 +8758,48 @@ double dcs_ionisation_integrate(
         }
 
         return 1.535336E-05 * Z / A * I;
+}
+
+double dcs_ionisation_randomise(struct pumas_context * context,
+    const struct atomic_element * element, double K, double xlow)
+{
+        const double P2 = K * (K + 2. * s_shared->mass);
+        const double E = K + s_shared->mass;
+        const double Wmax = 2. * ELECTRON_MASS * P2 /
+            (s_shared->mass * s_shared->mass +
+                ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
+        if (Wmax < IONISATION_SEL_CUT * X_FRACTION * K)
+                return K;
+        double Wmin = 0.62 * element->I;
+        const double qlow = K * xlow;
+        if (qlow >= Wmin) Wmin = qlow;
+
+        /* Close interactions for Q >> atomic binding energies. */
+        const double a0 = 0.5 / P2;
+        const double a1 = -1. / Wmax;
+        const double a2 = E * E / P2;
+
+        const double p0 = a0 * (Wmax - Wmin);
+        const double p2 = a2 * (1. / Wmin - 1. / Wmax);
+        double q;
+        for (;;) {
+                /* Inverse sampling using an enveloppe. */
+                const double z = context->random(context) * (p0 + p2);
+                if (z <= p0) {
+                        q = (Wmax - Wmin) * context->random(context);
+                } else {
+                        q = Wmin / (1. - context->random(context) *
+                            (1. - Wmin / Wmax));
+                }
+
+                /* Rejection sampling. */
+                const double r0 = a0 + a2 / (q * q);
+                const double r1 = r0 + a1 / q;
+                if (context->random(context) * r0 < r1)
+                        break;
+        }
+
+        return K - q;
 }
 
 /**
