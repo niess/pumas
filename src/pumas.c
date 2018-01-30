@@ -70,10 +70,11 @@
  */
 #define X_FRACTION 5E-02
 /**
- * Exponent of the differential cross section approximation in Backward
+ * Exponents of the differential cross section approximation in Backward
  * Monte-Carlo (BMC).
  */
-#define RMC_ALPHA 1.4
+#define RMC_ALPHA_LOW 2.5
+#define RMC_ALPHA_HIGH 1.4
 /**
  * Ratio of the Coulomb interaction length, restricted to catastrophic events,
  * to the multiple scattering 1st transport path length.
@@ -4045,6 +4046,15 @@ polar_function_t * del_randomise_forward(
         dcs_function_t * const dcs_func = dcs_get(info.process);
         const struct atomic_element * element = s_shared->element[info.element];
 
+        if (info.process == 3) {
+                const double m1 = s_shared->mass - ELECTRON_MASS;
+                if (state->kinetic <= 0.5 * m1 * m1 / ELECTRON_MASS) {
+                        state->kinetic = dcs_ionisation_randomise(
+                            context, element, state->kinetic, X_FRACTION);
+                        return polar_get(info.process);
+                }
+        }
+
         /* Interpolate the lower fractional threshold. */
         int row;
         double xmin, hK;
@@ -4065,12 +4075,6 @@ polar_function_t * del_randomise_forward(
                         hK = (state->kinetic - k[0]) / (k[1] - k[0]);
                         xmin = hK * y[1] + (1. - hK) * y[0];
                 }
-        }
-
-        if ((info.process == 3) && (state->kinetic <= 1.E+01)) {
-                state->kinetic = dcs_ionisation_randomise(
-                    context, element, state->kinetic, xmin);
-                return polar_get(info.process);
         }
 
         /* Set the upper fractionnal threshold. */
@@ -4096,8 +4100,9 @@ polar_function_t * del_randomise_forward(
                     context, alpha[info.process], xmin, xmax, &r, &w_bias);
 
                 /* Update the kinetic energy and the Monte-Carlo weight. */
-                const double d =
-                    dcs_func(element, state->kinetic, state->kinetic * (1 - r));
+                const double d = dcs_func(element, state->kinetic,
+                    state->kinetic * (1 - r)) * state->kinetic /
+                    (state->kinetic + s_shared->mass);
                 state->kinetic *= r;
                 state->weight *= info.reverse.weight * d * w_bias;
         } else {
@@ -4160,8 +4165,21 @@ polar_function_t * del_randomise_reverse(
             (kf >= kt * (1. - X_FRACTION)) ? X_FRACTION : 1. - kf / kt;
 
         /* Randomise the initial energy with a bias model. */
+        double xmax, alpha;
+        const double m1 = s_shared->mass - ELECTRON_MASS;
+        if (state->kinetic < 0.5 * m1 * m1 / ELECTRON_MASS) {
+                const double m2 = s_shared->mass + ELECTRON_MASS;
+                xmax = 2. * ELECTRON_MASS * (state->kinetic +
+                    2. * s_shared->mass) / (m2 * m2);
+                if (xmax < xf) return NULL;
+                alpha = RMC_ALPHA_LOW;
+        } else {
+                alpha = RMC_ALPHA_HIGH;
+                xmax = 1.;
+        }
+
         double r, w_bias;
-        del_randomise_power_law(context, RMC_ALPHA, xf, 1., &r, &w_bias);
+        del_randomise_power_law(context, alpha, xf, xmax, &r, &w_bias);
         w_bias /= r; /* Jacobian factor. */
         state->kinetic /= r;
 
@@ -4175,7 +4193,8 @@ polar_function_t * del_randomise_reverse(
         /* Update the MC weight. */
         const double f = dcs_evaluate(context, dcs_func, element,
                              state->kinetic, state->kinetic - kf) *
-            info.reverse.weight;
+            info.reverse.weight * state->kinetic /
+            (state->kinetic + s_shared->mass);
         state->weight *= w_bias * f *
             del_cross_section(context, material, state->kinetic) /
             (del_cross_section(context, material, kf) * (1. - pCEL));
@@ -8082,7 +8101,9 @@ double compute_dcs_integral(int mode, const struct atomic_element * element,
         /* Let us use the analytical form for ionisation when radiative
          * corrections can be neglected.
          */
-        if ((kinetic <= 10.) && (dcs == &dcs_ionisation))
+        const double m1 = s_shared->mass - ELECTRON_MASS;
+        if ((dcs == &dcs_ionisation) &&
+            (kinetic <= 0.5 * m1 * m1 / ELECTRON_MASS))
                 return dcs_ionisation_integrate(mode, element, kinetic, xlow);
 
         /*  We integrate over the recoil energy using a logarithmic sampling. */
@@ -8703,9 +8724,13 @@ double dcs_ionisation(const struct atomic_element * element, double K, double q)
             1.535336E-05 * E * Z / A * (a0 + 1. / q * (a1 + a2 / q));
 
         /* Radiative correction. */
-        const double L1 = log(1. + 2. * q / ELECTRON_MASS);
-        const double Delta = 1.16141E-03 * L1 *
-            (log(4. * E * (E - q) / (s_shared->mass * s_shared->mass)) - L1);
+        double Delta = 0.;
+        const double m1 = s_shared->mass - ELECTRON_MASS;
+        if (K >= 0.5 * m1 * m1 / ELECTRON_MASS) {
+                const double L1 = log(1. + 2. * q / ELECTRON_MASS);
+                Delta = 1.16141E-03 * L1 * (log(4. * E * (E - q) /
+                    (s_shared->mass * s_shared->mass)) - L1);
+        }
 
         return cs * (1. + Delta);
 }
