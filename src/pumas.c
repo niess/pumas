@@ -4100,9 +4100,8 @@ polar_function_t * del_randomise_forward(
                     context, alpha[info.process], xmin, xmax, &r, &w_bias);
 
                 /* Update the kinetic energy and the Monte-Carlo weight. */
-                const double d = dcs_func(element, state->kinetic,
-                    state->kinetic * (1 - r)) * state->kinetic /
-                    (state->kinetic + s_shared->mass);
+                const double d = dcs_evaluate(context, dcs_func, element,
+                                     state->kinetic, state->kinetic * (1 - r));
                 state->kinetic *= r;
                 state->weight *= info.reverse.weight * d * w_bias;
         } else {
@@ -4193,8 +4192,7 @@ polar_function_t * del_randomise_reverse(
         /* Update the MC weight. */
         const double f = dcs_evaluate(context, dcs_func, element,
                              state->kinetic, state->kinetic - kf) *
-            info.reverse.weight * state->kinetic /
-            (state->kinetic + s_shared->mass);
+            info.reverse.weight;
         state->weight *= w_bias * f *
             del_cross_section(context, material, state->kinetic) /
             (del_cross_section(context, material, kf) * (1. - pCEL));
@@ -8106,16 +8104,16 @@ double compute_dcs_integral(int mode, const struct atomic_element * element,
             (kinetic <= 0.5 * m1 * m1 / ELECTRON_MASS))
                 return dcs_ionisation_integrate(mode, element, kinetic, xlow);
 
-        /*  We integrate over the recoil energy using a logarithmic sampling. */
+        /* We integrate over the recoil energy using a logarithmic sampling. */
         double dcsint = 0.;
         double x0 = log(kinetic * xlow), x1 = log(kinetic);
         math_gauss_quad(nint, &x0, &x1); /* Initialisation. */
 
         double xi, wi;
         while (math_gauss_quad(0, &xi, &wi) == 0) { /* Iterations. */
-                const double ki = exp(xi);
-                double y = dcs(element, kinetic, ki) * ki;
-                if (mode != 0) y *= ki;
+                const double qi = exp(xi);
+                double y = dcs(element, kinetic, qi) * qi;
+                if (mode != 0) y *= qi;
                 dcsint += y * wi;
         }
         dcsint /= kinetic + s_shared->mass;
@@ -8194,7 +8192,8 @@ enum pumas_return compute_dcs_model(
                 for (j = 0; j < m - DCS_SAMPLING_N; j++) {
                         const double nu = exp(x0 + j * dx);
                         x[j] = nu;
-                        const double dcs = dcs_func(element, K, nu * K);
+                        const double dcs = dcs_func(element, K, nu * K) * K /
+                            (K + s_shared->mass);
                         if (dcs > 0.) {
                                 y[j] = dcs;
                                 if (first) {
@@ -8217,7 +8216,8 @@ enum pumas_return compute_dcs_model(
                 /* Patch a gcc warning here. With -O2 j < m != j-m < 0 ... */
                 {
                         x[j] = nu;
-                        const double tmp = dcs_func(element, K, nu * K);
+                        const double tmp = dcs_func(element, K, nu * K) * K /
+                            (K + s_shared->mass);
                         c[j + n + DCS_SAMPLING_N - m] = (float)tmp;
                         if (nu <= x[j1]) {
                                 y[j] = tmp;
@@ -8710,8 +8710,7 @@ double dcs_ionisation(const struct atomic_element * element, double K, double q)
         const double Wmax = 2. * ELECTRON_MASS * P2 /
             (s_shared->mass * s_shared->mass +
                 ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
-#define IONISATION_SEL_CUT 3.
-        if ((Wmax < IONISATION_SEL_CUT * X_FRACTION * K) || (q > Wmax))
+        if ((Wmax < X_FRACTION * K) || (q > Wmax))
                 return 0.;
         const double Wmin = 0.62 * element->I;
         if (q <= Wmin) return 0.;
@@ -8759,7 +8758,7 @@ double dcs_ionisation_integrate(
         const double Wmax = 2. * ELECTRON_MASS * P2 /
             (s_shared->mass * s_shared->mass +
                 ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
-        if (Wmax < IONISATION_SEL_CUT * X_FRACTION * K)
+        if (Wmax < X_FRACTION * K)
                 return 0.;
         double Wmin = 0.62 * element->I;
         const double qlow = K * xlow;
@@ -8793,7 +8792,7 @@ double dcs_ionisation_randomise(struct pumas_context * context,
         const double Wmax = 2. * ELECTRON_MASS * P2 /
             (s_shared->mass * s_shared->mass +
                 ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
-        if (Wmax < IONISATION_SEL_CUT * X_FRACTION * K)
+        if (Wmax < X_FRACTION * K)
                 return K;
         double Wmin = 0.62 * element->I;
         const double qlow = K * xlow;
@@ -8838,14 +8837,18 @@ double dcs_ionisation_randomise(struct pumas_context * context,
  * @return The DCS value or `0`.
  *
  * This routine encapsulate the evluation of DCS during the MC. It takes care of
- * checking whether an approximate model can be used or not.
+ * checking whether an approximate model can be used or not. In addition it
+ * applies a Jacobian weight factor for changing from nu = q / E to x = q / K.
  */
 double dcs_evaluate(struct pumas_context * context, dcs_function_t * dcs_func,
     const struct atomic_element * element, double K, double q)
 {
+        /* Compute the Jacobian factor. */
+        const double wj = K / (K + s_shared->mass);
+
         /* Check if the process has a valid tabulated model. */
         if (dcs_func == dcs_ionisation)
-                return dcs_func(element, K, q);
+                return dcs_func(element, K, q) * wj;
         else if ((dcs_func == dcs_photonuclear) && dcs_photonuclear_check(K, q))
                 return 0.;
 
@@ -8853,9 +8856,9 @@ double dcs_evaluate(struct pumas_context * context, dcs_function_t * dcs_func,
         const double min_k = s_shared ?
             *table_get_K(s_shared->dcs_model_offset) :
             DCS_MODEL_MIN_KINETIC;
-        if (!s_shared || (K <= min_k) || (q < X_FRACTION * q) ||
+        if (!s_shared || (K <= min_k) || (q < X_FRACTION * K) ||
             (q > DCS_MODEL_MAX_FRACTION * K))
-                return dcs_func(element, K, q);
+                return dcs_func(element, K, q) * wj;
 
         /* Get the coefficients of the polynomial approximation. */
         const int index = dcs_get_index(dcs_func);
@@ -9688,7 +9691,7 @@ static void tabulate_element(
                 const double k = kinetic[ik];
                 double x = 1E-06 / k;
                 if (x < 1E-05) x = 1E-05;
-                const int n = (int)(-1E+02 * log10(x)); /*100 pts per decade. */
+                const int n = (int)(-1E+02 * log10(x)); /* 100 pts per decade. */
                 for (ip = 0; ip < N_DEL_PROCESSES - 1; ip++, v++)
                         *v = compute_dcs_integral(
                             1, element, k, dcs_get(ip), x, n);
