@@ -2000,7 +2000,7 @@ enum pumas_return pumas_transport(
                 return PUMAS_RETURN_SUCCESS;
         } else if (step_max_medium > 0.)
                 step_max_medium += 0.5 * STEP_MIN;
-        struct medium_locals locals;
+        struct medium_locals locals = { { 0., { 0., 0., 0. } } };
         const double step_max_locals =
             transport_set_locals(medium, state, &locals);
         if ((step_max_locals > 0.) && (step_max_locals < step_max_medium))
@@ -3650,6 +3650,7 @@ enum pumas_return transport_with_stepping(struct pumas_context * context,
                                 medium = new_medium;
                                 if (medium == NULL) break;
                                 material = medium->material;
+                                memset(locals, 0x0, sizeof(*locals));
                                 step_max_locals =
                                     transport_set_locals(medium, state, locals);
                                 if (locals->api.density <= 0.)
