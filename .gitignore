@@ -8,3 +8,9 @@ bin
 
 # Ignore ctags.
 .tags
+
+# Ignore PUMAS materials
+materials
+
+# Ignore any wiki
+wiki

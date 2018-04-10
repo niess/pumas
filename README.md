@@ -26,7 +26,10 @@ be used on other systems with the provided [CMakeLists.txt](CMakeLists.txt).
 ## Documentation
 
 The API documentation can be found
-[here](https://niess.github.io/pumas/docs/index.html#HEAD).
+[here](https://niess.github.io/pumas/docs/index.html#HEAD). For tutorials you
+can check the [wiki](https://github.com/niess/pumas/wiki/Tutorials) (**under
+construction**). You might also directly browse the provided
+[examples](examples).
 
 ## Materials
 
@@ -40,4 +43,6 @@ Note however that those are slightly less accurate than PUMAS ones, above
 
 ## License
 The PUMAS library is  under the **GNU LGPLv3** license. See the provided
-`LICENSE` and `COPYING.LESSER` files.
+[LICENSE](LICENSE) and [COPYING.LESSER](COPYING.LESSER) files. The
+[examples](examples) however have a separate public domain license allowing them
+to be copied without restrictions.

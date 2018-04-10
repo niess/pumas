@@ -1,25 +1,27 @@
-CC := gcc
-CFLAGS := -O2 -std=c99 -pedantic -fPIC -Wall -D_BUILD_TABULATE
+CFLAGS := -O2 -std=c99 -pedantic -Wall -D_BUILD_TABULATE
 INC := -Iinclude
+LIBS := -lm -Llib -lpumas -Wl,-rpath,$(PWD)/lib
 
-.PHONY: lib clean tabulate
+.PHONY: lib clean examples tabulate
 
 lib: lib/libpumas.so
 	@rm -f *.o
 
-lib/lib%.so: %.o
+lib/libpumas.so: src/pumas.c include/pumas.h
 	@mkdir -p lib
-	@$(CC) -o $@ $(CFLAGS) -shared $(INC) $<
-
-%.o: src/%.c include/%.h
-	@$(CC) $(CFLAGS) $(INC) -o $@ -c $<
+	@$(CC) -o $@ $(CFLAGS) -fPIC -shared $(INC) $<
 
 clean:
-	@rm -rf lib bin *.o
+	@rm -rf lib bin
+
+examples: bin/example-straight bin/example-load bin/example-geometry
+
+bin/example-%: examples/%.c lib/libpumas.so
+	@mkdir -p bin
+	@$(CC) $(CFLAGS) $(INC) -o $@ $< $(LIBS)
 
 tabulate: bin/pumas-tabulate
-	@rm -f pumas.o
 
 bin/pumas-%: src/pumas-%.c lib
 	@mkdir -p bin
-	@$(CC) $(CFLAGS) $(INC) -o $@ $< -lm -Llib -lpumas
+	@$(CC) $(CFLAGS) -Wno-unused-function $(INC) -o $@ $< $(LIBS)

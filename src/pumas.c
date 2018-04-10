@@ -4727,7 +4727,8 @@ enum pumas_return step_transport(struct pumas_context * context,
                             context->kinetic_limit;
                         if (k1 <= kinetic_min) kinetic_limit = kinetic_min;
                 } else {
-                        if (k1 >= context->kinetic_limit)
+                        if ((context->kinetic_limit > 0.) &&
+                            (k1 >= context->kinetic_limit))
                                 kinetic_limit = context->kinetic_limit;
                 }
                 if (kinetic_limit >= 0.) {
