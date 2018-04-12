@@ -45,7 +45,7 @@
 
 /* For the versioning. */
 #define PUMAS_VERSION 0
-#define PUMAS_SUBVERSION 10
+#define PUMAS_SUBVERSION 11
 
 /* Some tuning factors as macros. */
 /**

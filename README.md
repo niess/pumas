@@ -23,14 +23,6 @@ needs to be compiled with `_BUILD_TABULATE` being defined. On Linux you might
 try and adapt the provided [Makefile](Makefile). Alternatively, CMake can also
 be used on other systems with the provided [CMakeLists.txt](CMakeLists.txt).
 
-## Documentation
-
-The API documentation can be found
-[here](https://niess.github.io/pumas/docs/index.html#HEAD). For tutorials you
-can check the [wiki](https://github.com/niess/pumas/wiki/Tutorials) (**under
-construction**). You might also directly browse the provided
-[examples](examples).
-
 ## Materials
 
 A compilation of materials for PUMAS is hosted on GitHub as separate project,
@@ -40,6 +32,20 @@ of tabulations provided online by the
 [PDG](http://pdg.lbl.gov/2016/AtomicNuclearProperties/index.html).
 Note however that those are slightly less accurate than PUMAS ones, above
 100 TeV.
+
+## Documentation
+
+The API documentation can be found
+[here](https://niess.github.io/pumas/docs/index.html#HEAD). For tutorials you
+can check the [wiki](https://github.com/niess/pumas/wiki/Tutorials) (**under
+construction**). You might also directly browse the provided
+[examples](examples).
+
+_**Note** that for the examples to work you need the corresponding MDF and
+energy loss tables. Those can be downloaded with git, as following:_
+```bash
+git clone https://gitub.com/niess/pumas-materials materials
+```
 
 ## License
 The PUMAS library is  under the **GNU LGPLv3** license. See the provided
