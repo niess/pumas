@@ -1,11 +1,36 @@
+/*
+ * This is free and unencumbered software released into the public domain.
+ *
+ * Anyone is free to copy, modify, publish, use, compile, sell, or
+ * distribute this software, either in source code form or as a compiled
+ * binary, for any purpose, commercial or non-commercial, and by any
+ * means.
+ *
+ * In jurisdictions that recognize copyright laws, the author or authors
+ * of this software dedicate any and all copyright interest in the
+ * software to the public domain. We make this dedication for the benefit
+ * of the public at large and to the detriment of our heirs and
+ * successors. We intend this dedication to be an overt act of
+ * relinquishment in perpetuity of all present and future rights to this
+ * software under copyright law.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+ * OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ * ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ * OTHER DEALINGS IN THE SOFTWARE.
+ *
+ * For more information, please refer to <http://unlicense.org>
+ */
+
 /* This example illustrates the backward computation of a transmitted through
  * a simple geometry composed of two layers: Standard Rock and Air. The Air
  * medium has an exponential density profile. If a maximum kinetic energy is
  * provided the flux is integrated between kinetic_min and kinetic_max.
  * Otherwise a point estimate of the flux is done, at the provided kinetic
  * energy.
- *
- * This example is in the public domain. Feel free to copy and modify it.
  */
 
 /* Standard library includes */
@@ -246,7 +271,7 @@ int main(int narg, char * argv[])
                 while (state.kinetic < kinetic_threshold - FLT_EPSILON) {
                         if (state.kinetic < 1E+02 - FLT_EPSILON) {
                                 /* Below 100 GeV do a detailed simulation
-                                 * à la Geant>4, including transverse transport
+                                 * à la Geant4, including transverse transport
                                  */
                                 context->scheme = PUMAS_SCHEME_DETAILED;
                                 context->longitudinal = 0;

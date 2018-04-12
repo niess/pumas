@@ -19,13 +19,15 @@ Building the library requires only the files [pumas.h](include/pumas.h) and
 also needs [optparse](https://github.com/skeeto/optparse) (packaged with the
 PUMAS source) and the files [pumas-tabulate.c](src/pumas-tabulate.c) and
 [pumas-tabulate.h](src/pumas-tabulate.h). In the later case the PUMAS library
-needs to be compiled with `_BUILD_TABULATE` being defined. On Linux you might
-try and adapt the provided [Makefile](Makefile). Alternatively, CMake can also
-be used on other systems with the provided [CMakeLists.txt](CMakeLists.txt).
+needs to be compiled with `_BUILD_TABULATE` being defined. On UNIX you might
+directly use the provided [Makefile](Makefile). Alternatively, or on other
+platforms, CMake can be used with the provided
+[CMakeLists.txt](CMakeLists.txt). More detailed instructions can be found on
+the [wiki](https://github.com/niess/pumas/wiki/Installation).
 
 ## Materials
 
-A compilation of materials for PUMAS is hosted on GitHub as separate project,
+A compilation of materials for PUMAS is hosted on GitHub as a separate project,
 [pumas-materials](https://github.com/niess/pumas-materials). These tables have
 been generated with `pumas-tabulate`. For muons, one can also use the whole set
 of tabulations provided online by the
