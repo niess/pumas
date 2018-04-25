@@ -38,10 +38,9 @@ Note however that those are slightly less accurate than PUMAS ones, above
 ## Documentation
 
 The API documentation can be found
-[here](https://niess.github.io/pumas/docs/index.html#HEAD). For tutorials you
-can check the [wiki](https://github.com/niess/pumas/wiki/Tutorials) (**under
-construction**). You might also directly browse the provided
-[examples](examples).
+[here](https://niess.github.io/pumas-docs). For tutorials one can check the
+[wiki](https://github.com/niess/pumas/wiki/Tutorials). You might also directly
+browse the provided [examples](examples).
 
 _**Note** that for the examples to work you need the corresponding MDF and
 energy loss tables. Those can be downloaded with git, as following:_

@@ -9,10 +9,10 @@ bin
 # Ignore ctags.
 .tags
 
-# Ignore PUMAS materials
+# Ignore PUMAS extensions
+docs
 materials
-
-# Ignore any wiki
+pages
 wiki
 
 # Ignore temporary build(s)
