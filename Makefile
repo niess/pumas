@@ -1,6 +1,6 @@
 CFLAGS := -O2 -std=c99 -pedantic -Wall -D_BUILD_TABULATE
 INC := -Iinclude
-LIBS := -lm -Llib -lpumas -Wl,-rpath,$(PWD)/lib
+LIBS := -Llib -lpumas -Wl,-rpath,$(PWD)/lib -lm
 
 .PHONY: lib clean examples tabulate
 

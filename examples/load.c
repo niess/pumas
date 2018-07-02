@@ -81,7 +81,7 @@ static enum pumas_return load_pumas_materials(
 int main(int narg, char * argv[])
 {
         /* Check the number of arguments */
-        if (narg < 3) {
+        if (narg < 4) {
                 fprintf(stderr,
                     "Usage: %s [path/to/mdf] [path/to/dedx] [path/to/dump]\n",
                     argv[0]);
