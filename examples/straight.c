@@ -119,8 +119,9 @@ double spectrum_gaisser(double cos_theta, double kinetic)
         const double E_K = 850.;
         const double E = kinetic + 0.10566;
         const double E_star = E * cos_theta;
-        return 1.4 * pow(E, -2.7) * (r_pi / (1. + 1.1 * E_star / E_pi) +
-                                        r_K / (1. + 1.1 * E_star / E_K));
+        return 1.4E+03 * pow(E, -2.7) *
+            (r_pi / (1. + 1.1 * E_star / E_pi) +
+                r_K / (1. + 1.1 * E_star / E_K));
 }
 
 /* The executable main entry point */
@@ -128,8 +129,9 @@ int main(int narg, char * argv[])
 {
         /* Check the number of arguments */
         if (narg < 4) {
-                fprintf(stderr, "Usage: %s ROCK_THICKNESS ELEVATION "
-                                "KINETIC_ENERGY[_MIN] [KINETIC_ENERGY_MAX]\n",
+                fprintf(stderr,
+                    "Usage: %s ROCK_THICKNESS ELEVATION "
+                    "KINETIC_ENERGY[_MIN] [KINETIC_ENERGY_MAX]\n",
                     argv[0]);
                 exit_gracefully(EXIT_FAILURE);
         }
@@ -204,7 +206,7 @@ int main(int narg, char * argv[])
                         kf = kinetic_min;
                         wf = 1;
                 }
-                struct pumas_state state = {.charge = -1.,
+                struct pumas_state state = { .charge = -1.,
                         .kinetic = kf,
                         .weight = wf,
                         .direction = { -sin_theta, 0., -cos_theta } };
