@@ -52,29 +52,36 @@ static enum pumas_return load_pumas_materials(
                 fclose(stream);
                 return pumas_error_raise();
         }
+        pumas_error_catch(0);
 
         /* If no binary dump, initialise from the MDF and dump */
         enum pumas_return rc;
-        if ((rc = pumas_initialise(particle, mdf, dedx, NULL)) !=
+        if ((rc = pumas_initialise(particle, mdf, dedx)) !=
             PUMAS_RETURN_SUCCESS)
-                return pumas_error_raise();
+                return rc;
 
         /* Dump the library configuration */
         stream = fopen(dump, "wb+");
         if (stream == NULL) {
-                /* Disable the error catching */
-                pumas_error_catch(0);
-
                 /* Check for an error handler and call it whenever */
                 rc = PUMAS_RETURN_PATH_ERROR;
                 pumas_handler_cb * handler = pumas_error_handler_get();
                 if (handler != NULL) handler(rc, NULL, NULL);
-
                 return rc;
         }
+
+        pumas_error_catch(1);
         pumas_dump(stream);
         fclose(stream);
         return pumas_error_raise();
+}
+
+/* Dump any error summary to stderr */
+static void print_error(
+    enum pumas_return rc, pumas_function_t * caller, const char * message)
+{
+        fputs("pumas: library error. See details below\n", stderr);
+        fprintf(stderr, "error: %s\n", message);
 }
 
 /* The executable main entry point */
@@ -87,6 +94,9 @@ int main(int narg, char * argv[])
                     argv[0]);
                 exit(EXIT_FAILURE);
         }
+
+        /* Redirect error messages to stderr */
+        pumas_error_handler_set(&print_error);
 
         /* Load and pre-compute the given material data */
         enum pumas_return rc = load_pumas_materials(argv[1], argv[2], argv[3]);

@@ -45,7 +45,7 @@
 
 /* For the versioning. */
 #define PUMAS_VERSION 0
-#define PUMAS_SUBVERSION 11
+#define PUMAS_SUBVERSION 12
 
 /* Some tuning factors as macros. */
 /**
@@ -157,9 +157,71 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-/* Helper macro for returning an encapsulated error code. */
-#define PUMAS_RETURN(rc, caller)                                               \
-        return pumas_return(rc, (pumas_function_t *)caller)
+/* Helper macros for managing errors. */
+#define ERROR_INITIALISE(caller)                                               \
+        struct error_context error_data = { .code = PUMAS_RETURN_SUCCESS,      \
+                .function = (pumas_function_t *)caller };                      \
+        struct error_context * error_ = &error_data;
+
+#define ERROR_MESSAGE(rc, message)                                             \
+        error_format(error_, rc, __FILE__, __LINE__, message),                 \
+            error_raise(error_)
+
+#define ERROR_FORMAT(rc, format, ...)                                          \
+        error_format(error_, rc, __FILE__, __LINE__, format, __VA_ARGS__),     \
+            error_raise(error_)
+
+#define ERROR_REGISTER(rc, message)                                            \
+        error_format(error_, rc, __FILE__, __LINE__, message)
+
+#define ERROR_VREGISTER(rc, format, ...)                                       \
+        error_format(error_, rc, __FILE__, __LINE__, format, __VA_ARGS__)
+
+#define ERROR_RAISE() error_raise(error_)
+
+#define ERROR_ALREADY_INITIALISED()                                            \
+        ERROR_MESSAGE(PUMAS_RETURN_INITIALISATION_ERROR,                       \
+            "the PUMAS library is already initialised")
+
+#define ERROR_NOT_INITIALISED()                                                \
+        ERROR_MESSAGE(PUMAS_RETURN_INITIALISATION_ERROR,                       \
+            "the PUMAS library has not been initialised")
+
+#define ERROR_INVALID_SCHEME(scheme)                                           \
+        ERROR_FORMAT(PUMAS_RETURN_INDEX_ERROR,                                 \
+            "invalid energy loss scheme [%d]", scheme)
+
+#define ERROR_INVALID_MATERIAL(material)                                       \
+        ERROR_FORMAT(                                                          \
+            PUMAS_RETURN_INDEX_ERROR, "invalid material index [%d]", material)
+
+#define ERROR_REGISTER_MEMORY()                                                \
+        ERROR_REGISTER(PUMAS_RETURN_MEMORY_ERROR, "could not allocate memory")
+
+#define ERROR_REGISTER_EOF(path)                                               \
+        ERROR_VREGISTER(PUMAS_RETURN_END_OF_FILE,                              \
+            "abnormal end of file when parsing `%s'", path)
+
+#define ERROR_REGISTER_UNEXPECTED_TAG(tag, path, line)                         \
+        ERROR_VREGISTER(PUMAS_RETURN_FORMAT_ERROR,                             \
+            "unexpected XML tag `%s' [@%s:%d]", tag, path, line)
+
+#define ERROR_REGISTER_TOO_LONG(path, line)                                    \
+        ERROR_VREGISTER(PUMAS_RETURN_TOO_LONG,                                 \
+            "XML node is too long [@%s:%d]", path, line)
+
+#define ERROR_REGISTER_INVALID_XML_VALUE(value, path, line)                    \
+        ERROR_VREGISTER(PUMAS_RETURN_FORMAT_ERROR,                             \
+            "invalid XML value `%s' [@%s:%d]", value, path, line)
+
+#define ERROR_REGISTER_INVALID_XML_ATTRIBUTE(attribute, node, path, line)      \
+        ERROR_VREGISTER(PUMAS_RETURN_FORMAT_ERROR,                             \
+            "invalid XML attribute `%s' for element %s [@%s:%d]", attribute,   \
+            node, path, line)
+
+#define ERROR_REGISTER_NEGATIVE_DENSITY(material)                              \
+        ERROR_VREGISTER(                                                       \
+            PUMAS_RETURN_DENSITY_ERROR, "negative density for `%s'", material)
 
 /* Function prototypes for the DCS implementations. */
 /**
@@ -655,18 +717,21 @@ struct shared_data {
  */
 static struct shared_data * s_shared = NULL;
 
+struct error_context {
+        enum pumas_return code;
+        pumas_function_t * function;
+#define ERROR_MSG_LENGTH 1024
+        char message[ERROR_MSG_LENGTH];
+};
+
 /**
  * Shared data for the error handling.
  */
 static struct {
         pumas_handler_cb * handler;
         int catch;
-        enum pumas_return catch_rc;
-        pumas_function_t * catch_function;
-        int line;
-#define ERROR_FILE_LENGTH 1024
-        char file[ERROR_FILE_LENGTH];
-} s_error = { NULL, 0, PUMAS_RETURN_SUCCESS, NULL, 0, "\0" };
+        struct error_context catch_error;
+} s_error = { NULL, 0 };
 
 /* Prototypes of low level static functions. */
 /**
@@ -740,7 +805,7 @@ static double polar_ionisation(
  */
 static enum pumas_return transport_with_csda(struct pumas_context * context,
     struct pumas_state * state, struct pumas_medium * medium,
-    struct medium_locals * locals);
+    struct medium_locals * locals, struct error_context * error_);
 static enum pumas_return transport_csda_deflect(struct pumas_context * context,
     struct pumas_state * state, struct pumas_medium * medium,
     struct medium_locals * locals, double ki, double distance);
@@ -750,7 +815,7 @@ static enum pumas_return csda_magnetic_transport(struct pumas_context * context,
 static enum pumas_return transport_with_stepping(struct pumas_context * context,
     struct pumas_state * state, struct pumas_medium * medium,
     struct medium_locals * locals, double step_max_medium,
-    double step_max_locals);
+    double step_max_locals, struct error_context * error_);
 static double transport_set_locals(struct pumas_medium * medium,
     struct pumas_state * state, struct medium_locals * locals);
 static void transport_limit(struct pumas_context * context,
@@ -787,8 +852,10 @@ static int memory_padded_size(int size, int pad_size);
 /**
  * For error handling.
  */
-static enum pumas_return pumas_return(
-    enum pumas_return rc, pumas_function_t * caller);
+static enum pumas_return error_raise(struct error_context * context);
+static enum pumas_return error_format(struct error_context * context,
+    enum pumas_return rc, const char * file, int line, const char * format,
+    ...);
 /**
  * Routines for the Coulomb scattering and Transverse Transport (TT).
  */
@@ -865,34 +932,43 @@ static void step_rotate_direction(struct pumas_context * context,
 /**
  * I/O utility routines.
  */
-static enum pumas_return io_parse_dedx_file(
-    FILE * fid, int material, int * line);
-static enum pumas_return io_parse_dedx_row(
-    char * buffer, int material, int * row);
-static enum pumas_return io_read_line(FILE * fid, char ** buffer);
+static enum pumas_return io_parse_dedx_file(FILE * fid, int material,
+    const char * filename, struct error_context * error_);
+static enum pumas_return io_parse_dedx_row(char * buffer, int material,
+    int * row, const char * filename, int line, struct error_context * error_);
+static enum pumas_return io_read_line(FILE * fid, char ** buffer,
+    const char * filename, int line, struct error_context * error_);
 /**
  * Routines for the parsing of MDFs.
  */
-static enum pumas_return mdf_parse_settings(
-    struct mdf_buffer * mdf, const char * dedx_path);
-static int mdf_settings_index(int operation, int value);
-static int mdf_settings_name(int size, char prefix, const char * name);
+static enum pumas_return mdf_parse_settings(struct mdf_buffer * mdf,
+    const char * dedx_path, struct error_context * error_);
+static int mdf_settings_index(
+    int operation, int value, struct error_context * error_);
+static int mdf_settings_name(
+    int size, char prefix, const char * name, struct error_context * error_);
 static enum pumas_return mdf_parse_kinetic(
-    struct mdf_buffer * mdf, const char * path);
-static enum pumas_return mdf_parse_elements(struct mdf_buffer * mdf);
-static enum pumas_return mdf_parse_materials(struct mdf_buffer * mdf);
-static enum pumas_return mdf_parse_composites(struct mdf_buffer * mdf);
-static enum pumas_return mdf_get_node(
-    struct mdf_buffer * mdf, struct mdf_node * node);
-static enum pumas_return mdf_skip_pattern(
-    struct mdf_buffer * mdf, const char * pattern);
+    struct mdf_buffer * mdf, const char * path, struct error_context * error_);
+static enum pumas_return mdf_parse_elements(
+    struct mdf_buffer * mdf, struct error_context * error_);
+static enum pumas_return mdf_parse_materials(
+    struct mdf_buffer * mdf, struct error_context * error_);
+static enum pumas_return mdf_parse_composites(
+    struct mdf_buffer * mdf, struct error_context * error_);
+static enum pumas_return mdf_get_node(struct mdf_buffer * mdf,
+    struct mdf_node * node, struct error_context * error_);
+static enum pumas_return mdf_skip_pattern(struct mdf_buffer * mdf,
+    const char * pattern, struct error_context * error_);
 static enum pumas_return mdf_format_path(const char * directory,
-    const char * mdf_path, char ** filename, int * offset_dir, int * size_name);
+    const char * mdf_path, char ** filename, int * offset_dir, int * size_name,
+    struct error_context * error_);
 /**
  * Routines for the pre-computation of various properties: CEL, DCS, ...
  */
-static enum pumas_return compute_composite(int material);
-static enum pumas_return compute_composite_density(int material);
+static enum pumas_return compute_composite(
+    int material, struct error_context * error_);
+static enum pumas_return compute_composite_density(
+    int material, struct error_context * error_);
 static void compute_composite_weights(int material);
 static void compute_composite_tables(int material);
 static void compute_cel_integrals(int imed);
@@ -900,8 +976,10 @@ static void compute_kinetic_integral(double * table);
 static void compute_time_integrals(int material);
 static void compute_cel_grammage_integral(int scheme, int material);
 static void compute_csda_magnetic_transport(int imed);
-static enum pumas_return compute_coulomb_parameters(int medium_index, int row);
-static enum pumas_return compute_coulomb_soft(int row, double ** data);
+static enum pumas_return compute_coulomb_parameters(
+    int medium_index, int row, struct error_context * error_);
+static enum pumas_return compute_coulomb_soft(
+    int row, double ** data, struct error_context * error_);
 static double compute_cutoff_objective(double mu, void * workspace);
 static double * compute_cel_and_del(int row);
 static void compute_regularise_del(int material);
@@ -909,12 +987,17 @@ static double compute_dcs_integral(int mode,
     const struct atomic_element * element, double kinetic, dcs_function_t * dcs,
     double xlow, int nint);
 static void compute_ZoA(int material);
-static enum pumas_return compute_dcs_model(
-    dcs_function_t * dcs_func, struct atomic_element * element);
+static enum pumas_return compute_dcs_model(dcs_function_t * dcs_func,
+    struct atomic_element * element, struct error_context * error_);
 /**
  * Helper function for mapping an atomic element from its name.
  */
 static int element_index(const char * name);
+/**
+ * Helper function for mapping a material from its name.
+ */
+static enum pumas_return material_index(
+    const char * material, int * index, struct error_context * error_);
 /**
  * Various math utilities, for integration, root finding and SVD.
  */
@@ -978,28 +1061,18 @@ void pumas_memory_deallocator(pumas_deallocate_cb * deallocator)
  * are not loaded and processed.
  */
 static enum pumas_return _initialise(enum pumas_particle particle,
-    const char * mdf_path, const char * dedx_path, struct pumas_error * error,
-    int dry_mode)
+    const char * mdf_path, const char * dedx_path, int dry_mode)
 {
-        /* Reset the error additional info. */
-        s_error.line = 0;
-        s_error.file[0] = '\0';
-        if (error != NULL) {
-                error->file = NULL;
-                error->line = 0;
-        }
+        ERROR_INITIALISE(pumas_initialise);
 
         /* Check if the library is already initialised. */
-        if (s_shared != NULL)
-                PUMAS_RETURN(
-                    PUMAS_RETURN_INITIALISATION_ERROR, pumas_initialise);
+        if (s_shared != NULL) { return ERROR_ALREADY_INITIALISED(); }
 #if (GDB_MODE)
         /* Save the floating points exceptions status and enable them. */
         fe_status = fegetexcept();
         feclearexcept(FE_ALL_EXCEPT);
         feenableexcept(FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW | FE_UNDERFLOW);
 #endif
-        enum pumas_return rc = PUMAS_RETURN_SUCCESS;
         FILE * fid_mdf = NULL;
         struct mdf_buffer * mdf = NULL;
         const int pad_size = sizeof(*(s_shared->data));
@@ -1008,14 +1081,17 @@ static enum pumas_return _initialise(enum pumas_particle particle,
 
         /* Check the particle type. */
         if ((particle != PUMAS_PARTICLE_MUON) &&
-            (particle != PUMAS_PARTICLE_TAU))
-                PUMAS_RETURN(PUMAS_RETURN_UNKNOWN_PARTICLE, pumas_initialise);
+            (particle != PUMAS_PARTICLE_TAU)) {
+                return ERROR_FORMAT(PUMAS_RETURN_UNKNOWN_PARTICLE,
+                    "invalid particle index `%d'", (int)particle);
+        }
 
         /* Check the path to energy loss tables. */
         if (!dry_mode) {
                 if (dedx_path == NULL) dedx_path = getenv("PUMAS_DEDX");
                 if (dedx_path == NULL) {
-                        rc = PUMAS_RETURN_UNDEFINED_DEDX;
+                        ERROR_REGISTER(PUMAS_RETURN_UNDEFINED_DEDX,
+                            "missing path to energy loss tables");
                         goto clean_and_exit;
                 }
         }
@@ -1025,27 +1101,28 @@ static enum pumas_return _initialise(enum pumas_particle particle,
         const char * file_mdf =
             (mdf_path != NULL) ? mdf_path : getenv("PUMAS_MDF");
         if (file_mdf == NULL) {
-                rc = PUMAS_RETURN_UNDEFINED_MDF;
+                ERROR_REGISTER(PUMAS_RETURN_UNDEFINED_MDF,
+                    "missing materials description file");
                 goto clean_and_exit;
         }
         int size_path = strlen(file_mdf) + 1;
         fid_mdf = fopen(file_mdf, "r");
         if (fid_mdf == NULL) {
-                strncpy(s_error.file, file_mdf, ERROR_FILE_LENGTH);
-                s_error.file[ERROR_FILE_LENGTH - 1] = '\0';
-                rc = PUMAS_RETURN_PATH_ERROR;
+                ERROR_VREGISTER(PUMAS_RETURN_PATH_ERROR,
+                    "could not open MDF file `%s'", mdf_path);
                 goto clean_and_exit;
         }
         mdf = allocate(size_mdf);
         if (mdf == NULL) {
-                rc = PUMAS_RETURN_MEMORY_ERROR;
+                ERROR_REGISTER_MEMORY();
                 goto clean_and_exit;
         }
         mdf->dry_mode = dry_mode;
         mdf->mdf_path = file_mdf;
         mdf->fid = fid_mdf;
         mdf->size = size_mdf - sizeof(*mdf);
-        if ((rc = mdf_parse_settings(mdf, dedx_path)) != PUMAS_RETURN_SUCCESS)
+        if ((mdf_parse_settings(mdf, dedx_path, error_)) !=
+            PUMAS_RETURN_SUCCESS)
                 goto clean_and_exit;
 
         /* Backup the parsed settings. */
@@ -1173,7 +1250,7 @@ static enum pumas_return _initialise(enum pumas_particle particle,
         const int size_shared = sizeof(*s_shared) + size_total;
         void * tmp_ptr = reallocate(mdf, size_shared);
         if (tmp_ptr == NULL) {
-                rc = PUMAS_RETURN_MEMORY_ERROR;
+                ERROR_REGISTER_MEMORY();
                 goto clean_and_exit;
         }
         s_shared = tmp_ptr;
@@ -1211,7 +1288,7 @@ static enum pumas_return _initialise(enum pumas_particle particle,
 
         /* Allocate a new MDF buffer. */
         if ((mdf = allocate(sizeof(struct mdf_buffer) + size_mdf)) == NULL) {
-                rc = PUMAS_RETURN_MEMORY_ERROR;
+                ERROR_REGISTER_MEMORY();
                 goto clean_and_exit;
         }
         memcpy(mdf, &settings, sizeof(settings));
@@ -1223,15 +1300,15 @@ static enum pumas_return _initialise(enum pumas_particle particle,
                 s_shared->dedx_path = NULL;
 
         /* Parse the elements. */
-        if ((rc = mdf_parse_elements(mdf)) != PUMAS_RETURN_SUCCESS)
+        if ((mdf_parse_elements(mdf, error_)) != PUMAS_RETURN_SUCCESS)
                 goto clean_and_exit;
 
         /* Parse the base materials. */
-        if ((rc = mdf_parse_materials(mdf)) != PUMAS_RETURN_SUCCESS)
+        if ((mdf_parse_materials(mdf, error_)) != PUMAS_RETURN_SUCCESS)
                 goto clean_and_exit;
 
         /* Parse the composite materials. */
-        if ((rc = mdf_parse_composites(mdf)) != PUMAS_RETURN_SUCCESS)
+        if ((mdf_parse_composites(mdf, error_)) != PUMAS_RETURN_SUCCESS)
                 goto clean_and_exit;
 
         /* All done if in dry mode. */
@@ -1243,8 +1320,9 @@ static enum pumas_return _initialise(enum pumas_particle particle,
              imat++) {
                 int ikin;
                 for (ikin = 0; ikin < s_shared->n_kinetics; ikin++) {
-                        rc = compute_coulomb_parameters(imat, ikin);
-                        if (rc != PUMAS_RETURN_SUCCESS) goto clean_and_exit;
+                        if (compute_coulomb_parameters(imat, ikin, error_) !=
+                            PUMAS_RETURN_SUCCESS)
+                                goto clean_and_exit;
                 }
                 compute_cel_integrals(imat);
                 compute_csda_magnetic_transport(imat);
@@ -1253,8 +1331,9 @@ static enum pumas_return _initialise(enum pumas_particle particle,
         /* Precompute the same properties for composite materials. */
         for (imat = s_shared->n_materials - s_shared->n_composites;
              imat < s_shared->n_materials; imat++) {
-                if (((rc = compute_composite(imat)) != PUMAS_RETURN_SUCCESS) ||
-                    ((rc = compute_composite_density(imat)) !=
+                if (((compute_composite(imat, error_)) !=
+                        PUMAS_RETURN_SUCCESS) ||
+                    ((compute_composite_density(imat, error_)) !=
                         PUMAS_RETURN_SUCCESS))
                         goto clean_and_exit;
         }
@@ -1264,49 +1343,42 @@ static enum pumas_return _initialise(enum pumas_particle particle,
         for (iel = 0; iel < s_shared->n_elements; iel++) {
                 int ip;
                 for (ip = 0; ip < N_DEL_PROCESSES - 1; ip++) {
-                        if ((rc = compute_dcs_model(
-                                 dcs_get(ip), s_shared->element[iel])) !=
-                            PUMAS_RETURN_SUCCESS)
+                        if (compute_dcs_model(dcs_get(ip),
+                                s_shared->element[iel],
+                                error_) != PUMAS_RETURN_SUCCESS)
                                 goto clean_and_exit;
                 }
         }
 
 clean_and_exit:
-        if (error != NULL) {
-                error->file = (s_error.file[0] != '\0') ? s_error.file : NULL;
-                error->line = s_error.line;
-        }
         if (fid_mdf != NULL) fclose(fid_mdf);
         deallocate(mdf);
-        io_read_line(NULL, NULL);
-        compute_coulomb_parameters(-1, -1);
-        compute_coulomb_soft(-1, NULL);
+        io_read_line(NULL, NULL, NULL, 0, error_);
+        compute_coulomb_parameters(-1, -1, error_);
+        compute_coulomb_soft(-1, NULL, error_);
         compute_cel_and_del(-1);
-        compute_dcs_model(NULL, NULL);
-        if ((rc != PUMAS_RETURN_SUCCESS) && (s_shared != NULL)) {
+        compute_dcs_model(NULL, NULL, error_);
+        if ((error_->code != PUMAS_RETURN_SUCCESS) && (s_shared != NULL)) {
                 deallocate(s_shared);
                 s_shared = NULL;
         }
 
-        PUMAS_RETURN(rc, pumas_initialise);
+        return ERROR_RAISE();
 }
 
 /* The standard API initialisation. */
-enum pumas_return pumas_initialise(enum pumas_particle particle,
-    const char * mdf_path, const char * dedx_path, struct pumas_error * error)
+enum pumas_return pumas_initialise(
+    enum pumas_particle particle, const char * mdf_path, const char * dedx_path)
 {
-        return _initialise(particle, mdf_path, dedx_path, error, 0);
+        return _initialise(particle, mdf_path, dedx_path, 0);
 }
 
 enum pumas_return pumas_load(FILE * stream)
 {
-        /* Reset the error additional info. */
-        s_error.line = 0;
-        s_error.file[0] = '\0';
+        ERROR_INITIALISE(pumas_load);
 
         /* Check if the library is already initialised. */
-        if (s_shared != NULL)
-                PUMAS_RETURN(PUMAS_RETURN_INITIALISATION_ERROR, pumas_load);
+        if (s_shared != NULL) { return ERROR_ALREADY_INITIALISED(); }
 #if (GDB_MODE)
         /* Save the floating points exceptions status and enable them. */
         fe_status = fegetexcept();
@@ -1314,11 +1386,11 @@ enum pumas_return pumas_load(FILE * stream)
         feenableexcept(FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW | FE_UNDERFLOW);
 #endif
         /* Check the binary dump tag. */
-        enum pumas_return rc = PUMAS_RETURN_IO_ERROR;
         int tag;
         if (fread(&tag, sizeof(tag), 1, stream) != 1) goto error;
         if (tag != BINARY_DUMP_TAG) {
-                rc = PUMAS_RETURN_FORMAT_ERROR;
+                ERROR_REGISTER(PUMAS_RETURN_FORMAT_ERROR,
+                    "incomptible version of binary dump");
                 goto error;
         }
 
@@ -1327,7 +1399,7 @@ enum pumas_return pumas_load(FILE * stream)
         if (fread(&size, sizeof(size), 1, stream) != 1) goto error;
         s_shared = allocate(size);
         if (s_shared == NULL) {
-                rc = PUMAS_RETURN_MEMORY_ERROR;
+                ERROR_REGISTER_MEMORY();
                 goto error;
         }
 
@@ -1369,16 +1441,19 @@ enum pumas_return pumas_load(FILE * stream)
 error:
         deallocate(s_shared);
         s_shared = NULL;
-        PUMAS_RETURN(rc, pumas_load);
+        return ERROR_RAISE();
 
 #undef N_DATA_POINTERS
 }
 
 enum pumas_return pumas_dump(FILE * stream)
 {
+        ERROR_INITIALISE(pumas_dump);
+
         /* Check if the library is initialised. */
         if (s_shared == NULL)
-                PUMAS_RETURN(PUMAS_RETURN_INITIALISATION_ERROR, pumas_dump);
+                ERROR_MESSAGE(PUMAS_RETURN_INITIALISATION_ERROR,
+                    "the library hasn't been initialised");
 
         /* Dump the configuration. */
         int tag = BINARY_DUMP_TAG;
@@ -1390,7 +1465,8 @@ enum pumas_return pumas_dump(FILE * stream)
         return PUMAS_RETURN_SUCCESS;
 
 error:
-        PUMAS_RETURN(PUMAS_RETURN_IO_ERROR, pumas_dump);
+        return ERROR_MESSAGE(
+            PUMAS_RETURN_IO_ERROR, "could not write to dump file");
 
 #undef BINARY_DUMP_TAG
 }
@@ -1413,28 +1489,6 @@ void pumas_finalise()
         }
         deallocate(s_shared);
         s_shared = NULL;
-}
-
-const char * pumas_error_string(enum pumas_return rc)
-{
-        static const char * msg[PUMAS_N_RETURNS] = { "Operation succeeded",
-                "Unexpected end of file", "Invalid decay mode",
-                "Negative or null density value", "Missing node(s) in MDF file",
-                "Invalid index value", "Library not/already initialised",
-                "An internal library error occured",
-                "Couldn't read or write file", "Unexpected format in file",
-                "Missing propagation medium", "Not enough memory",
-                "Missing user limit", "Missing random callback",
-                "No such file or directory", "Raise without catching enabled",
-                "MDF node is too long", "Missing energy loss path",
-                "Missing MDF file", "Unknown atomic element",
-                "Unknown material", "Unknown particle type",
-                "Invalid value encountered" };
-
-        if ((rc < PUMAS_RETURN_SUCCESS) || (rc >= PUMAS_N_RETURNS))
-                return NULL;
-        else
-                return msg[rc];
 }
 
 const char * pumas_error_function(pumas_function_t * caller)
@@ -1472,12 +1526,10 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_recorder_clear)
         TOSTRING(pumas_recorder_destroy)
         TOSTRING(pumas_tag)
-        TOSTRING(pumas_error_string)
         TOSTRING(pumas_error_function)
         TOSTRING(pumas_error_handler_set)
         TOSTRING(pumas_error_handler_get)
         TOSTRING(pumas_error_catch)
-        TOSTRING(pumas_error_print)
         TOSTRING(pumas_material_length)
         TOSTRING(pumas_composite_length)
         TOSTRING(pumas_table_length)
@@ -1500,8 +1552,8 @@ void pumas_error_catch(int catch)
 {
         if (catch) {
                 s_error.catch = 1;
-                s_error.catch_rc = PUMAS_RETURN_SUCCESS;
-                s_error.catch_function = NULL;
+                s_error.catch_error.code = PUMAS_RETURN_SUCCESS;
+                s_error.catch_error.function = NULL;
         } else {
                 s_error.catch = 0;
         }
@@ -1509,40 +1561,25 @@ void pumas_error_catch(int catch)
 
 enum pumas_return pumas_error_raise(void)
 {
-        if (s_error.catch == 0)
-                PUMAS_RETURN(PUMAS_RETURN_RAISE_ERROR, pumas_error_raise);
-        s_error.catch = 0;
-        PUMAS_RETURN(s_error.catch_rc, s_error.catch_function);
-}
+        ERROR_INITIALISE(pumas_error_raise);
 
-void pumas_error_print(FILE * stream, enum pumas_return rc,
-    pumas_function_t * function, struct pumas_error * error)
-{
-        fprintf(stream, "{\"code\" : %d, \"message\" : \"%s\"", rc,
-            pumas_error_string(rc));
-        if (function != NULL) {
-                fprintf(stream, ", \"function\" : \"%s\"",
-                    pumas_error_function(function));
-        }
-        if (error != NULL) {
-                if (error->file != NULL)
-                        fprintf(stream, ", \"file\" : \"%s\"", error->file);
-                if (error->line > 0)
-                        fprintf(stream, ", \"line\" : %d", error->line);
-        }
-        fprintf(stream, "}");
+        if (s_error.catch == 0)
+                ERROR_MESSAGE(
+                    PUMAS_RETURN_RAISE_ERROR, "`raise' called without `catch'");
+        s_error.catch = 0;
+        memcpy(error_, &s_error.catch_error, sizeof(*error_));
+        return ERROR_RAISE();
 }
 
 /* Public library functions: simulation context management. */
 enum pumas_return pumas_context_create(
     int extra_memory, struct pumas_context ** context_)
 {
+        ERROR_INITIALISE(pumas_context_create);
         *context_ = NULL;
 
         /* Check the library initialisation. */
-        if (s_shared == NULL)
-                PUMAS_RETURN(
-                    PUMAS_RETURN_INITIALISATION_ERROR, pumas_context_create);
+        if (s_shared == NULL) { return ERROR_NOT_INITIALISED(); }
 
         /* Allocate the new context. */
         struct simulation_context * context;
@@ -1556,11 +1593,12 @@ enum pumas_return pumas_context_create(
         else
                 extra_memory = memory_padded_size(extra_memory, pad_size);
         context = allocate(sizeof(*context) + work_size + extra_memory);
-        if (context == NULL)
-                PUMAS_RETURN(PUMAS_RETURN_MEMORY_ERROR, pumas_context_create);
+        if (context == NULL) {
+                ERROR_REGISTER_MEMORY();
+                return ERROR_RAISE();
+        }
 
         /* Set the default configuration. */
-
         *context_ = (struct pumas_context *)context;
         context->extra_memory = extra_memory;
         if (extra_memory > 0)
@@ -1612,12 +1650,13 @@ void pumas_context_destroy(struct pumas_context ** context)
 enum pumas_return pumas_print(
     FILE * stream, const char * tabulation, const char * newline)
 {
+        ERROR_INITIALISE(pumas_print);
+
         const char * tab = (tabulation == NULL) ? "" : tabulation;
         const char * cr = (newline == NULL) ? "" : newline;
 
         /* Check the library initialisation. */
-        if (s_shared == NULL)
-                PUMAS_RETURN(PUMAS_RETURN_INITIALISATION_ERROR, pumas_print);
+        if (s_shared == NULL) { return ERROR_NOT_INITIALISED(); }
 
         /* Print the particle info. */
         if (fprintf(stream,
@@ -1727,7 +1766,8 @@ closure:
 
         return PUMAS_RETURN_SUCCESS;
 error:
-        PUMAS_RETURN(PUMAS_RETURN_IO_ERROR, pumas_print);
+        return ERROR_MESSAGE(
+            PUMAS_RETURN_IO_ERROR, "could not write to stream");
 }
 
 int pumas_tag() { return 1000 * PUMAS_VERSION + PUMAS_SUBVERSION; }
@@ -1736,11 +1776,15 @@ int pumas_tag() { return 1000 * PUMAS_VERSION + PUMAS_SUBVERSION; }
 enum pumas_return pumas_recorder_create(
     struct pumas_context * context, struct pumas_recorder ** recorder_)
 {
+        ERROR_INITIALISE(pumas_recorder_create);
+
         /*  Allocate memory for the new recorder. */
         struct frame_recorder * recorder = NULL;
         recorder = allocate(sizeof(*recorder));
-        if (recorder == NULL)
-                PUMAS_RETURN(PUMAS_RETURN_MEMORY_ERROR, pumas_recorder_create);
+        if (recorder == NULL) {
+                ERROR_REGISTER_MEMORY();
+                return ERROR_RAISE();
+        }
 
         /* Configure the context in order to use the new recorder. */
         *recorder_ = (struct pumas_recorder *)recorder;
@@ -1785,131 +1829,106 @@ void pumas_recorder_clear(struct pumas_recorder * recorder)
 enum pumas_return pumas_property_grammage(
     enum pumas_scheme scheme, int material, double kinetic, double * grammage)
 {
-        enum pumas_return rc;
+        ERROR_INITIALISE(pumas_property_grammage);
+        *grammage = 0.;
+
         if (s_shared == NULL) {
-                rc = PUMAS_RETURN_INITIALISATION_ERROR;
-                goto error;
+                return ERROR_NOT_INITIALISED();
         } else if ((scheme <= PUMAS_SCHEME_NO_LOSS) ||
             (scheme >= PUMAS_SCHEME_DETAILED)) {
-                rc = PUMAS_RETURN_INDEX_ERROR;
-                goto error;
+                return ERROR_INVALID_SCHEME(scheme);
         } else if ((material < 0) || (material >= s_shared->n_materials)) {
-                rc = PUMAS_RETURN_INDEX_ERROR;
-                goto error;
+                return ERROR_INVALID_MATERIAL(material);
         }
 
         *grammage = cel_grammage(NULL, scheme, material, kinetic);
         return PUMAS_RETURN_SUCCESS;
-
-error:
-        *grammage = 0.;
-        PUMAS_RETURN(rc, pumas_property_grammage);
 }
 
 enum pumas_return pumas_property_proper_time(
     enum pumas_scheme scheme, int material, double kinetic, double * time)
 {
-        enum pumas_return rc;
+        ERROR_INITIALISE(pumas_property_proper_time);
+        *time = 0.;
+
         if (s_shared == NULL) {
-                rc = PUMAS_RETURN_INITIALISATION_ERROR;
-                goto error;
+                return ERROR_NOT_INITIALISED();
         } else if ((scheme <= PUMAS_SCHEME_NO_LOSS) ||
             (scheme >= PUMAS_SCHEME_DETAILED)) {
-                rc = PUMAS_RETURN_INDEX_ERROR;
-                goto error;
+                return ERROR_INVALID_SCHEME(scheme);
         } else if ((material < 0) || (material >= s_shared->n_materials)) {
-                rc = PUMAS_RETURN_INDEX_ERROR;
-                goto error;
+                return ERROR_INVALID_MATERIAL(material);
         }
 
         *time = cel_proper_time(NULL, scheme, material, kinetic);
         return PUMAS_RETURN_SUCCESS;
-
-error:
-        *time = 0.;
-        PUMAS_RETURN(rc, pumas_property_proper_time);
 }
 
 enum pumas_return pumas_property_magnetic_rotation(
     int material, double kinetic, double * angle)
 {
-        enum pumas_return rc;
+        ERROR_INITIALISE(pumas_property_magnetic_rotation);
+        *angle = 0.;
+
         if (s_shared == NULL) {
-                rc = PUMAS_RETURN_INITIALISATION_ERROR;
-                goto error;
+                return ERROR_NOT_INITIALISED();
         } else if ((material < 0) || (material >= s_shared->n_materials)) {
-                rc = PUMAS_RETURN_INDEX_ERROR;
-                goto error;
+                return ERROR_INVALID_MATERIAL(material);
         }
 
         *angle = cel_magnetic_rotation(NULL, material, kinetic);
         return PUMAS_RETURN_SUCCESS;
-
-error:
-        *angle = 0.;
-        PUMAS_RETURN(rc, pumas_property_magnetic_rotation);
 }
 
 enum pumas_return pumas_property_kinetic_energy(
     enum pumas_scheme scheme, int material, double grammage, double * kinetic)
 {
-        enum pumas_return rc;
+        ERROR_INITIALISE(pumas_property_kinetic_energy);
+        *kinetic = 0.;
+
         if (s_shared == NULL) {
-                rc = PUMAS_RETURN_INITIALISATION_ERROR;
-                goto error;
+                return ERROR_NOT_INITIALISED();
         } else if ((scheme <= PUMAS_SCHEME_NO_LOSS) ||
             (scheme >= PUMAS_SCHEME_DETAILED)) {
-                rc = PUMAS_RETURN_INDEX_ERROR;
-                goto error;
+                return ERROR_INVALID_SCHEME(scheme);
         } else if ((material < 0) || (material >= s_shared->n_materials)) {
-                rc = PUMAS_RETURN_INDEX_ERROR;
-                goto error;
+                return ERROR_INVALID_MATERIAL(material);
         }
 
         *kinetic = cel_kinetic_energy(NULL, scheme, material, grammage);
         return PUMAS_RETURN_SUCCESS;
-
-error:
-        *kinetic = 0.;
-        PUMAS_RETURN(rc, pumas_property_kinetic_energy);
 }
 
 enum pumas_return pumas_property_energy_loss(
     enum pumas_scheme scheme, int material, double kinetic, double * dedx)
 {
-        enum pumas_return rc;
+        ERROR_INITIALISE(pumas_property_energy_loss);
+        *dedx = 0.;
+
         if (s_shared == NULL) {
-                rc = PUMAS_RETURN_INITIALISATION_ERROR;
-                goto error;
+                return ERROR_NOT_INITIALISED();
         } else if ((scheme <= PUMAS_SCHEME_NO_LOSS) ||
             (scheme >= PUMAS_SCHEME_DETAILED)) {
-                rc = PUMAS_RETURN_INDEX_ERROR;
-                goto error;
+                return ERROR_INVALID_SCHEME(scheme);
         } else if ((material < 0) || (material >= s_shared->n_materials)) {
-                rc = PUMAS_RETURN_INDEX_ERROR;
-                goto error;
+                return ERROR_INVALID_MATERIAL(material);
         }
 
         *dedx = cel_energy_loss(NULL, scheme, material, kinetic);
         return PUMAS_RETURN_SUCCESS;
-
-error:
-        *dedx = 0.;
-        PUMAS_RETURN(rc, pumas_property_energy_loss);
 }
 
 /* Public library function: elastic scattering 1st transport path length. */
 enum pumas_return pumas_property_scattering_length(
     int material, double kinetic, double * length)
 {
+        ERROR_INITIALISE(pumas_property_scattering_length);
         *length = 0.;
-        enum pumas_return rc;
+
         if (s_shared == NULL) {
-                rc = PUMAS_RETURN_INITIALISATION_ERROR;
-                goto error;
+                return ERROR_NOT_INITIALISED();
         } else if ((material < 0) || (material >= s_shared->n_materials)) {
-                rc = PUMAS_RETURN_INDEX_ERROR;
-                goto error;
+                return ERROR_INVALID_MATERIAL(material);
         }
 
         double path = 0.;
@@ -1938,57 +1957,54 @@ enum pumas_return pumas_property_scattering_length(
         }
 
         if (path == 0.) {
-                rc = PUMAS_RETURN_VALUE_ERROR;
                 *length = DBL_MAX;
-                goto error;
+                return ERROR_MESSAGE(
+                    PUMAS_RETURN_VALUE_ERROR, "infinite scattering length");
         }
 
         *length = 1. / path;
         return PUMAS_RETURN_SUCCESS;
-
-error:
-        PUMAS_RETURN(rc, pumas_property_scattering_length);
 }
 
 /* Public library function: total inelastic cross section. */
 enum pumas_return pumas_property_cross_section(
     int material, double kinetic, double * cross_section)
 {
-        enum pumas_return rc;
+        ERROR_INITIALISE(pumas_property_cross_section);
+        *cross_section = 0.;
+
         if (s_shared == NULL) {
-                rc = PUMAS_RETURN_INITIALISATION_ERROR;
-                goto error;
+                return ERROR_NOT_INITIALISED();
         } else if ((material < 0) || (material >= s_shared->n_materials)) {
-                rc = PUMAS_RETURN_INDEX_ERROR;
-                goto error;
+                return ERROR_INVALID_MATERIAL(material);
         }
 
         *cross_section = (kinetic < *table_get_Kt(material)) ?
             0. :
             del_cross_section(NULL, material, kinetic);
         return PUMAS_RETURN_SUCCESS;
-
-error:
-        *cross_section = 0.;
-        PUMAS_RETURN(rc, pumas_property_cross_section);
 }
 
 /* Public library function: the main transport routine. */
 enum pumas_return pumas_transport(
     struct pumas_context * context, struct pumas_state * state)
 {
+        ERROR_INITIALISE(pumas_transport);
+
         /* Check the initial state. */
         if (state->decayed) return PUMAS_RETURN_SUCCESS;
 
         /* Check the configuration. */
-        if (s_shared == NULL)
-                PUMAS_RETURN(
-                    PUMAS_RETURN_INITIALISATION_ERROR, pumas_transport);
-        if (context->medium == NULL)
-                PUMAS_RETURN(PUMAS_RETURN_MEDIUM_ERROR, pumas_transport);
-        if ((s_shared->particle == PUMAS_PARTICLE_TAU) && context->forward &&
-            (context->decay == PUMAS_DECAY_WEIGHT))
-                PUMAS_RETURN(PUMAS_RETURN_DECAY_ERROR, pumas_transport);
+        if (s_shared == NULL) {
+                return ERROR_NOT_INITIALISED();
+        } else if (context->medium == NULL) {
+                return ERROR_MESSAGE(
+                    PUMAS_RETURN_MEDIUM_ERROR, "no medium specified");
+        } else if ((s_shared->particle == PUMAS_PARTICLE_TAU) &&
+            context->forward && (context->decay == PUMAS_DECAY_WEIGHT)) {
+                return ERROR_MESSAGE(PUMAS_RETURN_DECAY_ERROR,
+                    "`PUMAS_DECAY_WEIGHT' mode is not valid for forward taus");
+        }
 
         /* Get the start medium. */
         struct pumas_medium * medium;
@@ -2005,14 +2021,18 @@ enum pumas_return pumas_transport(
             transport_set_locals(medium, state, &locals);
         if ((step_max_locals > 0.) && (step_max_locals < step_max_medium))
                 step_max_medium = step_max_locals;
-        if (locals.api.density <= 0.)
-                PUMAS_RETURN(PUMAS_RETURN_DENSITY_ERROR, pumas_transport);
+        if (locals.api.density <= 0.) {
+                ERROR_REGISTER_NEGATIVE_DENSITY(
+                    s_shared->material_name[medium->material]);
+                return ERROR_RAISE();
+        }
 
         /* Randomise the lifetime, if required. */
         if (context->decay == PUMAS_DECAY_PROCESS) {
-                if (context->random == NULL)
-                        PUMAS_RETURN(
-                            PUMAS_RETURN_MISSING_RANDOM, pumas_transport);
+                if (context->random == NULL) {
+                        return ERROR_MESSAGE(PUMAS_RETURN_MISSING_RANDOM,
+                            "no random engine specified");
+                }
                 const double u = context->random(context);
                 struct simulation_context * context_ =
                     (struct simulation_context *)context;
@@ -2024,31 +2044,31 @@ enum pumas_return pumas_transport(
                 /* This is an infinite and uniform medium. */
                 if ((context->scheme == PUMAS_SCHEME_NO_LOSS) &&
                     (context->distance_max <= 0.) &&
-                    (context->grammage_max <= 0.))
-                        PUMAS_RETURN(
-                            PUMAS_RETURN_MISSING_LIMIT, pumas_transport);
-                else if ((context->longitudinal != 0) &&
+                    (context->grammage_max <= 0.)) {
+                        return ERROR_MESSAGE(PUMAS_RETURN_MISSING_LIMIT,
+                            "infinite medium without external limit(s)");
+                } else if ((context->longitudinal != 0) &&
                     (context->scheme == PUMAS_SCHEME_CSDA)) {
                         /* This is a purely deterministic case. */
-                        PUMAS_RETURN(transport_with_csda(
-                                         context, state, medium, &locals),
-                            pumas_transport);
+                        transport_with_csda(
+                            context, state, medium, &locals, error_);
+                        return ERROR_RAISE();
                 }
         }
 
         /* Transport with a detailed stepping. */
-        enum pumas_return rc = transport_with_stepping(
-            context, state, medium, &locals, step_max_medium, step_max_locals);
-
-        PUMAS_RETURN(rc, pumas_transport);
+        transport_with_stepping(context, state, medium, &locals,
+            step_max_medium, step_max_locals, error_);
+        return ERROR_RAISE();
 }
 
 /* Public library function: transported particle info. */
 enum pumas_return pumas_particle(
     enum pumas_particle * particle, double * lifetime, double * mass)
 {
-        if (s_shared == NULL)
-                PUMAS_RETURN(PUMAS_RETURN_INITIALISATION_ERROR, pumas_particle);
+        ERROR_INITIALISE(pumas_particle);
+
+        if (s_shared == NULL) { return ERROR_NOT_INITIALISED(); }
         if (particle != NULL) *particle = s_shared->particle;
         if (lifetime != NULL) *lifetime = s_shared->ctau;
         if (mass != NULL) *mass = s_shared->mass;
@@ -2059,11 +2079,12 @@ enum pumas_return pumas_particle(
 /* Public library functions: materials handling. */
 enum pumas_return pumas_material_name(int index, const char ** material)
 {
-        if (s_shared == NULL)
-                PUMAS_RETURN(
-                    PUMAS_RETURN_INITIALISATION_ERROR, pumas_material_name);
-        if ((index < 0) || (index >= s_shared->n_materials))
-                PUMAS_RETURN(PUMAS_RETURN_INDEX_ERROR, pumas_material_name);
+        ERROR_INITIALISE(pumas_material_name);
+
+        if (s_shared == NULL) { return ERROR_NOT_INITIALISED(); }
+        if ((index < 0) || (index >= s_shared->n_materials)) {
+                return ERROR_INVALID_MATERIAL(index);
+        }
         *material = s_shared->material_name[index];
 
         return PUMAS_RETURN_SUCCESS;
@@ -2071,18 +2092,12 @@ enum pumas_return pumas_material_name(int index, const char ** material)
 
 enum pumas_return pumas_material_index(const char * material, int * index)
 {
-        if (s_shared == NULL)
-                PUMAS_RETURN(
-                    PUMAS_RETURN_INITIALISATION_ERROR, pumas_material_index);
-        int i;
-        for (i = 0; i < s_shared->n_materials; i++) {
-                if (strcmp(s_shared->material_name[i], material) == 0) {
-                        *index = i;
-                        return PUMAS_RETURN_SUCCESS;
-                }
-        }
+        ERROR_INITIALISE(pumas_material_index);
 
-        PUMAS_RETURN(PUMAS_RETURN_UNKNOWN_MATERIAL, pumas_material_index);
+        if (s_shared == NULL) { return ERROR_NOT_INITIALISED(); }
+        material_index(material, index, error_);
+
+        return ERROR_RAISE();
 }
 
 int pumas_material_length(void)
@@ -2101,13 +2116,15 @@ int pumas_composite_length(void)
 enum pumas_return pumas_composite_update(
     int material, const double * fractions, const double * densities)
 {
-        if (s_shared == NULL)
-                PUMAS_RETURN(
-                    PUMAS_RETURN_INITIALISATION_ERROR, pumas_composite_update);
+        ERROR_INITIALISE(pumas_composite_update);
+
+        if (s_shared == NULL) { return ERROR_NOT_INITIALISED(); }
 
         const int i0 = s_shared->n_materials - s_shared->n_composites;
-        if ((material < i0) || (material > s_shared->n_materials - 1))
-                PUMAS_RETURN(PUMAS_RETURN_INDEX_ERROR, pumas_composite_update);
+        if ((material < i0) || (material > s_shared->n_materials - 1)) {
+                return ERROR_FORMAT(PUMAS_RETURN_INDEX_ERROR,
+                    "invalid index for composite material [%d]", material);
+        }
 
         const int icomp =
             material - s_shared->n_materials + s_shared->n_composites;
@@ -2119,29 +2136,29 @@ enum pumas_return pumas_composite_update(
                 if (densities != NULL) component->density = densities[i];
         }
 
-        enum pumas_return rc;
-        rc = compute_composite_density(material);
+        const enum pumas_return rc =
+            compute_composite_density(material, error_);
         if ((rc != PUMAS_RETURN_SUCCESS) || (fractions == NULL))
                 goto clean_and_exit;
-        rc = compute_composite(material);
+        compute_composite(material, error_);
 
 clean_and_exit:
         /* Free temporary workspace and return. */
-        compute_coulomb_parameters(-1, -1);
-        PUMAS_RETURN(rc, pumas_composite_update);
+        compute_coulomb_parameters(-1, -1, error_);
+        return ERROR_RAISE();
 }
 
 enum pumas_return pumas_composite_properties(int material, double * density,
     int * components, double * fractions, double * densities)
 {
-        if (s_shared == NULL)
-                PUMAS_RETURN(
-                    PUMAS_RETURN_INITIALISATION_ERROR, pumas_composite_update);
+        ERROR_INITIALISE(pumas_composite_properties);
+
+        if (s_shared == NULL) { return ERROR_NOT_INITIALISED(); }
 
         const int i0 = s_shared->n_materials - s_shared->n_composites;
-        if ((material < i0) || (material > s_shared->n_materials - 1))
-                PUMAS_RETURN(
-                    PUMAS_RETURN_INDEX_ERROR, pumas_composite_properties);
+        if ((material < i0) || (material > s_shared->n_materials - 1)) {
+                return ERROR_INVALID_MATERIAL(material);
+        }
 
         const int icomp =
             material - s_shared->n_materials + s_shared->n_composites;
@@ -2163,39 +2180,41 @@ enum pumas_return pumas_composite_properties(int material, double * density,
 enum pumas_return pumas_table_value(enum pumas_property property,
     enum pumas_scheme scheme, int material, int row, double * value)
 {
-        /* Check the input parameters. */
-        enum pumas_return rc;
-        *value = 0.;
-        if (s_shared == NULL) {
-                rc = PUMAS_RETURN_INITIALISATION_ERROR;
-                goto error;
-        }
+        ERROR_INITIALISE(pumas_table_value);
 
-        rc = PUMAS_RETURN_INDEX_ERROR;
-        if ((material < 0) || (material >= s_shared->n_materials))
-                goto error;
-        else if ((row < 0) || (row >= s_shared->n_kinetics))
-                goto error;
+        /* Check the input parameters. */
+        *value = 0.;
+        if (s_shared == NULL) { return ERROR_NOT_INITIALISED(); }
+
+        if ((material < 0) || (material >= s_shared->n_materials)) {
+                return ERROR_INVALID_MATERIAL(material);
+        } else if ((row < 0) || (row >= s_shared->n_kinetics)) {
+                return ERROR_FORMAT(
+                    PUMAS_RETURN_INDEX_ERROR, "invalid `row' index [%d]", row);
+        }
 
         if (property == PUMAS_PROPERTY_KINETIC_ENERGY) {
                 *value = *table_get_K(row);
                 return PUMAS_RETURN_SUCCESS;
         } else if (property == PUMAS_PROPERTY_GRAMMAGE) {
                 if ((scheme <= PUMAS_SCHEME_NO_LOSS) ||
-                    (scheme >= PUMAS_SCHEME_DETAILED))
-                        goto error;
+                    (scheme >= PUMAS_SCHEME_DETAILED)) {
+                        return ERROR_INVALID_SCHEME(scheme);
+                }
                 *value = *table_get_X(scheme, material, row);
                 return PUMAS_RETURN_SUCCESS;
         } else if (property == PUMAS_PROPERTY_PROPER_TIME) {
                 if ((scheme <= PUMAS_SCHEME_NO_LOSS) ||
-                    (scheme >= PUMAS_SCHEME_DETAILED))
-                        goto error;
+                    (scheme >= PUMAS_SCHEME_DETAILED)) {
+                        return ERROR_INVALID_SCHEME(scheme);
+                }
                 *value = *table_get_T(scheme, material, row);
                 return PUMAS_RETURN_SUCCESS;
         } else if (property == PUMAS_PROPERTY_ENERGY_LOSS) {
                 if ((scheme <= PUMAS_SCHEME_NO_LOSS) ||
-                    (scheme >= PUMAS_SCHEME_DETAILED))
-                        goto error;
+                    (scheme >= PUMAS_SCHEME_DETAILED)) {
+                        return ERROR_INVALID_SCHEME(scheme);
+                }
                 *value = *table_get_dE(scheme, material, row);
                 return PUMAS_RETURN_SUCCESS;
         } else if (property == PUMAS_PROPERTY_MAGNETIC_ROTATION) {
@@ -2206,10 +2225,10 @@ enum pumas_return pumas_table_value(enum pumas_property property,
         } else if (property == PUMAS_PROPERTY_CROSS_SECTION) {
                 *value = *table_get_CS(material, row);
                 return PUMAS_RETURN_SUCCESS;
+        } else {
+                return ERROR_FORMAT(PUMAS_RETURN_INDEX_ERROR,
+                    "invalid `property' index [%d]", property);
         }
-
-error:
-        PUMAS_RETURN(rc, pumas_table_value);
 }
 
 int pumas_table_length(void)
@@ -2221,52 +2240,56 @@ int pumas_table_length(void)
 enum pumas_return pumas_table_index(enum pumas_property property,
     enum pumas_scheme scheme, int material, double value, int * index)
 {
+        ERROR_INITIALISE(pumas_table_index);
         const int imax = s_shared->n_kinetics - 1;
         const double * table;
-        enum pumas_return rc;
 
         /* Check some input parameters. */
         *index = 0;
-        if (s_shared == NULL) {
-                rc = PUMAS_RETURN_INITIALISATION_ERROR;
-                goto error;
+        if (s_shared == NULL) { return ERROR_NOT_INITIALISED(); }
+        if ((material < 0) || (material >= s_shared->n_materials)) {
+                return ERROR_INVALID_MATERIAL(material);
         }
-
-        rc = PUMAS_RETURN_INDEX_ERROR;
-        if ((material < 0) || (material >= s_shared->n_materials)) goto error;
 
         /* Get the tabulated value's index. */
         if (property == PUMAS_PROPERTY_KINETIC_ENERGY)
                 table = table_get_K(0);
         else if (property == PUMAS_PROPERTY_GRAMMAGE) {
                 if ((scheme <= PUMAS_SCHEME_NO_LOSS) ||
-                    (scheme >= PUMAS_SCHEME_DETAILED))
-                        goto error;
+                    (scheme >= PUMAS_SCHEME_DETAILED)) {
+                        return ERROR_INVALID_SCHEME(scheme);
+                }
                 table = table_get_X(scheme, material, 0);
         } else if (property == PUMAS_PROPERTY_PROPER_TIME) {
                 if ((scheme <= PUMAS_SCHEME_NO_LOSS) ||
-                    (scheme >= PUMAS_SCHEME_DETAILED))
-                        goto error;
+                    (scheme >= PUMAS_SCHEME_DETAILED)) {
+                        return ERROR_INVALID_SCHEME(scheme);
+                }
                 table = table_get_T(scheme, material, 0);
         } else if (property == PUMAS_PROPERTY_ENERGY_LOSS) {
                 if ((scheme <= PUMAS_SCHEME_NO_LOSS) ||
-                    (scheme >= PUMAS_SCHEME_DETAILED))
-                        goto error;
+                    (scheme >= PUMAS_SCHEME_DETAILED)) {
+                        return ERROR_INVALID_SCHEME(scheme);
+                }
                 table = table_get_dE(scheme, material, 0);
         } else if (property == PUMAS_PROPERTY_MAGNETIC_ROTATION) {
                 value *= s_shared->mass / LARMOR_FACTOR;
                 table = table_get_T(PUMAS_SCHEME_CSDA, material, 0);
         } else if (property == PUMAS_PROPERTY_CROSS_SECTION)
                 table = table_get_CS(material, 0);
-        else
-                goto error;
+        else {
+                return ERROR_FORMAT(PUMAS_RETURN_INDEX_ERROR,
+                    "invalid `property' index [%d]", property);
+        }
 
-        rc = PUMAS_RETURN_VALUE_ERROR;
         if (value < table[0]) {
-                goto error;
+                return ERROR_FORMAT(PUMAS_RETURN_VALUE_ERROR,
+                    "out of range `value' [%.5lE < %.5lE]", value < table[0]);
         } else if (value >= table[imax]) {
                 *index = imax;
-                goto error;
+                return ERROR_FORMAT(PUMAS_RETURN_VALUE_ERROR,
+                    "out of range `value' [%.5lE < %.5lE]",
+                    value >= table[imax]);
         }
 
         int i1 = 0, i2 = imax;
@@ -2274,8 +2297,6 @@ enum pumas_return pumas_table_index(enum pumas_property property,
         *index = i1;
 
         return PUMAS_RETURN_SUCCESS;
-error:
-        PUMAS_RETURN(rc, pumas_table_index);
 }
 
 /* Low level routines: encapsulation of the tabulated CEL and DEL properties as
@@ -3086,6 +3107,7 @@ float * table_get_dcs_value(
  * @param state        The initial/final state.
  * @param medium_index The index of the propagation medium.
  * @param locals       Handle for the local properties of the uniform medium.
+ * @param error_       The error data.
  * @return On success `PUMAS_RETURN_SUCCESS` otherwise `PUMAS_ERROR`.
  *
  * Transport the particle through a uniform medium using the CSDA. At output
@@ -3099,7 +3121,7 @@ float * table_get_dcs_value(
  */
 enum pumas_return transport_with_csda(struct pumas_context * context,
     struct pumas_state * state, struct pumas_medium * medium,
-    struct medium_locals * locals)
+    struct medium_locals * locals, struct error_context * error_)
 {
         /* Unpack and backup the initial state. */
         const int material = medium->material;
@@ -3462,6 +3484,7 @@ enum pumas_return csda_magnetic_transport(struct pumas_context * context,
  * @param medium          The initial propagation medium.
  * @param locals          Handle for the local properties of the starting
  *                        medium.
+ * @param error           The error data.
  * @param step_max_medium The step limitation from the medium.
  * @param step_max_locals The step limitation from the local properties.
  * @return `PUMAS_RETURN_SUCCESS` on success or `PUMAS_ERROR` otherwise.
@@ -3475,7 +3498,7 @@ enum pumas_return csda_magnetic_transport(struct pumas_context * context,
 enum pumas_return transport_with_stepping(struct pumas_context * context,
     struct pumas_state * state, struct pumas_medium * medium,
     struct medium_locals * locals, double step_max_medium,
-    double step_max_locals)
+    double step_max_locals, struct error_context * error_)
 {
         /* Check the config. */
         if (context->random == NULL) return PUMAS_RETURN_MISSING_RANDOM;
@@ -5268,6 +5291,33 @@ int element_index(const char * name)
 }
 
 /*
+ * Low level routine: indexing of materials.
+ */
+/**
+ * Find the table index of a material given its name.
+ *
+ * @param name   The material name.
+ * @param name   The material index.
+ * @param error_ The error data.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned.
+ */
+static enum pumas_return material_index(
+    const char * material, int * index, struct error_context * error_)
+{
+        int i;
+        for (i = 0; i < s_shared->n_materials; i++) {
+                if (strcmp(s_shared->material_name[i], material) == 0) {
+                        *index = i;
+                        return PUMAS_RETURN_SUCCESS;
+                }
+        }
+
+        return ERROR_VREGISTER(
+            PUMAS_RETURN_UNKNOWN_MATERIAL, "unknown material `%s'", material);
+}
+
+/*
  * Low level routines: various functions related to Coulomb scattering.
  */
 /**
@@ -5714,41 +5764,59 @@ int memory_padded_size(int size, int pad_size)
 /* Low level routine: error handling. */
 
 /**
- * Utility function for encapsulating `returns` with an error handler.
+ * Utility function for formating errors.
  *
- * @param context    The simulation context or `NULL`.
+ * @param error_     The error data.
  * @param rc         The return code.
  * @param caller     The calling function from which to return.
+ * @param file       The file where the error occured.
+ * @param line       The line where the error occured.
+ * @param message    A brief description of the error.
  * @return The return code is forwarded.
- *
- * Note that depending on the value of *context* the function operates with
- * the library global error handler or the context's one.
  */
-static enum pumas_return pumas_return(
-    enum pumas_return rc, pumas_function_t * caller)
+static enum pumas_return error_format(struct error_context * error_,
+    enum pumas_return rc, const char * file, int line, const char * format, ...)
 {
-        if (rc == PUMAS_RETURN_SUCCESS) return rc;
-
-        if (s_error.catch) {
-                if (s_error.catch_rc == PUMAS_RETURN_SUCCESS) {
-                        s_error.catch_rc = rc;
-                        s_error.catch_function = caller;
-                }
+        error_->code = rc;
+        if ((s_error.handler == NULL) || (rc == PUMAS_RETURN_SUCCESS))
                 return rc;
-        }
 
-        if (s_error.handler != NULL) {
-                struct pumas_error error, *ptr;
-                if (caller == (pumas_function_t *)pumas_initialise) {
-                        ptr = &error;
-                        error.file = s_error.file;
-                        error.line = s_error.line;
-                } else
-                        ptr = NULL;
-                s_error.handler(rc, caller, ptr);
+        /* Format the error message */
+        const int n =
+            snprintf(error_->message, ERROR_MSG_LENGTH, "{ %s [#%d], %s:%d } ",
+                pumas_error_function(error_->function), rc, file, line);
+        if (n < ERROR_MSG_LENGTH - 1) {
+                va_list ap;
+                va_start(ap, format);
+                vsnprintf(
+                    error_->message + n, ERROR_MSG_LENGTH - n, format, ap);
+                va_end(ap);
         }
 
         return rc;
+}
+
+/**
+ * Utility function for handling errors.
+ *
+ * @param ezrror_ The error data.
+ * @return The return code is forwarded.
+ */
+static enum pumas_return error_raise(struct error_context * error_)
+{
+        if ((s_error.handler == NULL) || (error_->code == PUMAS_RETURN_SUCCESS))
+                return error_->code;
+
+        if (s_error.catch) {
+                if (s_error.catch_error.code == PUMAS_RETURN_SUCCESS) {
+                        memcpy(&s_error.catch_error, error_,
+                            sizeof(s_error.catch_error));
+                }
+                return error_->code;
+        }
+        s_error.handler(error_->code, error_->function, error_->message);
+
+        return error_->code;
 }
 
 /*
@@ -5759,24 +5827,24 @@ static enum pumas_return pumas_return(
  *
  * @param fid         The file handle.
  * @param material    The material index.
- * @param line        The line where any error occured.
+ * @param filename    The name of the curent file.
+ * @param error_      The error data.
  * @return On succces `PUMAS_RETURN_SUCCESS`, otherwise `PUMAS_ERROR`.
  *
  * Parse a dE/dX data table in PDG text file format.
  */
-enum pumas_return io_parse_dedx_file(FILE * fid, int material, int * line)
+enum pumas_return io_parse_dedx_file(FILE * fid, int material,
+    const char * filename, struct error_context * error_)
 {
-        enum pumas_return rc = PUMAS_RETURN_SUCCESS;
         char * buffer = NULL;
 
         /* Skip the header lines. */
-        *line = 0;
+        int line = 0;
         int i;
         for (i = 0; i < s_shared->n_energy_loss_header; i++) {
-                rc = io_read_line(fid, &buffer);
-                (*line)++;
-                if (rc != PUMAS_RETURN_SUCCESS)
-                        return PUMAS_RETURN_FORMAT_ERROR;
+                io_read_line(fid, &buffer, filename, line, error_);
+                line++;
+                if (error_->code != PUMAS_RETURN_SUCCESS) return error_->code;
         }
 
         /* Initialise the new table. */
@@ -5798,24 +5866,29 @@ enum pumas_return io_parse_dedx_file(FILE * fid, int material, int * line)
         row++;
 
         /* Scan the new table. */
-        while (rc == PUMAS_RETURN_SUCCESS) {
-                rc = io_read_line(fid, &buffer);
-                (*line)++;
-                if (rc != PUMAS_RETURN_SUCCESS) break;
-                rc = io_parse_dedx_row(buffer, material, &row);
+        while (error_->code == PUMAS_RETURN_SUCCESS) {
+                io_read_line(fid, &buffer, filename, line, error_);
+                line++;
+                if (error_->code != PUMAS_RETURN_SUCCESS) break;
+                io_parse_dedx_row(
+                    buffer, material, &row, filename, line, error_);
         }
 
-        if (rc != PUMAS_RETURN_SUCCESS) {
-                if ((rc == PUMAS_RETURN_END_OF_FILE) || feof(fid))
-                        rc = PUMAS_RETURN_SUCCESS;
+        if (error_->code != PUMAS_RETURN_SUCCESS) {
+                if ((error_->code == PUMAS_RETURN_END_OF_FILE) || feof(fid))
+                        error_->code = PUMAS_RETURN_SUCCESS;
         }
-        if (rc != PUMAS_RETURN_SUCCESS) return rc;
+        if (error_->code != PUMAS_RETURN_SUCCESS) return error_->code;
 
-        if (row != s_shared->n_kinetics) return PUMAS_RETURN_FORMAT_ERROR;
+        if (row != s_shared->n_kinetics)
+                return ERROR_VREGISTER(PUMAS_RETURN_FORMAT_ERROR,
+                    "inconsistent number of rows in energy loss tables [%s, %d "
+                    "!= %d]",
+                    filename, row, s_shared->n_kinetics);
 
         compute_regularise_del(material);
 
-        return rc;
+        return error_->code;
 }
 
 /**
@@ -5824,11 +5897,15 @@ enum pumas_return io_parse_dedx_file(FILE * fid, int material, int * line)
  * @param buffer   The read buffer containing the row data.
  * @param material The index of the material.
  * @param row      The index of the parsed row.
+ * @param filename The name of the current file.
+ * @param line     The line being processed.
+ * @param error_   The error data.
  * @return On succees `PUMAS_RETURN_SUCCESS`, or `PUMAS_ERROR` otherwise.
  *
  * Parse a row of a dE/dX data table formated in PDG text file format.
  */
-enum pumas_return io_parse_dedx_row(char * buffer, int material, int * row)
+enum pumas_return io_parse_dedx_row(char * buffer, int material, int * row,
+    const char * filename, int line, struct error_context * error_)
 {
         /*
          * Skip the peculiar values since they differ from material to
@@ -5843,7 +5920,8 @@ enum pumas_return io_parse_dedx_row(char * buffer, int material, int * row)
         int count = sscanf(buffer, "%lf %*f %lf %lf %lf %lf %lf %lf", &k, &a,
             &brems, &pair, &photo, &be, &de);
         if ((count != 7) || (*row >= s_shared->n_kinetics))
-                return PUMAS_RETURN_FORMAT_ERROR;
+                return ERROR_VREGISTER(PUMAS_RETURN_FORMAT_ERROR,
+                    "invalid data line [@%s:%d]", filename, line);
 
         /* Change units. MeV to GeV and MeV cm^2/g to GeV m^2/kg. */
         k *= 1E-03;
@@ -5858,7 +5936,10 @@ enum pumas_return io_parse_dedx_row(char * buffer, int material, int * row)
         if (material == 0) {
                 *table_get_K(*row) = k;
         } else if (*table_get_K(*row) != k)
-                return PUMAS_RETURN_VALUE_ERROR;
+                return ERROR_VREGISTER(PUMAS_RETURN_FORMAT_ERROR,
+                    "inconsistent kinetic energy value [@%s:%d, %.5lE != "
+                    "%.5lE]",
+                    filename, line, *table_get_K(*row), k);
 
         /* Compute the fractional contributions of the energy loss
          * processes to the CEL and to DELs.
@@ -5867,7 +5948,7 @@ enum pumas_return io_parse_dedx_row(char * buffer, int material, int * row)
         if (material == 0) {
                 /* Precompute the per element terms. */
                 if ((cel_table = compute_cel_and_del(*row)) == NULL)
-                        return PUMAS_RETURN_MEMORY_ERROR;
+                        return ERROR_REGISTER_MEMORY();
         }
 
         struct material_component * component = s_shared->composition[material];
@@ -5951,8 +6032,11 @@ enum pumas_return io_parse_dedx_row(char * buffer, int material, int * row)
 /**
  * Read a line from a file.
  *
- * @param fid The file handle.
- * @param buf A pointer to the new line or `NULL` in case of faillure.
+ * @param fid      The file handle.
+ * @param buf      A pointer to the new line or `NULL` in case of faillure.
+ * @param filename The file currently processed.
+ * @param line     The current line in the file.
+ * @param error_   The error data.
  * @return On success `PUMAS_RETURN_SUCCESS` otherwise an error code.
  *
  * This routine manages a dynamic buffer. If *fid* is not `NULL`, this routine
@@ -5960,7 +6044,8 @@ enum pumas_return io_parse_dedx_row(char * buffer, int material, int * row)
  * Otherwise, if *fid* is `NULL` any memory previously allocated by the routine
  * is released.
  */
-enum pumas_return io_read_line(FILE * fid, char ** buf)
+enum pumas_return io_read_line(FILE * fid, char ** buf, const char * filename,
+    int line, struct error_context * error_)
 {
         static int size = 0;
         static char * buffer = NULL;
@@ -5978,7 +6063,7 @@ enum pumas_return io_read_line(FILE * fid, char ** buf)
                 /* Allocate the buffer if not already done. */
                 size = 2048;
                 buffer = allocate(size * sizeof(*buffer));
-                if (buffer == NULL) return PUMAS_RETURN_MEMORY_ERROR;
+                if (buffer == NULL) return ERROR_REGISTER_MEMORY();
         }
 
         /* Get a full line. */
@@ -5988,15 +6073,16 @@ enum pumas_return io_read_line(FILE * fid, char ** buf)
                 const char endline1 = '\n';
                 const char endline2 = '\r';
                 const char * r = fgets(s, to_read, fid);
-                if (r == NULL) return PUMAS_RETURN_END_OF_FILE;
+                if (r == NULL) return ERROR_REGISTER_EOF(filename);
                 int n_read = strlen(s);
                 if ((n_read >= to_read - 1) && (s[to_read - 2] != endline1) &&
                     (s[to_read - 2] != endline2)) {
                         size += 2048;
                         char * new_buffer =
                             reallocate(buffer, size * sizeof(*buffer));
-                        if (new_buffer == NULL)
-                                return PUMAS_RETURN_MEMORY_ERROR;
+                        if (new_buffer == NULL) {
+                                return ERROR_REGISTER_MEMORY();
+                        }
                         buffer = new_buffer;
                         s += to_read - 1;
                         to_read = 2049;
@@ -6014,10 +6100,11 @@ enum pumas_return io_read_line(FILE * fid, char ** buf)
  *
  * @param mdf          The MDF handle.
  * @param dedx_path    The path to the energy loss table(s).
+ * @param error_       The error data.
  * @return On success `PUMAS_RETURN_SUCCESS` otherwise an error code.
  */
-enum pumas_return mdf_parse_settings(
-    struct mdf_buffer * mdf, const char * dedx_path)
+enum pumas_return mdf_parse_settings(struct mdf_buffer * mdf,
+    const char * dedx_path, struct error_context * error_)
 {
         /* Initialisation of settings. */
         mdf->n_kinetics = 0;
@@ -6034,25 +6121,21 @@ enum pumas_return mdf_parse_settings(
         mdf->size_materials_names = 0;
 
         /* Prepare the path to the first dedx file. */
-        enum pumas_return rc;
         char * full_path = NULL;
         char * filename = NULL;
         int offset_dir, size_path, size_name = 0;
         if (!mdf->dry_mode) {
                 mdf->size_dedx_path = strlen(dedx_path) + 1;
                 if (mdf_format_path(dedx_path, mdf->mdf_path, &full_path,
-                        &offset_dir, &size_path) != PUMAS_RETURN_SUCCESS) {
-                        rc = PUMAS_RETURN_MEMORY_ERROR;
+                        &offset_dir, &size_path,
+                        error_) != PUMAS_RETURN_SUCCESS)
                         goto clean_and_exit;
-                }
         }
 
         /* Prepare the index tables. */
-        if (mdf_settings_index(MDF_INDEX_INITIALISE, 0) !=
-            PUMAS_RETURN_SUCCESS) {
-                rc = PUMAS_RETURN_MEMORY_ERROR;
+        if (mdf_settings_index(MDF_INDEX_INITIALISE, 0, error_) !=
+            PUMAS_RETURN_SUCCESS)
                 goto clean_and_exit;
-        }
 
         /* Loop on the XML nodes. */
         const int pad_size = sizeof(*(s_shared->data));
@@ -6062,17 +6145,17 @@ enum pumas_return mdf_parse_settings(
         struct mdf_node node;
         for (;;) {
                 /* Get the next node. */
-                rc = mdf_get_node(mdf, &node);
+                mdf_get_node(mdf, &node, error_);
                 /* Check the termination. */
-                if (rc == PUMAS_RETURN_END_OF_FILE) {
+                if (error_->code == PUMAS_RETURN_END_OF_FILE) {
                         if (mdf->depth == MDF_DEPTH_EXTERN) {
                                 /* This is a normal terminations. */
-                                rc = PUMAS_RETURN_SUCCESS;
+                                error_->code = PUMAS_RETURN_SUCCESS;
                                 break;
                         } else {
                                 goto clean_and_exit;
                         }
-                } else if (rc != PUMAS_RETURN_SUCCESS)
+                } else if (error_->code != PUMAS_RETURN_SUCCESS)
                         goto clean_and_exit;
                 if (node.key == MDF_KEY_OTHER) continue;
 
@@ -6089,7 +6172,7 @@ enum pumas_return mdf_parse_settings(
                                         size_name = strlen(node.at2.file);
                                         filename = allocate(size_name + 1);
                                         if (filename == NULL) {
-                                                rc = PUMAS_RETURN_MEMORY_ERROR;
+                                                ERROR_REGISTER_MEMORY();
                                                 goto clean_and_exit;
                                         }
                                         strcpy(filename, node.at2.file);
@@ -6098,21 +6181,21 @@ enum pumas_return mdf_parse_settings(
                                 /* Update the names table and book a new index
                                  * table.
                                  */
-                                if ((mdf_settings_name(
-                                         size, 'M', node.at1.name) !=
-                                        PUMAS_RETURN_SUCCESS) ||
+                                if ((mdf_settings_name(size, 'M', node.at1.name,
+                                         error_) != PUMAS_RETURN_SUCCESS) ||
                                     (mdf_settings_index(
-                                         MDF_INDEX_WRITE_MATERIAL, 0) !=
-                                        PUMAS_RETURN_SUCCESS)) {
-                                        rc = PUMAS_RETURN_MEMORY_ERROR;
+                                         MDF_INDEX_WRITE_MATERIAL, 0, error_) !=
+                                        PUMAS_RETURN_SUCCESS))
                                         goto clean_and_exit;
-                                }
                         } else {
                                 if (mdf->elements_in > mdf->max_components)
                                         mdf->max_components = mdf->elements_in;
                                 /* Finalise the index table. */
-                                mdf_settings_index(MDF_INDEX_FINALISE_MATERIAL,
-                                    mdf->elements_in);
+                                if (mdf_settings_index(
+                                        MDF_INDEX_FINALISE_MATERIAL,
+                                        mdf->elements_in,
+                                        error_) != PUMAS_RETURN_SUCCESS)
+                                        goto clean_and_exit;
                         }
                 }
 
@@ -6128,15 +6211,13 @@ enum pumas_return mdf_parse_settings(
                                 /* Book a new index table. */
                                 if (mdf_settings_index(
                                         MDF_INDEX_INITIALISE_COMPOSITE,
-                                        mdf->n_elements) !=
-                                    PUMAS_RETURN_SUCCESS) {
-                                        rc = PUMAS_RETURN_MEMORY_ERROR;
+                                        mdf->n_elements,
+                                        error_) != PUMAS_RETURN_SUCCESS)
                                         goto clean_and_exit;
-                                }
                         } else {
                                 /* Analyse the index table. */
                                 int elements_in = mdf_settings_index(
-                                    MDF_INDEX_FINALISE_COMPOSITE, 0);
+                                    MDF_INDEX_FINALISE_COMPOSITE, 0, error_);
                                 mdf->n_components += elements_in;
                                 if (elements_in > mdf->max_components)
                                         mdf->max_components = elements_in;
@@ -6157,42 +6238,52 @@ enum pumas_return mdf_parse_settings(
                         const int size = strlen(node.at1.name) + 1;
                         mdf->size_elements_names +=
                             memory_padded_size(size, pad_size);
-                        if (mdf_settings_name(size, 'E', node.at1.name) !=
-                            PUMAS_RETURN_SUCCESS) {
-                                rc = PUMAS_RETURN_MEMORY_ERROR;
+                        if (mdf_settings_name(size, 'E', node.at1.name,
+                                error_) != PUMAS_RETURN_SUCCESS)
                                 goto clean_and_exit;
-                        }
                 } else if (node.key == MDF_KEY_ATOMIC_COMPONENT) {
                         mdf->n_components++;
-                        int index = mdf_settings_name(0, 'E', node.at1.name);
+                        int index =
+                            mdf_settings_name(0, 'E', node.at1.name, error_);
                         if (index < 0) {
-                                rc = PUMAS_RETURN_UNKNOWN_ELEMENT;
+                                ERROR_VREGISTER(PUMAS_RETURN_UNKNOWN_ELEMENT,
+                                    "unknown atomic element `%s' [@%s:%d]",
+                                    node.at1.name, mdf->mdf_path, mdf->line);
                                 goto clean_and_exit;
                         }
-                        if (mdf_settings_index(MDF_INDEX_WRITE_MATERIAL,
-                                index) != PUMAS_RETURN_SUCCESS) {
-                                rc = PUMAS_RETURN_FORMAT_ERROR;
+                        if (mdf_settings_index(MDF_INDEX_WRITE_MATERIAL, index,
+                                error_) != PUMAS_RETURN_SUCCESS)
                                 goto clean_and_exit;
-                        }
                 } else if (node.key == MDF_KEY_COMPOSITE_COMPONENT) {
                         /* Update the components count. */
                         mdf->materials_in++;
 
                         /* Update the index table. */
-                        int index = mdf_settings_name(0, 'M', node.at1.name);
+                        int index =
+                            mdf_settings_name(0, 'M', node.at1.name, error_);
                         if (index < 0) {
-                                rc = PUMAS_RETURN_UNKNOWN_MATERIAL;
+                                ERROR_VREGISTER(PUMAS_RETURN_UNKNOWN_MATERIAL,
+                                    "unknown material `%s' [@%s:%d]",
+                                    node.at1.name, mdf->mdf_path, mdf->line);
                                 goto clean_and_exit;
                         }
-                        mdf_settings_index(MDF_INDEX_UPDATE_COMPOSITE, index);
+                        if (mdf_settings_index(MDF_INDEX_UPDATE_COMPOSITE,
+                                index, error_) != PUMAS_RETURN_SUCCESS)
+                                goto clean_and_exit;
                 }
         }
         mdf->line = 0;
 
         /* Check the content .*/
-        if ((mdf->n_elements == 0) || (mdf->n_materials == 0)) {
+        if (mdf->n_elements == 0) {
                 /* There are no elements or materials. */
-                rc = PUMAS_RETURN_INCOMPLETE_FILE;
+                ERROR_VREGISTER(PUMAS_RETURN_INCOMPLETE_FILE,
+                    "no elements in MDF file `%s'", mdf->mdf_path);
+                goto clean_and_exit;
+        } else if (mdf->n_materials == 0) {
+                /* There are no elements or materials. */
+                ERROR_VREGISTER(PUMAS_RETURN_INCOMPLETE_FILE,
+                    "no materials in MDF file `%s'", mdf->mdf_path);
                 goto clean_and_exit;
         }
 
@@ -6204,32 +6295,24 @@ enum pumas_return mdf_parse_settings(
                         /* Get enough memory. */
                         char * new_name = reallocate(full_path, size_new);
                         if (new_name == NULL) {
-                                rc = PUMAS_RETURN_MEMORY_ERROR;
+                                ERROR_REGISTER_MEMORY();
                                 goto clean_and_exit;
                         }
                         full_path = new_name;
                 }
                 strcpy(full_path + offset_dir, filename);
 
-                rc = mdf_parse_kinetic(mdf, full_path);
+                mdf_parse_kinetic(mdf, full_path, error_);
         } else
                 mdf->n_kinetics = 1;
 
 clean_and_exit:
-        /* Copy any info on the error. */
-        if ((rc != PUMAS_RETURN_SUCCESS) && (mdf->line > 0)) {
-                s_error.line = mdf->line;
-                if (s_error.file[0] == '\0')
-                        strncpy(s_error.file, mdf->mdf_path, ERROR_FILE_LENGTH);
-                s_error.file[ERROR_FILE_LENGTH - 1] = '\0';
-        }
-
         /* Free the temporary memory and return. */
-        mdf_settings_name(-1, 0x0, NULL);
-        mdf_settings_index(MDF_INDEX_FREE, 0);
+        mdf_settings_name(-1, 0x0, NULL, error_);
+        mdf_settings_index(MDF_INDEX_FREE, 0, error_);
         deallocate(filename);
         deallocate(full_path);
-        return rc;
+        return error_->code;
 }
 
 /**
@@ -6237,9 +6320,10 @@ clean_and_exit:
  *
  * @param operation The operation to perform.
  * @param value     An optional value for the operation.
+ * @param error_    The error data.
  * @return The return value depends on the operation.
  */
-int mdf_settings_index(int operation, int value)
+int mdf_settings_index(int operation, int value, struct error_context * error_)
 {
         const int chunk_size = 1024;
         static int * buffer = NULL;
@@ -6293,7 +6377,7 @@ int mdf_settings_index(int operation, int value)
                         buffer = NULL;
                         total_size = 0;
                         free_size = 0;
-                        return PUMAS_RETURN_MEMORY_ERROR;
+                        return ERROR_REGISTER_MEMORY();
                 }
                 buffer = new_buffer;
                 free_size += delta_size;
@@ -6316,7 +6400,8 @@ int mdf_settings_index(int operation, int value)
                 return PUMAS_RETURN_SUCCESS;
         }
 
-        return PUMAS_RETURN_INDEX_ERROR;
+        return ERROR_VREGISTER(
+            PUMAS_RETURN_INDEX_ERROR, "invalid operation `%s'", operation);
 }
 
 /**
@@ -6325,9 +6410,11 @@ int mdf_settings_index(int operation, int value)
  * @param size   The operation to perform or the size of the new name.
  * @param prefix A prefix for the category of the name (base, composite, ...).
  * @param name   The name to handle.
+ * @param error_ The error data.
  * @return The return value depends on the operation performed.
  */
-int mdf_settings_name(int size, char prefix, const char * name)
+int mdf_settings_name(
+    int size, char prefix, const char * name, struct error_context * error_)
 {
         const int chunk_size = 4096;
         static char * buffer = NULL;
@@ -6368,7 +6455,7 @@ int mdf_settings_name(int size, char prefix, const char * name)
                         buffer = NULL;
                         total_size = 0;
                         free_size = 0;
-                        return PUMAS_RETURN_MEMORY_ERROR;
+                        return ERROR_REGISTER_MEMORY();
                 }
                 buffer = new_buffer;
                 free_size += delta_size;
@@ -6388,11 +6475,13 @@ int mdf_settings_name(int size, char prefix, const char * name)
 /**
  * Parse the kinetic energy values from a dE/dX file.
  *
- * @param mdf  The MDF handle.
- * @param path The full path to the dE/dX file.
+ * @param mdf    The MDF handle.
+ * @param path   The full path to the dE/dX file.
+ * @param error_ The error data.
  * @return On success `PUMAS_RETURN_SUCCESS` otherwise `PUMAS_ERROR`.
  */
-enum pumas_return mdf_parse_kinetic(struct mdf_buffer * mdf, const char * path)
+enum pumas_return mdf_parse_kinetic(
+    struct mdf_buffer * mdf, const char * path, struct error_context * error_)
 {
         /* Initialise the settings. */
         mdf->n_kinetics = 0;
@@ -6402,20 +6491,18 @@ enum pumas_return mdf_parse_kinetic(struct mdf_buffer * mdf, const char * path)
         /* Open the dedx file. */
         FILE * fid = fopen(path, "r");
         if (fid == NULL) {
-                mdf->line = 0;
-                strncpy(s_error.file, path, ERROR_FILE_LENGTH);
-                return PUMAS_RETURN_PATH_ERROR;
+                return ERROR_VREGISTER(
+                    PUMAS_RETURN_PATH_ERROR, "could not open file `%s'", path);
         }
 
         /* Skip the header lines. */
         char * buffer = NULL;
-        enum pumas_return rc;
         for (mdf->n_energy_loss_header = 0;; mdf->n_energy_loss_header++) {
-                rc = io_read_line(fid, &buffer);
+                io_read_line(fid, &buffer, path, mdf->line, error_);
                 mdf->line++;
-                if (rc != PUMAS_RETURN_SUCCESS) {
+                if (error_->code != PUMAS_RETURN_SUCCESS) {
                         fclose(fid);
-                        return rc;
+                        return error_->code;
                 }
                 const char * c;
                 int i;
@@ -6440,36 +6527,36 @@ enum pumas_return mdf_parse_kinetic(struct mdf_buffer * mdf, const char * path)
 
         next_line:
                 /* Check for a new line. */
-                rc = io_read_line(fid, &buffer);
+                io_read_line(fid, &buffer, path, mdf->line, error_);
                 mdf->line++;
-                if (rc != PUMAS_RETURN_SUCCESS) {
-                        if ((rc == PUMAS_RETURN_END_OF_FILE) || feof(fid)) {
-                                rc = PUMAS_RETURN_SUCCESS;
+                if (error_->code != PUMAS_RETURN_SUCCESS) {
+                        if ((error_->code == PUMAS_RETURN_END_OF_FILE) ||
+                            feof(fid)) {
+                                error_->code = PUMAS_RETURN_SUCCESS;
                                 break;
                         }
                 }
         }
-        io_read_line(NULL, NULL);
+        io_read_line(NULL, NULL, NULL, 0, error_);
 
         /*  Update the settings. */
-        if (rc == PUMAS_RETURN_SUCCESS)
-                mdf->line = 0;
-        else
-                strncpy(s_error.file, path, ERROR_FILE_LENGTH);
+        if (error_->code == PUMAS_RETURN_SUCCESS) mdf->line = 0;
         mdf->n_kinetics = nk;
         mdf->dcs_model_offset = offset;
 
         fclose(fid);
-        return rc;
+        return error_->code;
 }
 
 /**
  * Parse the atomic elements from a MDF.
  *
- * @param mdf The MDF handle.
+ * @param mdf   The MDF handle.
+ * @param error The error data.
  * @return On success `PUMAS_RETURN_SUCCESS` otherwise `PUMAS_ERROR`.
  */
-enum pumas_return mdf_parse_elements(struct mdf_buffer * mdf)
+enum pumas_return mdf_parse_elements(
+    struct mdf_buffer * mdf, struct error_context * error_)
 {
         /* Loop on the XML nodes. */
         const int m = s_shared->n_kinetics - s_shared->dcs_model_offset;
@@ -6483,12 +6570,12 @@ enum pumas_return mdf_parse_elements(struct mdf_buffer * mdf)
         mdf->line = 1;
         mdf->depth = MDF_DEPTH_EXTERN;
         struct mdf_node node;
-        enum pumas_return rc;
+
         int iel = 0;
         for (;;) {
                 /* Get the next node. */
-                rc = mdf_get_node(mdf, &node);
-                if (rc != PUMAS_RETURN_SUCCESS) break;
+                if (mdf_get_node(mdf, &node, error_) != PUMAS_RETURN_SUCCESS)
+                        break;
 
                 if (node.key != MDF_KEY_ELEMENT)
                         continue;
@@ -6520,49 +6607,54 @@ enum pumas_return mdf_parse_elements(struct mdf_buffer * mdf)
                 e->name = (char *)(e->data) + c_mem;
                 memset(e->dcs_data, 0x0, c_mem);
                 strcpy(e->name, node.at1.name);
-                rc = PUMAS_RETURN_VALUE_ERROR;
-                if (sscanf(node.at2.Z, "%lf", &(e->Z)) != 1) break;
-                if (sscanf(node.at3.A, "%lf", &(e->A)) != 1) break;
-                if (sscanf(node.at4.I, "%lf", &(e->I)) != 1) break;
-                if ((e->Z <= 0.) || (e->A <= 0.) || (e->I <= 0.)) break;
+                if ((sscanf(node.at2.Z, "%lf", &(e->Z)) != 1) || (e->Z <= 0.)) {
+                        ERROR_VREGISTER(PUMAS_RETURN_VALUE_ERROR,
+                            "invalid atomic number `Z' [%s]", node.at2.Z);
+                        break;
+                }
+                if ((sscanf(node.at3.A, "%lf", &(e->A)) != 1) || (e->A <= 0.)) {
+                        ERROR_VREGISTER(PUMAS_RETURN_VALUE_ERROR,
+                            "invalid atomic mass `A' [%s]", node.at3.A);
+                        break;
+                }
+                if ((sscanf(node.at4.I, "%lf", &(e->I)) != 1) || (e->I <= 0.)) {
+                        ERROR_VREGISTER(PUMAS_RETURN_VALUE_ERROR,
+                            "invalid Mean Excitation Energy `I' [%s]",
+                            node.at4.I);
+                        break;
+                }
                 e->I *= 1E-09;
-                rc = PUMAS_RETURN_SUCCESS;
 
                 /* Increment. */
                 iel++;
                 if ((node.tail == 1) && (iel >= s_shared->n_elements)) break;
         }
 
-        if (rc != PUMAS_RETURN_SUCCESS) {
-                s_error.line = mdf->line;
-                strncpy(s_error.file, mdf->mdf_path, ERROR_FILE_LENGTH);
-                s_error.file[ERROR_FILE_LENGTH - 1] = '\0';
-        }
-
-        return rc;
+        return error_->code;
 }
 
 /**
  * Parse the base materials from a MDF.
  *
- * @param mdf The MDF handle.
+ * @param mdf       The MDF handle.
+ * @param error_    The error data
  * @return On success `PUMAS_RETURN_SUCCESS` otherwise `PUMAS_ERROR`.
  *
  * The materials dE/dX data are loaded according to the path provided
  * by the `<table>` XML node. If path is not absolute, it specifies a relative
  * path to the directory where the MDF is located.
  */
-enum pumas_return mdf_parse_materials(struct mdf_buffer * mdf)
+enum pumas_return mdf_parse_materials(
+    struct mdf_buffer * mdf, struct error_context * error_)
 {
         /* Format the path directory name. */
-        enum pumas_return rc;
         char * filename = NULL;
         int offset_dir, size_name;
         if (!mdf->dry_mode) {
-                if ((rc = mdf_format_path(s_shared->dedx_path,
-                         s_shared->mdf_path, &filename, &offset_dir,
-                         &size_name)) != PUMAS_RETURN_SUCCESS)
-                        return rc;
+                if ((mdf_format_path(s_shared->dedx_path, s_shared->mdf_path,
+                        &filename, &offset_dir, &size_name, error_)) !=
+                    PUMAS_RETURN_SUCCESS)
+                        return error_->code;
         }
 
         /* Loop on the XML nodes. */
@@ -6581,8 +6673,8 @@ enum pumas_return mdf_parse_materials(struct mdf_buffer * mdf)
 
         for (;;) {
                 /* Get the next node. */
-                rc = mdf_get_node(mdf, &node);
-                if (rc != PUMAS_RETURN_SUCCESS) break;
+                mdf_get_node(mdf, &node, error_);
+                if (error_->code != PUMAS_RETURN_SUCCESS) break;
 
                 /* Set the material data. */
                 if (node.key == MDF_KEY_MATERIAL) {
@@ -6599,21 +6691,14 @@ enum pumas_return mdf_parse_materials(struct mdf_buffer * mdf)
                                 /* Read the energy loss data. */
                                 FILE * fid = fopen(filename, "r");
                                 if (fid == NULL) {
-                                        mdf->line = 0;
-                                        strncpy(s_error.file, filename,
-                                            ERROR_FILE_LENGTH);
-                                        rc = PUMAS_RETURN_PATH_ERROR;
+                                        ERROR_VREGISTER(PUMAS_RETURN_PATH_ERROR,
+                                            "could not open file `%s'",
+                                            filename);
                                         break;
                                 }
-                                int line;
-                                rc = io_parse_dedx_file(fid, imat, &line);
+                                io_parse_dedx_file(fid, imat, filename, error_);
                                 fclose(fid);
-                                if (rc != PUMAS_RETURN_SUCCESS) {
-                                        mdf->line = line;
-                                        strncpy(s_error.file, filename,
-                                            ERROR_FILE_LENGTH);
-                                        break;
-                                }
+                                if (error_->code != PUMAS_RETURN_SUCCESS) break;
 
                         /* Update the material count. */
                         update_count:
@@ -6647,7 +6732,7 @@ enum pumas_return mdf_parse_materials(struct mdf_buffer * mdf)
                                         char * new_name =
                                             reallocate(filename, size_new);
                                         if (new_name == NULL) {
-                                                rc = PUMAS_RETURN_MEMORY_ERROR;
+                                                ERROR_REGISTER_MEMORY();
                                                 break;
                                         }
                                         filename = new_name;
@@ -6658,7 +6743,7 @@ enum pumas_return mdf_parse_materials(struct mdf_buffer * mdf)
                                 int n = strlen(node.at2.file) + 1;
                                 s_shared->dedx_filename[imat] = allocate(n);
                                 if (s_shared->dedx_filename[imat] == NULL) {
-                                        rc = PUMAS_RETURN_MEMORY_ERROR;
+                                        ERROR_REGISTER_MEMORY();
                                         break;
                                 }
                                 memcpy(s_shared->dedx_filename[imat],
@@ -6679,7 +6764,9 @@ enum pumas_return mdf_parse_materials(struct mdf_buffer * mdf)
                         double f;
                         if ((sscanf(node.at2.fraction, "%lf", &f) != 1) ||
                             (f <= 0.)) {
-                                rc = PUMAS_RETURN_VALUE_ERROR;
+                                ERROR_VREGISTER(PUMAS_RETURN_VALUE_ERROR,
+                                    "invalid value for mass fraction [%s]",
+                                    node.at2.fraction);
                                 break;
                         }
                         s_shared->composition[imat][i].fraction = f;
@@ -6687,7 +6774,7 @@ enum pumas_return mdf_parse_materials(struct mdf_buffer * mdf)
                 }
         }
 
-        if (rc != PUMAS_RETURN_SUCCESS) {
+        if (error_->code != PUMAS_RETURN_SUCCESS) {
                 /* Clear the filenames, whenever allocated. */
                 int i;
                 for (i = 0; i < s_shared->n_materials - s_shared->n_composites;
@@ -6695,16 +6782,10 @@ enum pumas_return mdf_parse_materials(struct mdf_buffer * mdf)
                         deallocate(s_shared->dedx_filename[imat]);
                         s_shared->dedx_filename[imat] = NULL;
                 }
-
-                /* Register the error data. */
-                s_error.line = mdf->line;
-                if (s_error.file[0] == '\0')
-                        strncpy(s_error.file, mdf->mdf_path, ERROR_FILE_LENGTH);
-                s_error.file[ERROR_FILE_LENGTH - 1] = '\0';
         }
 
         deallocate(filename);
-        return rc;
+        return error_->code;
 }
 
 /**
@@ -6716,7 +6797,8 @@ enum pumas_return mdf_parse_materials(struct mdf_buffer * mdf)
  * The composite materials properties are given as a linear combination
  * of the base material ones.
  */
-enum pumas_return mdf_parse_composites(struct mdf_buffer * mdf)
+enum pumas_return mdf_parse_composites(
+    struct mdf_buffer * mdf, struct error_context * error_)
 {
         /* Loop on the XML nodes. */
         rewind(mdf->fid);
@@ -6739,10 +6821,9 @@ enum pumas_return mdf_parse_composites(struct mdf_buffer * mdf)
                 pad_size);
         struct composite_material * data_ma = tmp_ptr;
 
-        enum pumas_return rc;
         for (;;) {
                 /* Get the next node. */
-                if ((rc = mdf_get_node(mdf, &node)) != PUMAS_RETURN_SUCCESS)
+                if (mdf_get_node(mdf, &node, error_) != PUMAS_RETURN_SUCCESS)
                         break;
 
                 /* Set the material data. */
@@ -6784,17 +6865,25 @@ enum pumas_return mdf_parse_composites(struct mdf_buffer * mdf)
                 if (node.key == MDF_KEY_COMPOSITE_COMPONENT) {
                         int i = mdf->materials_in - 1;
                         int ima;
-                        if ((rc = pumas_material_index(node.at1.name, &ima)) !=
+                        if (material_index(node.at1.name, &ima, error_) !=
                             PUMAS_RETURN_SUCCESS)
                                 break;
                         data_ma->component[i].material = ima;
                         double f, rho;
-                        rc = PUMAS_RETURN_VALUE_ERROR;
-                        if (sscanf(node.at2.fraction, "%lf", &f) != 1) break;
-                        if (sscanf(node.at3.density, "%lf", &rho) != 1) break;
-                        if ((f < 0.) || (rho <= 0.)) break;
+                        if ((sscanf(node.at2.fraction, "%lf", &f) != 1) ||
+                            (f < 0.)) {
+                                ERROR_VREGISTER(PUMAS_RETURN_VALUE_ERROR,
+                                    "invalid mass fraction [%s]",
+                                    node.at2.fraction);
+                                break;
+                        }
+                        if ((sscanf(node.at3.density, "%lf", &rho) != 1) ||
+                            (rho <= 0.)) {
+                                ERROR_VREGISTER(PUMAS_RETURN_VALUE_ERROR,
+                                    "invalid density [%s]", node.at3.density);
+                                break;
+                        }
                         rho *= 1E+03; /* g/cm^3 -> kg/m^3.*/
-                        rc = PUMAS_RETURN_SUCCESS;
                         data_ma->component[i].fraction = f;
                         data_ma->component[i].density = rho;
 
@@ -6818,21 +6907,17 @@ enum pumas_return mdf_parse_composites(struct mdf_buffer * mdf)
                 }
         }
 
-        if (rc == PUMAS_RETURN_END_OF_FILE) rc = PUMAS_RETURN_SUCCESS;
-        if (rc != PUMAS_RETURN_SUCCESS) {
-                s_error.line = mdf->line;
-                strncpy(s_error.file, mdf->mdf_path, ERROR_FILE_LENGTH);
-                s_error.file[ERROR_FILE_LENGTH - 1] = '\0';
-        }
-
-        return rc;
+        if (error_->code == PUMAS_RETURN_END_OF_FILE)
+                error_->code = PUMAS_RETURN_SUCCESS;
+        return error_->code;
 }
 
 /**
  * Get the next XML node in the MDF.
  *
- * @param mdf  The MDF handle.
- * @param node The node handle.
+ * @param mdf    The MDF handle.
+ * @param node   The node handle.
+ * @param error_ The error data.
  * @return On success `PUMAS_RETURN_SUCCES` otherwise the corresponding
  * error code.
  *
@@ -6841,7 +6926,8 @@ enum pumas_return mdf_parse_composites(struct mdf_buffer * mdf)
  * consistency of the `<pumas>` node and children. Openings and closures
  * above are not checked, neither the tag names.
  */
-enum pumas_return mdf_get_node(struct mdf_buffer * mdf, struct mdf_node * node)
+enum pumas_return mdf_get_node(struct mdf_buffer * mdf, struct mdf_node * node,
+    struct error_context * error_)
 {
         /* Initialise the node. */
         node->at1.name = node->at2.Z = node->at3.A = node->at4.I = NULL;
@@ -6853,7 +6939,8 @@ enum pumas_return mdf_get_node(struct mdf_buffer * mdf, struct mdf_node * node)
                 if (mdf->left < 1) {
                         mdf->left = fread(
                             mdf->data, sizeof(char), mdf->size - 1, mdf->fid);
-                        if (mdf->left <= 0) return PUMAS_RETURN_END_OF_FILE;
+                        if (mdf->left <= 0)
+                                return ERROR_REGISTER_EOF(mdf->mdf_path);
                         mdf->pos = mdf->data;
                         *(mdf->data + mdf->left) = '\0';
                 }
@@ -6881,7 +6968,7 @@ enum pumas_return mdf_get_node(struct mdf_buffer * mdf, struct mdf_node * node)
                 memmove(mdf->data, mdf->pos, mdf->left);
                 mdf->left += fread(mdf->data + mdf->left, sizeof(char),
                     mdf->size - 1 - mdf->left, mdf->fid);
-                if (mdf->left <= 1) return PUMAS_RETURN_END_OF_FILE;
+                if (mdf->left <= 1) return ERROR_REGISTER_EOF(mdf->mdf_path);
                 mdf->pos = mdf->data;
                 *(mdf->data + mdf->left) = '\0';
 
@@ -6894,7 +6981,9 @@ enum pumas_return mdf_get_node(struct mdf_buffer * mdf, struct mdf_node * node)
                 } else {
                         /* We have a regular node. */
                         while ((*tail != ' ') && (*tail != '>')) {
-                                if (*tail == '\0') return PUMAS_RETURN_TOO_LONG;
+                                if (*tail == '\0')
+                                        return ERROR_REGISTER_TOO_LONG(
+                                            mdf->mdf_path, mdf->line);
                                 tail++;
                         }
                 }
@@ -6906,7 +6995,8 @@ enum pumas_return mdf_get_node(struct mdf_buffer * mdf, struct mdf_node * node)
 
                 /* Check if this is a comment. */
                 if (strcmp(key, "!--") == 0) {
-                        enum pumas_return rc = mdf_skip_pattern(mdf, "-->");
+                        enum pumas_return rc =
+                            mdf_skip_pattern(mdf, "-->", error_);
                         if (rc != PUMAS_RETURN_SUCCESS) return rc;
                         continue;
                 }
@@ -6936,42 +7026,51 @@ enum pumas_return mdf_get_node(struct mdf_buffer * mdf, struct mdf_node * node)
                         else if (strcmp(key, "composite") == 0)
                                 node->key = MDF_KEY_COMPOSITE;
                         else
-                                return PUMAS_RETURN_FORMAT_ERROR;
+                                return ERROR_REGISTER_UNEXPECTED_TAG(
+                                    key, mdf->mdf_path, mdf->line);
                 } else if (mdf->depth == MDF_DEPTH_ELEMENT) {
                         if (strcmp(key, "element") == 0)
                                 node->key = MDF_KEY_ELEMENT;
                         else
-                                return PUMAS_RETURN_FORMAT_ERROR;
+                                return ERROR_REGISTER_UNEXPECTED_TAG(
+                                    key, mdf->mdf_path, mdf->line);
                 } else if (mdf->depth == MDF_DEPTH_MATERIAL) {
                         if (strcmp(key, "material") == 0)
                                 node->key = MDF_KEY_MATERIAL;
                         else if (strcmp(key, "component") == 0)
                                 node->key = MDF_KEY_ATOMIC_COMPONENT;
                         else
-                                return PUMAS_RETURN_FORMAT_ERROR;
+                                return ERROR_REGISTER_UNEXPECTED_TAG(
+                                    key, mdf->mdf_path, mdf->line);
                 } else if (mdf->depth == MDF_DEPTH_COMPOSITE) {
                         if (strcmp(key, "composite") == 0)
                                 node->key = MDF_KEY_COMPOSITE;
                         else if (strcmp(key, "component") == 0)
                                 node->key = MDF_KEY_COMPOSITE_COMPONENT;
                         else
-                                return PUMAS_RETURN_FORMAT_ERROR;
+                                return ERROR_REGISTER_UNEXPECTED_TAG(
+                                    key, mdf->mdf_path, mdf->line);
                 } else
-                        return PUMAS_RETURN_FORMAT_ERROR;
+                        return ERROR_REGISTER_UNEXPECTED_TAG(
+                            key, mdf->mdf_path, mdf->line);
 
                 /* Check if we have an empty node. */
                 if (tailler == '>')
                         goto consistency_check;
                 else if ((node->head == 0) && (node->tail == 1)) {
                         /* We have a badly finished pure tailler. */
-                        return PUMAS_RETURN_FORMAT_ERROR;
+                        return ERROR_VREGISTER(PUMAS_RETURN_FORMAT_ERROR,
+                            "unmatched XML closer [@%s:%d]", mdf->mdf_path,
+                            mdf->line);
                 }
 
                 /* Parse any attributes. */
                 for (;;) {
                         char * sep = mdf->pos;
                         while ((*sep != '=') && (*sep != '>')) {
-                                if (*sep == '\0') return PUMAS_RETURN_TOO_LONG;
+                                if (*sep == '\0')
+                                        return ERROR_REGISTER_TOO_LONG(
+                                            mdf->mdf_path, mdf->line);
                                 sep++;
                         }
                         if (*sep == '>') {
@@ -6992,10 +7091,14 @@ enum pumas_return mdf_get_node(struct mdf_buffer * mdf, struct mdf_node * node)
                         *end = '\0';
 
                         char * value = strchr(sep + 1, '"');
-                        if (value == NULL) return PUMAS_RETURN_FORMAT_ERROR;
+                        if (value == NULL)
+                                return ERROR_REGISTER_INVALID_XML_VALUE(
+                                    sep + 1, mdf->mdf_path, mdf->line);
                         value++;
                         end = strchr(value, '"');
-                        if (end == NULL) return PUMAS_RETURN_FORMAT_ERROR;
+                        if (end == NULL)
+                                return ERROR_REGISTER_INVALID_XML_VALUE(
+                                    value, mdf->mdf_path, mdf->line);
                         *end = '\0';
 
                         /* Map the value to the attribute. */
@@ -7011,26 +7114,34 @@ enum pumas_return mdf_get_node(struct mdf_buffer * mdf, struct mdf_node * node)
                                 else if (strcmp(attr, "I") == 0)
                                         node->at4.I = value;
                                 else
-                                        return PUMAS_RETURN_FORMAT_ERROR;
+                                        return ERROR_REGISTER_INVALID_XML_ATTRIBUTE(
+                                            attr, "<element>", mdf->mdf_path,
+                                            mdf->line);
                         } else if (node->key == MDF_KEY_MATERIAL) {
                                 if (strcmp(attr, "name") == 0)
                                         node->at1.name = value;
                                 else if (strcmp(attr, "file") == 0)
                                         node->at2.file = value;
                                 else
-                                        return PUMAS_RETURN_FORMAT_ERROR;
+                                        return ERROR_REGISTER_INVALID_XML_ATTRIBUTE(
+                                            attr, "<material>", mdf->mdf_path,
+                                            mdf->line);
                         } else if (node->key == MDF_KEY_COMPOSITE) {
                                 if (strcmp(attr, "name") == 0)
                                         node->at1.name = value;
                                 else
-                                        return PUMAS_RETURN_FORMAT_ERROR;
+                                        return ERROR_REGISTER_INVALID_XML_ATTRIBUTE(
+                                            attr, "<composite>", mdf->mdf_path,
+                                            mdf->line);
                         } else if (node->key == MDF_KEY_ATOMIC_COMPONENT) {
                                 if (strcmp(attr, "name") == 0)
                                         node->at1.name = value;
                                 else if (strcmp(attr, "fraction") == 0)
                                         node->at2.fraction = value;
                                 else
-                                        return PUMAS_RETURN_FORMAT_ERROR;
+                                        return ERROR_REGISTER_INVALID_XML_ATTRIBUTE(
+                                            attr, "<component>", mdf->mdf_path,
+                                            mdf->line);
                         } else if (node->key == MDF_KEY_COMPOSITE_COMPONENT) {
                                 if (strcmp(attr, "name") == 0)
                                         node->at1.name = value;
@@ -7039,7 +7150,9 @@ enum pumas_return mdf_get_node(struct mdf_buffer * mdf, struct mdf_node * node)
                                 else if (strcmp(attr, "density") == 0)
                                         node->at3.density = value;
                                 else
-                                        return PUMAS_RETURN_FORMAT_ERROR;
+                                        return ERROR_REGISTER_INVALID_XML_ATTRIBUTE(
+                                            attr, "<component>", mdf->mdf_path,
+                                            mdf->line);
                         }
 
                         /* Update the buffer cursor. */
@@ -7053,35 +7166,63 @@ consistency_check:
         /* Update the depth. */
         if (mdf->depth == MDF_DEPTH_EXTERN) {
                 if (node->key == MDF_KEY_PUMAS) {
-                        if (node->tail == 1) return PUMAS_RETURN_FORMAT_ERROR;
+                        if (node->tail == 1)
+                                return ERROR_VREGISTER(
+                                    PUMAS_RETURN_FORMAT_ERROR,
+                                    "invalid <pumas> XML element [@%s:%d]",
+                                    mdf->mdf_path, mdf->line);
                         mdf->depth = MDF_DEPTH_ROOT;
                 }
         } else if (mdf->depth == MDF_DEPTH_ROOT) {
                 if (node->key == MDF_KEY_PUMAS) {
-                        if (node->head == 1) return PUMAS_RETURN_FORMAT_ERROR;
+                        if (node->head == 1)
+                                return ERROR_VREGISTER(
+                                    PUMAS_RETURN_FORMAT_ERROR,
+                                    "nested <pumas> XML element [@%s:%d]",
+                                    mdf->mdf_path, mdf->line);
                         mdf->depth = MDF_DEPTH_EXTERN;
                 } else if (node->key == MDF_KEY_ELEMENT) {
                         if (node->tail == 0) mdf->depth = MDF_DEPTH_ELEMENT;
                 } else if (node->key == MDF_KEY_MATERIAL) {
-                        if (node->tail == 1) return PUMAS_RETURN_FORMAT_ERROR;
+                        if (node->tail == 1)
+                                return ERROR_VREGISTER(
+                                    PUMAS_RETURN_FORMAT_ERROR,
+                                    "invalid <material> XML element [@%s:%d]",
+                                    mdf->mdf_path, mdf->line);
                         mdf->depth = MDF_DEPTH_MATERIAL;
                 } else if (node->key == MDF_KEY_COMPOSITE) {
-                        if (node->tail == 1) return PUMAS_RETURN_FORMAT_ERROR;
+                        if (node->tail == 1)
+                                return ERROR_VREGISTER(
+                                    PUMAS_RETURN_FORMAT_ERROR,
+                                    "invalid <composite> XML element [@%s:%d]",
+                                    mdf->mdf_path, mdf->line);
                         mdf->depth = MDF_DEPTH_COMPOSITE;
                 }
         } else if (mdf->depth == MDF_DEPTH_ELEMENT) {
                 if (node->key == MDF_KEY_ELEMENT) {
-                        if (node->head == 1) return PUMAS_RETURN_FORMAT_ERROR;
+                        if (node->head == 1)
+                                return ERROR_VREGISTER(
+                                    PUMAS_RETURN_FORMAT_ERROR,
+                                    "nested <element> XML element [@%s:%d]",
+                                    mdf->mdf_path, mdf->line);
                         mdf->depth = MDF_DEPTH_ROOT;
                 }
         } else if (mdf->depth == MDF_DEPTH_MATERIAL) {
                 if (node->key == MDF_KEY_MATERIAL) {
-                        if (node->head == 1) return PUMAS_RETURN_FORMAT_ERROR;
+                        if (node->head == 1)
+                                return ERROR_VREGISTER(
+                                    PUMAS_RETURN_FORMAT_ERROR,
+                                    "nested <material> XML element [@%s:%d]",
+                                    mdf->mdf_path, mdf->line);
                         mdf->depth = MDF_DEPTH_ROOT;
                 }
         } else if (mdf->depth == MDF_DEPTH_COMPOSITE) {
                 if (node->key == MDF_KEY_COMPOSITE) {
-                        if (node->head == 1) return PUMAS_RETURN_FORMAT_ERROR;
+                        if (node->head == 1)
+                                return ERROR_VREGISTER(
+                                    PUMAS_RETURN_FORMAT_ERROR,
+                                    "nested <composite> XML element [@%s:%d]",
+                                    mdf->mdf_path, mdf->line);
                         mdf->depth = MDF_DEPTH_ROOT;
                 }
         } else
@@ -7090,23 +7231,35 @@ consistency_check:
         /* Check that the node has all its attributes defined. */
         if (node->head == 0) {
                 if ((node->key == MDF_KEY_MATERIAL) && (mdf->elements_in == 0))
-                        return PUMAS_RETURN_FORMAT_ERROR;
+                        return ERROR_VREGISTER(PUMAS_RETURN_FORMAT_ERROR,
+                            "missing <element>(s) for XML <material> [@%s:%d]",
+                            mdf->mdf_path, mdf->line);
                 else if ((node->key == MDF_KEY_COMPOSITE) &&
                     (mdf->materials_in == 0))
-                        return PUMAS_RETURN_FORMAT_ERROR;
+                        return ERROR_VREGISTER(PUMAS_RETURN_FORMAT_ERROR,
+                            "missing <material>(s) for XML <composite> "
+                            "[@%s:%d]",
+                            mdf->mdf_path, mdf->line);
                 return PUMAS_RETURN_SUCCESS;
         }
 
         if (node->key == MDF_KEY_COMPOSITE) {
-                if (node->at1.name == NULL) return PUMAS_RETURN_FORMAT_ERROR;
+                if (node->at1.name == NULL)
+                        return ERROR_VREGISTER(PUMAS_RETURN_FORMAT_ERROR,
+                            "missing attribute(s) for XML <composite> [@%s:%d]",
+                            mdf->mdf_path, mdf->line);
         } else if ((node->key == MDF_KEY_MATERIAL) ||
             (node->key == MDF_KEY_ATOMIC_COMPONENT)) {
                 if ((node->at1.name == NULL) || (node->at2.fraction == NULL))
-                        return PUMAS_RETURN_FORMAT_ERROR;
+                        return ERROR_VREGISTER(PUMAS_RETURN_FORMAT_ERROR,
+                            "missing attribute(s) for XML <component> [@%s:%d]",
+                            mdf->mdf_path, mdf->line);
         } else if (node->key == MDF_KEY_ELEMENT) {
                 if ((node->at1.name == NULL) || (node->at2.Z == NULL) ||
                     (node->at3.A == NULL) || (node->at4.I == NULL))
-                        return PUMAS_RETURN_FORMAT_ERROR;
+                        return ERROR_VREGISTER(PUMAS_RETURN_FORMAT_ERROR,
+                            "missing attribute(s) for XML <element> [@%s:%d]",
+                            mdf->mdf_path, mdf->line);
         }
 
         /* Update analysis data. */
@@ -7128,14 +7281,15 @@ consistency_check:
  *
  * @param mdf     The MDF handle.
  * @param pattern The pattern to skip.
+ * @param error_  The error data.
  * @return On success `PUMAS_RETURN_SUCCES` otherwise the corresponding
  * error code.
  *
  * Search the file for *pattern* and skip it. This routine is used in
  * order to skip XML comments.
  */
-enum pumas_return mdf_skip_pattern(
-    struct mdf_buffer * mdf, const char * pattern)
+enum pumas_return mdf_skip_pattern(struct mdf_buffer * mdf,
+    const char * pattern, struct error_context * error_)
 {
         const int pattern_size = strlen(pattern);
         for (;;) {
@@ -7143,8 +7297,9 @@ enum pumas_return mdf_skip_pattern(
                         memmove(mdf->data, mdf->pos, mdf->left);
                         mdf->left += fread(mdf->data + mdf->left, sizeof(char),
                             mdf->size - 1 - mdf->left, mdf->fid);
-                        if (mdf->left < pattern_size)
-                                return PUMAS_RETURN_END_OF_FILE;
+                        if (mdf->left < pattern_size) {
+                                return ERROR_REGISTER_EOF(mdf->mdf_path);
+                        }
                         mdf->pos = mdf->data;
                         *(mdf->data + mdf->left) = '\0';
                 }
@@ -7178,6 +7333,7 @@ enum pumas_return mdf_skip_pattern(
  * @param filename  The formated path for the filename.
  * @param offset    The offset to the file name part of the path.
  * @param size_name The total memory size available for the path string.
+ * @param error_    The error data.
  * @return On success `PUMAS_RETURN_SUCCESS` otherwise `PUMAS_ERROR`.
  *
  * The full path to the filename string is formated by prepending the
@@ -7185,7 +7341,8 @@ enum pumas_return mdf_skip_pattern(
  * the directory of the MDF is used as root.
  */
 enum pumas_return mdf_format_path(const char * directory, const char * mdf_path,
-    char ** filename, int * offset_dir, int * size_name)
+    char ** filename, int * offset_dir, int * size_name,
+    struct error_context * error_)
 {
         /* Format the path directory name. */
         const char sep =
@@ -7202,7 +7359,7 @@ enum pumas_return mdf_format_path(const char * directory, const char * mdf_path,
                 *offset_dir = dir_size + 1;
                 *size_name = (*offset_dir) + initial_size;
                 *filename = allocate(*size_name);
-                if (*filename == NULL) return PUMAS_RETURN_MEMORY_ERROR;
+                if (*filename == NULL) { return ERROR_REGISTER_MEMORY(); }
                 strcpy(*filename, directory);
                 (*filename)[(*offset_dir) - 1] = sep;
         } else {
@@ -7212,7 +7369,7 @@ enum pumas_return mdf_format_path(const char * directory, const char * mdf_path,
                 *offset_dir = n1 + dir_size + 2;
                 *size_name = (*offset_dir) + initial_size;
                 *filename = allocate(*size_name);
-                if (*filename == NULL) return PUMAS_RETURN_MEMORY_ERROR;
+                if (*filename == NULL) { return ERROR_REGISTER_MEMORY(); }
                 if (n1 > 0) strncpy(*filename, mdf_path, n1 + 1);
                 strcpy((*filename) + n1 + 1, directory);
                 (*filename)[(*offset_dir) - 1] = sep;
@@ -7228,10 +7385,12 @@ enum pumas_return mdf_format_path(const char * directory, const char * mdf_path,
  * Precompute the integrals for a deterministic CEL and TT parameters, for
  * composite materials.
  *
+ * @param material The composite material index.
+ * @param error_   The error data.
  * @return `PUMAS_ERROR` if any computation failled, `PUMAS_RETURN_SUCCESS`
  * otherwise.
  */
-enum pumas_return compute_composite(int material)
+enum pumas_return compute_composite(int material, struct error_context * error_)
 {
         compute_composite_weights(material);
         compute_composite_tables(material);
@@ -7239,7 +7398,7 @@ enum pumas_return compute_composite(int material)
         int ikin;
         for (ikin = 0; ikin < s_shared->n_kinetics; ikin++) {
                 const enum pumas_return rc =
-                    compute_coulomb_parameters(material, ikin);
+                    compute_coulomb_parameters(material, ikin, error_);
                 if (rc != PUMAS_RETURN_SUCCESS) return rc;
         }
         compute_cel_integrals(material);
@@ -7339,10 +7498,12 @@ void compute_composite_weights(int material)
  * Compute the density of a composite material.
  *
  * @param material The material index of the composite material.
+ * @param error    The error data.
  * @return `PUMAS_ERROR` if any density is not strictly positive,
  * `PUMAS_RETURN_SUCCESS` otherwise.
  */
-enum pumas_return compute_composite_density(int material)
+enum pumas_return compute_composite_density(
+    int material, struct error_context * error_)
 {
         const int icomp =
             material - s_shared->n_materials + s_shared->n_composites;
@@ -7351,12 +7512,16 @@ enum pumas_return compute_composite_density(int material)
         for (i = 0; i < s_shared->composite[icomp]->n_components; i++) {
                 const struct composite_component * component =
                     s_shared->composite[icomp]->component + i;
-                if (component->density <= 0.) return PUMAS_RETURN_DENSITY_ERROR;
+                if (component->density <= 0.)
+                        return ERROR_REGISTER_NEGATIVE_DENSITY(
+                            s_shared->material_name[component->material]);
                 rho_inv += component->fraction / component->density;
                 nrm += component->fraction;
         }
 
-        if (rho_inv <= 0.) return PUMAS_RETURN_DENSITY_ERROR;
+        if (rho_inv <= 0.)
+                return ERROR_REGISTER_NEGATIVE_DENSITY(
+                    s_shared->material_name[material]);
         s_shared->composite[icomp]->density = nrm / rho_inv;
         return PUMAS_RETURN_SUCCESS;
 }
@@ -7639,13 +7804,15 @@ void compute_csda_magnetic_transport(int material)
  * Compute and tabulate the multiple scattering parameters.
  *
  * @param material The target material.
- * @param row The kinetic energy index to compute for.
+ * @param row      The kinetic energy index to compute for.
+ * @param error    The error data.
  *
  * At output the *row* of `s_shared::table_Mu0` and `s_shared::table_Ms1` are
  * updated. This routine manages a temporary workspace memory buffer. Calling
  * it with a negative *material* index causes the workspace memory to be freed.
  */
-enum pumas_return compute_coulomb_parameters(int material, int row)
+enum pumas_return compute_coulomb_parameters(
+    int material, int row, struct error_context * error_)
 {
         /* Handle the memory for the temporary workspace. */
         static struct coulomb_workspace * workspace = NULL;
@@ -7657,7 +7824,7 @@ enum pumas_return compute_coulomb_parameters(int material, int row)
                 const int work_size = sizeof(struct coulomb_workspace) +
                     s_shared->max_components * sizeof(struct coulomb_data);
                 workspace = allocate(work_size);
-                if (workspace == NULL) return PUMAS_RETURN_MEMORY_ERROR;
+                if (workspace == NULL) return ERROR_REGISTER_MEMORY();
         }
 
         /* Check the kinetic energy. */
@@ -7786,8 +7953,8 @@ enum pumas_return compute_coulomb_parameters(int material, int row)
                 if (material == 0) {
                         /* Precompute the per element soft scattering terms. */
                         enum pumas_return rc;
-                        if ((rc = compute_coulomb_soft(row, &ms1_table)) !=
-                            PUMAS_RETURN_SUCCESS)
+                        if ((rc = compute_coulomb_soft(row, &ms1_table,
+                                 error_)) != PUMAS_RETURN_SUCCESS)
                                 return rc;
                 }
 
@@ -7884,6 +8051,7 @@ enum pumas_return compute_coulomb_parameters(int material, int row)
  *
  * @param row     The row index for the kinetic value.
  * @param data    The tabulated data.
+ * @param error_  The error data.
  * @return On success `PUMAS_RETRUN_SUCCESS` otherwise an error code.
  *
  * Because this step is time consuming, the multiple scattering 1st path
@@ -7894,7 +8062,8 @@ enum pumas_return compute_coulomb_parameters(int material, int row)
  * **Note** This routine handles a static dynamically allocated table. If the
  * *row* index is negative the table is freed.
  */
-enum pumas_return compute_coulomb_soft(int row, double ** data)
+enum pumas_return compute_coulomb_soft(
+    int row, double ** data, struct error_context * error_)
 {
         static double * ms1_table = NULL;
         if (data != NULL) *data = NULL;
@@ -7909,7 +8078,7 @@ enum pumas_return compute_coulomb_soft(int row, double ** data)
         if (ms1_table == NULL) {
                 ms1_table = allocate(s_shared->n_elements *
                     s_shared->n_kinetics * sizeof(double));
-                if (ms1_table == NULL) return PUMAS_RETURN_MEMORY_ERROR;
+                if (ms1_table == NULL) return ERROR_REGISTER_MEMORY();
         }
 
         /* Loop over atomic elements. */
@@ -8153,13 +8322,14 @@ void compute_ZoA(int material)
  * Compute the coefficients of the polynomial approximation to an
  * inelastic DCS.
  *
- * @param [in] dcs_func The DCS function.
- * @param [in] element  The target atomic element.
+ * @param dcs_func The DCS function.
+ * @param element  The target atomic element.
+ * @param error_   The error data.
  *
  * The DCS is also tabulated at specific values for the ziggurat algorithm.
  */
-enum pumas_return compute_dcs_model(
-    dcs_function_t * dcs_func, struct atomic_element * element)
+enum pumas_return compute_dcs_model(dcs_function_t * dcs_func,
+    struct atomic_element * element, struct error_context * error_)
 {
         /* Manage temporary storage. */
         static int m = 0;
@@ -8177,7 +8347,7 @@ enum pumas_return compute_dcs_model(
                     1 + DCS_SAMPLING_N;
                 if (m < 0) return PUMAS_RETURN_INTERNAL_ERROR;
                 tmp = allocate((3 * m + n + DCS_SAMPLING_N) * sizeof(double));
-                if (tmp == NULL) return PUMAS_RETURN_MEMORY_ERROR;
+                if (tmp == NULL) return ERROR_REGISTER_MEMORY();
         }
         double * x = tmp;
         double * y = x + m;
@@ -8214,7 +8384,9 @@ enum pumas_return compute_dcs_model(
                                 y[j] = w[j] = 0.;
                         }
                 }
-                if ((j0 < 0) || (j1 < 0)) return PUMAS_RETURN_INTERNAL_ERROR;
+                if ((j0 < 0) || (j1 < 0))
+                        return ERROR_REGISTER(PUMAS_RETURN_INTERNAL_ERROR,
+                            "failed to fit the DCS");
 
                 /* Add the tabulated values in linear scale. */
                 const double dnu = (1. - x[j0]) / DCS_SAMPLING_N;
@@ -9633,10 +9805,10 @@ void math_svdsol(int m, int n, double * b, double * u, double * w, double * v,
 #include "pumas-tabulate.h"
 
 /* Dry mode initialisation, without loading the energy loss tables. */
-enum pumas_return _pumas_initialise_dry(enum pumas_particle particle,
-    const char * mdf_path, struct pumas_error * error)
+enum pumas_return _pumas_initialise_dry(
+    enum pumas_particle particle, const char * mdf_path)
 {
-        return _initialise(particle, mdf_path, NULL, error, 1);
+        return _initialise(particle, mdf_path, NULL, 1);
 }
 
 /* The density effect for the electronic energy loss. */

@@ -62,12 +62,11 @@ static int exit_gracefully(int rc)
 
 /* Error handler for PUMAS with a graceful exit */
 static void error_handler(
-    enum pumas_return rc, pumas_function_t * caller, struct pumas_error * error)
+    enum pumas_return rc, pumas_function_t * caller, const char * message)
 {
         /* Dump the error summary */
-        fprintf(stderr, "error : ");
-        pumas_error_print(stderr, rc, caller, error);
-        fprintf(stderr, "\n");
+        fputs("pumas: library error. See details below\n", stderr);
+        fprintf(stderr, "error: %s\n", message);
 
         /* Exit to the OS */
         exit_gracefully(EXIT_FAILURE);

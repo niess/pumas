@@ -119,13 +119,11 @@ static struct tabulation_data data = { sizeof(pdg_kinetic) /
 
 /* Handler for PUMAS errors. */
 static void handle_error(
-    enum pumas_return rc, pumas_function_t * caller, struct pumas_error * error)
+    enum pumas_return rc, pumas_function_t * caller, const char * message)
 {
         /* Dump the error summary. */
-        fprintf(stderr, "pumas: library error. See details below.\n");
-        fprintf(stderr, "error : ");
-        pumas_error_print(stderr, rc, caller, error);
-        fprintf(stderr, "\n");
+        fputs("pumas: library error. See details below\n", stderr);
+        fprintf(stderr, "error: %s\n", message);
 
         /* Exit to the OS. */
         exit_gracefully(EXIT_FAILURE);
@@ -223,14 +221,15 @@ int main(int argc, char * argv[])
         else if (strcmp(argv[1], "tau") == 0)
                 particle = PUMAS_PARTICLE_TAU;
         else {
-                fprintf(stderr, "pumas-tabulate: error. "
-                                "Unknown particle `%s`. "
-                                "Call with -h, --help for usage.\n",
+                fprintf(stderr,
+                    "pumas-tabulate: error. "
+                    "Unknown particle `%s`. "
+                    "Call with -h, --help for usage.\n",
                     argv[1]);
                 exit_gracefully(EXIT_FAILURE);
         }
         pumas_error_handler_set(handle_error);
-        _pumas_initialise_dry(particle, argv[2], NULL);
+        _pumas_initialise_dry(particle, argv[2]);
 
         /* Parse the input parameters. */
         double kinetic_min = 1E-03, kinetic_max = 1E+06;
@@ -262,8 +261,9 @@ int main(int argc, char * argv[])
                 /* Process the next argument. */
                 char * endptr = NULL; /* For parsing with str* functions. */
                 int option_index;
-                if ((option_index = optparse_long(&options, long_options, NULL))
-                    == -1) break; /* No more options to parse. */
+                if ((option_index =
+                            optparse_long(&options, long_options, NULL)) == -1)
+                        break; /* No more options to parse. */
 
                 /* Material options. */
                 else if (option_index == 'd') {
@@ -360,8 +360,9 @@ int main(int argc, char * argv[])
 
         error_no_material:
                 /* No material was defined. */
-                fprintf(stderr, "pumas-tabulate: error. No material specified "
-                                "Call with -h, --help for usage.\n");
+                fprintf(stderr,
+                    "pumas-tabulate: error. No material specified "
+                    "Call with -h, --help for usage.\n");
                 exit_gracefully(EXIT_FAILURE);
         }
 
@@ -397,9 +398,10 @@ int main(int argc, char * argv[])
         /* Set the kinetic energies. */
         if (kinetic_n > 0) {
                 if ((kinetic_min <= 0.) || (kinetic_max < kinetic_min)) {
-                        fprintf(stderr, "pumas-tabulate: error."
-                                        " Invalid kinetic energy limits. "
-                                        "Call with -h, --help for usage.\n");
+                        fprintf(stderr,
+                            "pumas-tabulate: error."
+                            " Invalid kinetic energy limits. "
+                            "Call with -h, --help for usage.\n");
                         exit_gracefully(EXIT_FAILURE);
                 }
 
@@ -424,9 +426,10 @@ int main(int argc, char * argv[])
                         perror("pumas-tabulate");
                         exit_gracefully(EXIT_FAILURE);
                 } else if (rc == PUMAS_RETURN_PATH_ERROR) {
-                        fprintf(stderr, "pumas-tabulate: error."
-                                        " Couldn't write to output file.\n"
-                                        "  -> %s\n",
+                        fprintf(stderr,
+                            "pumas-tabulate: error."
+                            " Couldn't write to output file.\n"
+                            "  -> %s\n",
                             data.path);
                         exit_gracefully(EXIT_FAILURE);
                 } else if (rc == PUMAS_RETURN_IO_ERROR) {

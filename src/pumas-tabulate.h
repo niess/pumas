@@ -86,8 +86,7 @@ struct tabulation_data {
  * loaded.
  */
 PUMAS_API enum pumas_return _pumas_initialise_dry(
-    enum pumas_particle particle, const char * mdf_path,
-    struct pumas_error * error);
+    enum pumas_particle particle, const char * mdf_path);
 
 /* Clear the temporary data for the tabulations. */
 void tabulation_finalise(void);

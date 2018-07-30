@@ -312,30 +312,17 @@ typedef double pumas_medium_cb(struct pumas_context * context,
 typedef void pumas_function_t(void);
 
 /**
- * A container for additional info on errors during initialisation.
- *
- * This structure is a container for getting additional info when an error
- * occurs at initialisation, e.g. when parsing the MDF.
- */
-struct pumas_error {
-        /** The faulty file if any. */
-        const char * file;
-        /** The faulty line if a parsing error occurs. */
-        int line;
-};
-
-/**
  * Callback for error handling.
  *
- * @param rc        The PUMAS return code.
- * @param caller    The caller function where the error occured.
- * @param error     Additional info in case of an initialisation error.
+ * @param rc          The PUMAS return code.
+ * @param caller      The API function where the error occured.
+ * @param message     Brief description of the error.
  *
  * The user can provide its own error handler. It will be called at the
  * return of any PUMAS library function providing an error code.
  */
 typedef void pumas_handler_cb(enum pumas_return rc, pumas_function_t * caller,
-    struct pumas_error * error);
+    const char * message);
 
 /**
  * Callback providing a stream of pseudo random numbers.
@@ -421,7 +408,6 @@ struct pumas_context {
  * @param particle     The type of the particle to transport.
  * @param mdf_path     The path to a Material Description File (MDF), or `NULL`.
  * @param dedx_path    The path to the energy loss tabulation(s), or `NULL`.
- * @param error        A structure to fill with parsing errors, or `NULL`.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
@@ -469,7 +455,7 @@ struct pumas_context {
  *     PUMAS_RETURN_UNKNOWN_PARTICLE        The given type is not supported.
  */
 PUMAS_API enum pumas_return pumas_initialise(enum pumas_particle particle,
-    const char * mdf_path, const char * dedx_path, struct pumas_error * error);
+    const char * mdf_path, const char * dedx_path);
 
 /**
  * Finalise the PUMAS library.
@@ -616,17 +602,6 @@ PUMAS_API enum pumas_return pumas_particle(
     enum pumas_particle * particle, double * lifetime, double * mass);
 
 /**
- * Return a string describing a `pumas_return` code.
- *
- * @param rc    The return code.
- * @return A static string.
- *
- * This function is analog to the standard C `strerror` function but specific
- * to PUMAS return codes. It is thread safe.
- */
-PUMAS_API const char * pumas_error_string(enum pumas_return rc);
-
-/**
  * Return a string describing a PUMAS library function.
  *
  * @param function    The library function.
@@ -697,26 +672,6 @@ PUMAS_API void pumas_error_catch(int enable);
  *     PUMAS_RETURN_*              Any caught error's code.
  */
 PUMAS_API enum pumas_return pumas_error_raise(void);
-
-/**
- * Print a formated summary of error data.
- *
- * @param stream      The output stream where to print.
- * @param rc          The error return code.
- * @param function    The faulty function or `NULL`.
- * @param error       The additional error data or `NULL`.
- *
- * The *function* and *error* parameters are optional and can be set to `NULL`.
- * The output summary is formated in JSON.
- *
- * __Warnings__
- *
- * This function is **not** thread safe. A lock must be set to ensure proper
- * printout in multithreaded applications, if writing concurrently to a same
- * *stream*.
- */
-PUMAS_API void pumas_error_print(FILE * stream, enum pumas_return rc,
-    pumas_function_t * function, struct pumas_error * error);
 
 /**
  * Create a simulation context.
