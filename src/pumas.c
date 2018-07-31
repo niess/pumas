@@ -7351,11 +7351,10 @@ enum pumas_return mdf_format_path(const char * directory, const char * mdf_path,
 #else
             '/';
 #endif
-        const int dir_size = strlen(directory);
         const int initial_size = 128;
-        if (directory[0] == sep ||
-            ((dir_size >= 3) && (directory[1] == ':') && directory[2] == sep)) {
+        if (directory[0] != '@') {
                 /* We have an absolute path name. */
+                const int dir_size = strlen(directory);
                 *offset_dir = dir_size + 1;
                 *size_name = (*offset_dir) + initial_size;
                 *filename = allocate(*size_name);
@@ -7364,6 +7363,7 @@ enum pumas_return mdf_format_path(const char * directory, const char * mdf_path,
                 (*filename)[(*offset_dir) - 1] = sep;
         } else {
                 /* We have a relative path name. */
+                const int dir_size = strlen(++directory);
                 int n1 = strlen(mdf_path) - 1;
                 while ((n1 >= 0) && (mdf_path[n1] != sep)) n1--;
                 *offset_dir = n1 + dir_size + 2;
