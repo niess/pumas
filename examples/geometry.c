@@ -165,18 +165,37 @@ static double uniform01(struct pumas_context * context)
         return rand() / (double)RAND_MAX;
 }
 
-/* Gaisser's spectrum, from the PDG */
-double spectrum_gaisser(double cos_theta, double kinetic)
+/* Gaisser's flux model, see e.g. the PDG */
+static double flux_gaisser(double cos_theta, double Emu)
 {
-        const double r_pi = 1.;
-        const double E_pi = 115.;
-        const double r_K = 0.054;
-        const double E_K = 850.;
-        const double E = kinetic + 0.10566;
-        const double E_star = E * cos_theta;
-        return 1.4E+03 * pow(E, -2.7) *
-            (r_pi / (1. + 1.1 * E_star / E_pi) +
-                r_K / (1. + 1.1 * E_star / E_K));
+        const double ec = 1.1 * Emu * cos_theta;
+        const double rpi = 1. + ec / 115.;
+        const double rK = 1. + ec / 850.;
+        return 1.4E+03 * pow(Emu, -2.7) * (1. / rpi + 0.054 / rK);
+}
+
+/* Volkova's parameterization of cos(theta*) */
+static double cos_theta_star(double cos_theta)
+{
+        const double p[] = { 0.102573, -0.068287, 0.958633, 0.0407253,
+                0.817285 };
+        const double cs2 =
+            (cos_theta * cos_theta + p[0] * p[0] + p[1] * pow(cos_theta, p[2]) +
+                p[3] * pow(cos_theta, p[4])) /
+            (1. + p[0] * p[0] + p[1] + p[3]);
+        return cs2 > 0. ? sqrt(cs2) : 0.;
+}
+
+/*
+ * Guan et al. parameterization of the sea level flux of atmospheric muons
+ * Reference: https://arxiv.org/abs/1509.06176
+ */
+static double flux_gccly(double cos_theta, double kinetic_energy)
+{
+        const double Emu = kinetic_energy + 0.10566;
+        const double cs = cos_theta_star(cos_theta);
+        return pow(1. + 3.64 / (Emu * pow(cs, 1.29)), -2.7) *
+            flux_gaisser(cs, Emu);
 }
 
 /* The executable main entry point */
@@ -291,7 +310,7 @@ int main(int narg, char * argv[])
 
                 /* Update the integrated flux */
                 const double wi = state.weight *
-                    spectrum_gaisser(-state.direction[2], state.kinetic);
+                    flux_gccly(-state.direction[2], state.kinetic);
                 w += wi;
                 w2 += wi * wi;
         }
@@ -301,8 +320,8 @@ int main(int narg, char * argv[])
         const double sigma =
             (rock_thickness <= 0.) ? 0. : sqrt(((w2 / n) - w * w) / n);
         const char * unit = rk ? "" : "GeV^{-1} ";
-        printf("Integrated flux : %.5lE \\pm %.5lE %sm^{-2} s^{-2} sr^{-1}\n",
-            w, sigma, unit);
+        printf("Flux : %.5lE \\pm %.5lE %sm^{-2} s^{-2} sr^{-1}\n", w, sigma,
+            unit);
 
         /* Exit to the OS */
         exit_gracefully(EXIT_SUCCESS);
