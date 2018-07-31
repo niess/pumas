@@ -405,13 +405,13 @@ struct simulation_context {
  * list.
  */
 struct frame_stack {
-        /*! The memory size left, in bytes. */
+        /** The memory size left, in bytes. */
         int size;
-        /*! Pointer to the next memory segment. */
+        /** Pointer to the next memory segment. */
         struct frame_stack * next;
-        /*! Pointer to the first frame in the stack. */
+        /** Pointer to the first frame in the stack. */
         struct pumas_frame * frame;
-        /*! Placeholder for frames */
+        /** Placeholder for frames */
         struct pumas_frame frames[];
 };
 /**
@@ -424,6 +424,8 @@ struct frame_recorder {
         struct pumas_frame * last;
         /** Link to the 1st entry of the chained list of stacks. */
         struct frame_stack * stack;
+        /** Placeholder for extra data. */
+        double data[];
 };
 /**
  * Data relative to an atomic element.
@@ -822,7 +824,7 @@ static void del_randomise_target(struct pumas_context * context,
 /**
  * Helper routine for recording a state.
  */
-static void record_state(struct pumas_recorder * recorder,
+static void record_state(struct pumas_context * context,
     struct pumas_medium * medium, enum pumas_event event,
     struct pumas_state * state);
 /**
@@ -1568,7 +1570,7 @@ enum pumas_return pumas_context_create(
             memory_padded_size(sizeof(struct coulomb_workspace) +
                     s_shared->max_components * sizeof(struct coulomb_data),
                 pad_size);
-        if (extra_memory <= 0)
+        if (extra_memory < 0)
                 extra_memory = 0;
         else
                 extra_memory = memory_padded_size(extra_memory, pad_size);
@@ -1755,13 +1757,14 @@ int pumas_tag() { return 1000 * PUMAS_VERSION + PUMAS_SUBVERSION; }
 
 /* Public library functions: recorder handling. */
 enum pumas_return pumas_recorder_create(
-    struct pumas_context * context, struct pumas_recorder ** recorder_)
+    int extra_memory, struct pumas_recorder ** recorder_)
 {
         ERROR_INITIALISE(pumas_recorder_create);
 
         /*  Allocate memory for the new recorder. */
         struct frame_recorder * recorder = NULL;
-        recorder = allocate(sizeof(*recorder));
+        if (extra_memory < 0) extra_memory = 0;
+        recorder = allocate(sizeof(*recorder) + extra_memory);
         if (recorder == NULL) {
                 ERROR_REGISTER_MEMORY();
                 return ERROR_RAISE();
@@ -1769,12 +1772,13 @@ enum pumas_return pumas_recorder_create(
 
         /* Configure the context in order to use the new recorder. */
         *recorder_ = (struct pumas_recorder *)recorder;
-        if (context != NULL) context->recorder = *recorder_;
 
         /* configure the new recorder and return it. */
         (*recorder_)->period = 1;
+        (*recorder_)->record = NULL;
         (*recorder_)->length = 0;
         (*recorder_)->first = NULL;
+        (*recorder_)->user_data = (extra_memory > 0) ? recorder->data : NULL;
         recorder->last = NULL;
         recorder->stack = NULL;
 
@@ -1783,6 +1787,7 @@ enum pumas_return pumas_recorder_create(
 
 void pumas_recorder_destroy(struct pumas_recorder ** recorder)
 {
+        if ((recorder == NULL) || (*recorder == NULL)) return;
         pumas_recorder_clear(*recorder);
         deallocate(*recorder);
         *recorder = NULL;
@@ -2003,7 +2008,7 @@ enum pumas_return pumas_transport(struct pumas_context * context,
                 if (event != NULL) *event = PUMAS_EVENT_MEDIUM;
                 /* Register the start of the the track, if recording. */
                 if (context->recorder != NULL)
-                        record_state(context->recorder, medium,
+                        record_state(context, medium,
                             PUMAS_EVENT_MEDIUM, state);
                 return PUMAS_RETURN_SUCCESS;
         } else if (step_max_medium > 0.)
@@ -3132,7 +3137,7 @@ enum pumas_event transport_with_csda(struct pumas_context * context,
         enum pumas_event event = PUMAS_EVENT_NONE;
         struct pumas_recorder * recorder = context->recorder;
         const int record = (recorder != NULL);
-        if (record) record_state(recorder, 0, event, state);
+        if (record) record_state(context, medium, event, state);
 
         /* Get the end point with CSDA. */
         double xB;
@@ -3259,7 +3264,7 @@ enum pumas_event transport_with_csda(struct pumas_context * context,
         }
 
         /* Register the end of the track, if recording. */
-        if (record) record_state(recorder, 0, event, state);
+        if (record) record_state(context, medium, event, state);
 
         return event;
 }
@@ -3531,7 +3536,7 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
         context_->step_event = PUMAS_EVENT_NONE;
         struct pumas_recorder * recorder = context->recorder;
         const int record = (recorder != NULL);
-        if (record) record_state(recorder, medium, context_->step_event, state);
+        if (record) record_state(context, medium, context_->step_event, state);
 
         /* Initialise some temporary data for the propagation, weights, ect ...
          */
@@ -3586,11 +3591,9 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
 
                 /* Check for any event. */
                 int record_step;
-                if ((record != 0) && (recorder->period != 0) &&
+                if ((record != 0) && (recorder->period > 0) &&
                     (step_index != 1)) {
-                        record_step = (recorder->period < 0) ?
-                            1 :
-                            (step_index % recorder->period) == 0;
+                        record_step = (step_index % recorder->period) == 0;
                 } else {
                         record_step = 0;
                 }
@@ -3615,7 +3618,7 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
                 if (!context_->step_event) {
                         /* Register the current state. */
                         record_state(
-                            recorder, medium, context_->step_event, state);
+                            context, medium, context_->step_event, state);
                 } else {
                         if (context_->step_event &
                             (PUMAS_EVENT_LIMIT | PUMAS_EVENT_WEIGHT |
@@ -3634,11 +3637,13 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
                                          * recording.
                                          */
                                         const int rec =
-                                            record && (recorder->period != 0);
-                                        struct pumas_state pre;
-                                        if (rec != 0)
+                                            record && (recorder->period > 0);
+                                        double ki, ui[3];
+                                        if (rec != 0) {
+                                                ki = state->kinetic;
                                                 memcpy(
-                                                    &pre, state, sizeof(pre));
+                                                    ui, state->direction, sizeof(ui));
+                                        }
 
                                         /* Apply the inelastic DEL. */
                                         transport_do_del(
@@ -3646,9 +3651,18 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
                                         if (!context_->step_event) continue;
 
                                         /* Record the pre step point. */
-                                        if (rec != 0)
-                                                record_state(recorder, medium,
-                                                    context_->step_event, &pre);
+                                        if (rec != 0) {
+                                                const double kf = state->kinetic;
+                                                double uf[3];
+                                                memcpy(
+                                                    uf, state->direction, sizeof(uf));
+                                                state->kinetic = ki;
+                                                memcpy(state->direction, ui, sizeof(state->direction));
+                                                record_state(context, medium,
+                                                    context_->step_event, state);
+                                                state->kinetic = kf;
+                                                memcpy(state->direction, uf, sizeof(state->direction));
+                                        }
 
                                         /* Check for any stop condition */
                                         if (context->event &
@@ -3657,7 +3671,7 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
 
                                         /* Record the post step point. */
                                         if (rec != 0)
-                                                record_state(recorder, medium,
+                                                record_state(context, medium,
                                                     PUMAS_EVENT_NONE, state);
 
                                         /* Reset the stepping data memory since
@@ -3749,7 +3763,7 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
                                 if ((record) &&
                                     !(context_->step_event &
                                         PUMAS_EVENT_MEDIUM))
-                                        record_state(recorder, medium,
+                                        record_state(context, medium,
                                             context_->step_event, state);
                         } else {
                                 /*  This should not happen. */
@@ -3795,7 +3809,7 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
         }
 
         /* Register the end of the track, if recording. */
-        if (record) record_state(recorder, medium, context_->step_event, state);
+        if (record) record_state(context, medium, context_->step_event, state);
 
         *medium_ptr = medium;
         return context_->step_event;
@@ -5786,10 +5800,18 @@ double transverse_transport_photonuclear(
  *
  * This routine adds the given state to the recorder's stack.
  */
-void record_state(struct pumas_recorder * recorder,
+void record_state(struct pumas_context * context,
     struct pumas_medium * medium, enum pumas_event event,
     struct pumas_state * state)
 {
+        /* Check for a user supplied recorder */
+        struct pumas_recorder * recorder = context->recorder;
+        if (recorder->record != NULL) {
+                recorder->record(context, state, medium, event);
+                return;
+        }
+
+        /* Do the default recording ... */
         struct frame_recorder * const rec =
             (struct frame_recorder * const)recorder;
         struct frame_stack * stack = rec->stack;

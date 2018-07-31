@@ -291,10 +291,26 @@ struct pumas_frame {
         struct pumas_frame * next;
 };
 
+struct pumas_context;
+/** A user supplied recorder callback.
+ * @param context The recording simulation context.
+ * @param state   The recorded particle state.
+ * @param medium  The corresponding medium.
+ * @param event   The step event.
+ *
+ * This callback allows to customize the recording of PUMAS Monte-Carlo events.
+ *
+ * **Note** : by default the recorder uses an in-memory copy with dynamic
+ * allocation. Setting a custom recorder disables the default recording.
+ */
+typedef void pumas_recorder_cb(struct pumas_context * context,
+    struct pumas_state * state, struct pumas_medium * medium,
+    enum pumas_event event);
+
 /**
  * A handle for recording Monte-Carlo frames.
  *
- * This structure is a proxy for recording Monte-Carlo states and accessing
+ * This structure is a proxy for recording Monte-Carlo states and/or accessing
  * them. Although it exposes some public data that the user may alter it also
  * encloses other opaque data. Therefore, it **must** be handled with the
  * `pumas_recorder` functions.
@@ -313,15 +329,24 @@ struct pumas_recorder {
          */
         int length;
         /**
-         * The sampling period of the recorder, if strictly positive. If set to
-         * zero recording is disabled. Otherwise, setting a negative value
-         * enables a test mode where the full detail of the Monte-Carlo
-         * stepping is recorded.
+         * The sampling period of the recorder, If set to zero or less only
+         * medium changes are recorded. Defaults to 1, i.e. all Monte-Carlo
+         * steps are recorded.
          */
         int period;
+        /**
+         * Link to an external (user supplied) recording callback. Note that
+         * setting this value disables the in-memory frame recording. Defaults
+         * to `NULL`.
+         */
+        pumas_recorder_cb * record;
+        /**
+         * A pointer to additional memory, if any is requested at
+         * initialisation.
+         */
+        void * user_data;
 };
 
-struct pumas_context;
 /**
  * Callback for locating the propagation medium of a `pumas_state`.
  *
@@ -1092,25 +1117,24 @@ PUMAS_API enum pumas_return pumas_table_index(enum pumas_property property,
 /**
  * Create a new particle recorder.
  *
- * @param context The simulation context or `NULL`.
- * @param recorder A handle for the recorder.
+ * @param extra_memory The size of the user extra memory, if any is claimed.
+ * @param recorder     A handle for the recorder.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * The recorder is configured for a fresh start with default settings. If a
- * non `NULL` context is provided, the recorder will be linked to it.
+ * Create a new Monte-Carlo particle recorder. The recorder starts configured
+ * with a built-in in-memory frame recorder.
  *
- * **Note** : though the recorder's creation requests a simulation context, the
- * returned proxy might be moved to any other context after creation. However
- * it should not be linked simultaneously to multiple concurent simulation
- * streams.
+ * If `extra_memory` is strictly positive the recorder will be extended by
+ * `extra_memory` bytes for user usage. This memory can then be accessed with
+ * the `user_data` field of the returned `pumas_recorder` structure.
  *
  * __Error codes__
  *
  *     PUMAS_RETURN_MEMORY_ERROR    Couldn't allocate memory.
  */
 PUMAS_API enum pumas_return pumas_recorder_create(
-    struct pumas_context * context, struct pumas_recorder ** recorder);
+    int extra_memory, struct pumas_recorder ** recorder);
 
 /**
  * Clear all recorded frames.
