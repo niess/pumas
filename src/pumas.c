@@ -238,29 +238,6 @@ typedef double(polar_function_t)(
 
 /* A collection of low level flags. */
 /**
- * Flags for the stepping.
- */
-enum stepping_event {
-        /** No event occured sofar or none is foreseen. */
-        EVENT_NONE = 0,
-        /** A kinetic limit occured. */
-        EVENT_KINETIC = 1,
-        /** A distance or grammage limit is reached or foreseen. */
-        EVENT_RANGE = 2,
-        /** A grammage limit is reached or foreseen. */
-        EVENT_GRAMMAGE = 4,
-        /** A proper time limit is reached or foreseen. */
-        EVENT_TIME = 8,
-        /** A change of medium occured. */
-        EVENT_MEDIUM = 16,
-        /** A DEL occured or is foreseen. */
-        EVENT_DEL = 32,
-        /** An EHS occured or is foreseen. */
-        EVENT_EHS = 64,
-        /** A null weight occured. */
-        EVENT_WEIGHT = 128
-};
-/**
  * Node keys for the MDF files.
  */
 enum mdf_key {
@@ -387,9 +364,9 @@ struct simulation_context {
         /** Flag for the first step, for integration of various quantities. */
         int step_first;
         /** Tracking of stepping events. */
-        enum stepping_event step_event;
+        enum pumas_event step_event;
         /** The expected next event during the stepping. */
-        enum stepping_event step_foreseen;
+        enum pumas_event step_foreseen;
         /** The kinetic limit converted to grammage. */
         double step_X_limit;
         /** The scaterring 1st transport path length of the previous step. */
@@ -803,17 +780,19 @@ static double polar_ionisation(
 /**
  * Low level routines for the propagation in matter.
  */
-static enum pumas_return transport_with_csda(struct pumas_context * context,
+static enum pumas_event transport_with_csda(struct pumas_context * context,
     struct pumas_state * state, struct pumas_medium * medium,
     struct medium_locals * locals, struct error_context * error_);
 static enum pumas_return transport_csda_deflect(struct pumas_context * context,
     struct pumas_state * state, struct pumas_medium * medium,
-    struct medium_locals * locals, double ki, double distance);
+    struct medium_locals * locals, double ki, double distance,
+    struct error_context * error_);
 static enum pumas_return csda_magnetic_transport(struct pumas_context * context,
     int material, double density, double magnet, double charge, double kinetic,
-    double phase, double * x, double * y, double * z);
-static enum pumas_return transport_with_stepping(struct pumas_context * context,
-    struct pumas_state * state, struct pumas_medium * medium,
+    double phase, double * x, double * y, double * z,
+    struct error_context * error_);
+static enum pumas_event transport_with_stepping(struct pumas_context * context,
+    struct pumas_state * state, struct pumas_medium ** medium_ptr,
     struct medium_locals * locals, double step_max_medium,
     double step_max_locals, struct error_context * error_);
 static double transport_set_locals(struct pumas_medium * medium,
@@ -828,10 +807,10 @@ static void transport_do_ehs(
 /**
  * Low level routines for randomising DELs.
  */
-static polar_function_t * del_randomise_forward(
-    struct pumas_context * context, struct pumas_state * state, int material);
-static polar_function_t * del_randomise_reverse(
-    struct pumas_context * context, struct pumas_state * state, int material);
+static polar_function_t * del_randomise_forward(struct pumas_context * context,
+    struct pumas_state * state, int material, int * process);
+static polar_function_t * del_randomise_reverse(struct pumas_context * context,
+    struct pumas_state * state, int material, int * process);
 static void del_randomise_power_law(struct pumas_context * context,
     double alpha, double xmin, double xmax, double * p_r, double * p_w);
 static void del_randomise_ziggurat(struct pumas_context * context,
@@ -844,7 +823,8 @@ static void del_randomise_target(struct pumas_context * context,
  * Helper routine for recording a state.
  */
 static void record_state(struct pumas_recorder * recorder,
-    struct pumas_medium * medium, struct pumas_state * state);
+    struct pumas_medium * medium, enum pumas_event event,
+    struct pumas_state * state);
 /**
  * For memory padding.
  */
@@ -1620,6 +1600,7 @@ enum pumas_return pumas_context_create(
         (*context_)->decay = (s_shared->particle == PUMAS_PARTICLE_MUON) ?
             PUMAS_DECAY_WEIGHT :
             PUMAS_DECAY_PROCESS;
+        (*context_)->event = PUMAS_EVENT_NONE;
 
         (*context_)->kinetic_limit = 0.; /* GeV */
         (*context_)->distance_max = 0.;  /* m */
@@ -1986,15 +1967,20 @@ enum pumas_return pumas_property_cross_section(
 }
 
 /* Public library function: the main transport routine. */
-enum pumas_return pumas_transport(
-    struct pumas_context * context, struct pumas_state * state)
+enum pumas_return pumas_transport(struct pumas_context * context,
+    struct pumas_state * state, enum pumas_event * event,
+    struct pumas_medium * media[2])
 {
         ERROR_INITIALISE(pumas_transport);
 
         /* Check the initial state. */
-        if (state->decayed) return PUMAS_RETURN_SUCCESS;
+        if (state->decayed) {
+                if (event != NULL) *event = PUMAS_EVENT_VERTEX_DECAY;
+                return PUMAS_RETURN_SUCCESS;
+        }
 
         /* Check the configuration. */
+        if (event != NULL) *event = PUMAS_EVENT_NONE;
         if (s_shared == NULL) {
                 return ERROR_NOT_INITIALISED();
         } else if (context->medium == NULL) {
@@ -2009,10 +1995,16 @@ enum pumas_return pumas_transport(
         /* Get the start medium. */
         struct pumas_medium * medium;
         double step_max_medium = context->medium(context, state, &medium);
+        if (media != NULL) {
+                media[0] = medium;
+                media[1] = NULL;
+        }
         if (medium == NULL) {
+                if (event != NULL) *event = PUMAS_EVENT_MEDIUM;
                 /* Register the start of the the track, if recording. */
                 if (context->recorder != NULL)
-                        record_state(context->recorder, medium, state);
+                        record_state(context->recorder, medium,
+                            PUMAS_EVENT_MEDIUM, state);
                 return PUMAS_RETURN_SUCCESS;
         } else if (step_max_medium > 0.)
                 step_max_medium += 0.5 * STEP_MIN;
@@ -2039,26 +2031,28 @@ enum pumas_return pumas_transport(
                 context_->lifetime = state->time - s_shared->ctau * log(u);
         }
 
-        /* Check the transport mode. */
+        /* Call the relevant transport engine. */
+        enum pumas_event e = PUMAS_EVENT_NONE;
         if ((step_max_medium <= 0.) && (step_max_locals <= 0.)) {
                 /* This is an infinite and uniform medium. */
                 if ((context->scheme == PUMAS_SCHEME_NO_LOSS) &&
-                    (context->distance_max <= 0.) &&
-                    (context->grammage_max <= 0.)) {
+                    ((context->event & PUMAS_EVENT_LIMIT) == 0)) {
                         return ERROR_MESSAGE(PUMAS_RETURN_MISSING_LIMIT,
                             "infinite medium without external limit(s)");
                 } else if ((context->longitudinal != 0) &&
                     (context->scheme == PUMAS_SCHEME_CSDA)) {
                         /* This is a purely deterministic case. */
-                        transport_with_csda(
+                        e = transport_with_csda(
                             context, state, medium, &locals, error_);
-                        return ERROR_RAISE();
                 }
+        } else {
+                /* Transport with a detailed stepping. */
+                e = transport_with_stepping(context, state, &medium, &locals,
+                    step_max_medium, step_max_locals, error_);
         }
 
-        /* Transport with a detailed stepping. */
-        transport_with_stepping(context, state, medium, &locals,
-            step_max_medium, step_max_locals, error_);
+        if (event != NULL) *event = e;
+        if (media != NULL) media[1] = medium;
         return ERROR_RAISE();
 }
 
@@ -3108,7 +3102,7 @@ float * table_get_dcs_value(
  * @param medium_index The index of the propagation medium.
  * @param locals       Handle for the local properties of the uniform medium.
  * @param error_       The error data.
- * @return On success `PUMAS_RETURN_SUCCESS` otherwise `PUMAS_ERROR`.
+ * @return The end condition event.
  *
  * Transport the particle through a uniform medium using the CSDA. At output
  * the final kinetic energy, the effective distance traveled and the
@@ -3119,7 +3113,7 @@ float * table_get_dcs_value(
  * proper time are also given.
  * **Warning** : the initial state must have been initialized before the call.
  */
-enum pumas_return transport_with_csda(struct pumas_context * context,
+enum pumas_event transport_with_csda(struct pumas_context * context,
     struct pumas_state * state, struct pumas_medium * medium,
     struct medium_locals * locals, struct error_context * error_)
 {
@@ -3135,27 +3129,28 @@ enum pumas_return transport_with_csda(struct pumas_context * context,
             cel_proper_time(context, PUMAS_SCHEME_CSDA, material, ki);
 
         /* Register the start of the the track, if recording. */
+        enum pumas_event event = PUMAS_EVENT_NONE;
         struct pumas_recorder * recorder = context->recorder;
         const int record = (recorder != NULL);
-        if (record) record_state(recorder, 0, state);
+        if (record) record_state(recorder, 0, event, state);
 
         /* Get the end point with CSDA. */
-        enum stepping_event event = EVENT_NONE;
         double xB;
-        if (context->grammage_max > 0.) {
+        if (context->event & PUMAS_EVENT_LIMIT_GRAMMAGE) {
                 xB = context->grammage_max - state->grammage;
-                event = EVENT_GRAMMAGE;
+                event = PUMAS_EVENT_LIMIT_GRAMMAGE;
         } else
                 xB = DBL_MAX;
-        if (context->distance_max > 0.) {
+        if (context->event & PUMAS_EVENT_LIMIT_DISTANCE) {
                 const double xD = density * (context->distance_max - di);
                 if (xD < xB) {
                         xB = xD;
-                        event = EVENT_RANGE;
+                        event = PUMAS_EVENT_LIMIT_DISTANCE;
                 }
         }
         int decayed = 0;
-        double time_max = context->time_max;
+        double time_max =
+            (context->event & PUMAS_EVENT_LIMIT_TIME) ? context->time_max : 0.;
         if (context->decay == PUMAS_DECAY_PROCESS) {
                 struct simulation_context * c =
                     (struct simulation_context *)context;
@@ -3177,12 +3172,12 @@ enum pumas_return transport_with_csda(struct pumas_context * context,
                                         PUMAS_SCHEME_CSDA, material, Tf));
                                 if (xT < xB) {
                                         xB = xT;
-                                        event = EVENT_TIME;
+                                        event = PUMAS_EVENT_LIMIT_TIME;
                                 }
                         }
                 }
         }
-        if (xB <= 0.) return PUMAS_RETURN_SUCCESS;
+        if (xB <= 0.) return event;
 
         double xf, kf;
         if (context->forward != 0) {
@@ -3194,28 +3189,28 @@ enum pumas_return transport_with_csda(struct pumas_context * context,
                         xf = kf = 0.;
                 }
 
-                if (context->kinetic_limit > 0.) {
+                if (context->event & PUMAS_EVENT_LIMIT_KINETIC) {
                         if (ki <= context->kinetic_limit)
-                                return PUMAS_RETURN_SUCCESS;
+                                return PUMAS_EVENT_LIMIT_KINETIC;
                         if (kf < context->kinetic_limit) {
                                 kf = context->kinetic_limit;
                                 xf = cel_grammage(
                                     context, PUMAS_SCHEME_CSDA, material, kf);
-                                event = EVENT_KINETIC;
+                                event = PUMAS_EVENT_LIMIT_KINETIC;
                         }
                 }
         } else {
                 xf = xB + xi;
                 kf = cel_kinetic_energy(
                     context, PUMAS_SCHEME_CSDA, material, xf);
-                if (context->kinetic_limit > 0.) {
+                if (context->event & PUMAS_EVENT_LIMIT_KINETIC) {
                         if (ki >= context->kinetic_limit)
-                                return PUMAS_RETURN_SUCCESS;
+                                return PUMAS_EVENT_LIMIT_KINETIC;
                         if (kf > context->kinetic_limit) {
                                 kf = context->kinetic_limit;
                                 xf = cel_grammage(
                                     context, PUMAS_SCHEME_CSDA, material, kf);
-                                event = EVENT_KINETIC;
+                                event = PUMAS_EVENT_LIMIT_KINETIC;
                         }
                 }
         }
@@ -3223,17 +3218,18 @@ enum pumas_return transport_with_csda(struct pumas_context * context,
         /* Update the end point statistics. */
         const double distance = fabs(xf - xi) / density;
         state->kinetic = kf;
-        if (event == EVENT_RANGE)
+        if (event == PUMAS_EVENT_LIMIT_DISTANCE)
                 state->distance = context->distance_max;
         else
                 state->distance += distance;
-        if (event == EVENT_GRAMMAGE)
+        if (event == PUMAS_EVENT_LIMIT_GRAMMAGE)
                 state->grammage = context->grammage_max;
         else
                 state->grammage += distance * density;
-        if (event == EVENT_TIME) {
+        if (event == PUMAS_EVENT_LIMIT_TIME) {
                 state->time = time_max;
                 state->decayed = decayed;
+                if (decayed) event = PUMAS_EVENT_VERTEX_DECAY;
         } else
                 state->time += fabs(Ti -
                                    cel_proper_time(context, PUMAS_SCHEME_CSDA,
@@ -3248,10 +3244,9 @@ enum pumas_return transport_with_csda(struct pumas_context * context,
 
         /* Update the position and direction. */
         if ((locals->magnetized != 0)) {
-                enum pumas_return rc;
-                rc = transport_csda_deflect(
-                    context, state, medium, locals, ki, distance);
-                if (rc != PUMAS_RETURN_SUCCESS) return rc;
+                if (transport_csda_deflect(context, state, medium, locals, ki,
+                        distance, error_) != PUMAS_RETURN_SUCCESS)
+                        return event;
         } else {
                 double path;
                 if (context->forward != 0)
@@ -3264,9 +3259,9 @@ enum pumas_return transport_with_csda(struct pumas_context * context,
         }
 
         /* Register the end of the track, if recording. */
-        if (record) record_state(recorder, 0, state);
+        if (record) record_state(recorder, 0, event, state);
 
-        return PUMAS_RETURN_SUCCESS;
+        return event;
 }
 
 /**
@@ -3278,6 +3273,7 @@ enum pumas_return transport_with_csda(struct pumas_context * context,
  * @param locals       Handle for the local properties of the uniform medium.
  * @param ki           The initial kinetic energy.
  * @param distance     The travelled distance.
+ * @param error_       The error data.
  * @return #PUMAS_RETURN_SUCCESS on success, #PUMAS_ERROR otherwise.
  *
  * Compute the magnetic deflection between two kinetic energies using the CSDA.
@@ -3286,7 +3282,8 @@ enum pumas_return transport_with_csda(struct pumas_context * context,
  */
 enum pumas_return transport_csda_deflect(struct pumas_context * context,
     struct pumas_state * state, struct pumas_medium * medium,
-    struct medium_locals * locals, double ki, double distance)
+    struct medium_locals * locals, double ki, double distance,
+    struct error_context * error_)
 {
         /* Unpack arguments */
         const double charge = state->charge;
@@ -3356,13 +3353,14 @@ enum pumas_return transport_csda_deflect(struct pumas_context * context,
                         dy = 0.5 * dz * dp;
                 } else {
                         double xi, yi, zi, xf, yf, zf;
-                        enum pumas_return rc = PUMAS_RETURN_SUCCESS;
-                        rc = csda_magnetic_transport(context, material, density,
-                            b0, charge, ki, pi, &xi, &yi, &zi);
-                        if (rc != PUMAS_RETURN_SUCCESS) return rc;
-                        rc = csda_magnetic_transport(context, material, density,
-                            b0, charge, kf, pf, &xf, &yf, &zf);
-                        if (rc != PUMAS_RETURN_SUCCESS) return rc;
+                        if (csda_magnetic_transport(context, material, density,
+                                b0, charge, ki, pi, &xi, &yi, &zi,
+                                error_) != PUMAS_RETURN_SUCCESS)
+                                return error_->code;
+                        if (csda_magnetic_transport(context, material, density,
+                                b0, charge, kf, pf, &xf, &yf, &zf,
+                                error_) != PUMAS_RETURN_SUCCESS)
+                                return error_->code;
 
                         /* Rotate back to the initial frame. */
                         {
@@ -3402,13 +3400,15 @@ enum pumas_return transport_csda_deflect(struct pumas_context * context,
  * @param x        The total magnetic transport for x coordinate.
  * @param y        The total magnetic transport for y coordinate.
  * @param z        The total magnetic transport for z coordinate.
+ * @param error_   The error data.
  * @return `PUMAS_RETURN_SUCCESS` on success or `PUMAS_ERROR` otherwise, i.e. if
  * an
  * out of bound error ooccured.
  */
 enum pumas_return csda_magnetic_transport(struct pumas_context * context,
     int material, double density, double magnet, double charge, double kinetic,
-    double phase, double * x, double * y, double * z)
+    double phase, double * x, double * y, double * z,
+    struct error_context * error_)
 {
         const int imax = s_shared->n_kinetics - 1;
         double k0 = kinetic;
@@ -3443,7 +3443,10 @@ enum pumas_return csda_magnetic_transport(struct pumas_context * context,
                 -2.838778336e-002, 2.123237056e-002, -3.094290091e-003,
                 1.409012754e-004 };
 
-        if (fabs(phase) > max_phi) return PUMAS_RETURN_VALUE_ERROR;
+        if (fabs(phase) > max_phi)
+                return ERROR_VREGISTER(PUMAS_RETURN_VALUE_ERROR,
+                    "magnetic rotation is too strong [%.5lE > %.5lE]",
+                    fabs(phase), max_phi);
 
         /* Compute the local x, y and z. */
         double x1, x2, y1, y2, z1, z2;
@@ -3481,13 +3484,13 @@ enum pumas_return csda_magnetic_transport(struct pumas_context * context,
  *
  * @param context         The simulation context.
  * @param state           The initial/final state.
- * @param medium          The initial propagation medium.
+ * @param medium_ptr      The initial/final propagation medium.
  * @param locals          Handle for the local properties of the starting
  *                        medium.
  * @param error           The error data.
  * @param step_max_medium The step limitation from the medium.
  * @param step_max_locals The step limitation from the local properties.
- * @return `PUMAS_RETURN_SUCCESS` on success or `PUMAS_ERROR` otherwise.
+ * @return The end condition event.
  *
  * Transport through a set of media described by a medium callback. At output
  * the final kinetic energy, the total distance travelled and the total proper
@@ -3495,15 +3498,20 @@ enum pumas_return csda_magnetic_transport(struct pumas_context * context,
  *
  * **Warning** : The initial state must have been initialized before the call.
  */
-enum pumas_return transport_with_stepping(struct pumas_context * context,
-    struct pumas_state * state, struct pumas_medium * medium,
+enum pumas_event transport_with_stepping(struct pumas_context * context,
+    struct pumas_state * state, struct pumas_medium ** medium_ptr,
     struct medium_locals * locals, double step_max_medium,
     double step_max_locals, struct error_context * error_)
 {
         /* Check the config. */
-        if (context->random == NULL) return PUMAS_RETURN_MISSING_RANDOM;
+        if (context->random == NULL) {
+                ERROR_REGISTER(
+                    PUMAS_RETURN_MISSING_RANDOM, "no random engine provided");
+                return PUMAS_EVENT_NONE;
+        }
 
         /* Unpack data. */
+        struct pumas_medium * medium = *medium_ptr;
         int material = medium->material;
 
         /* Check for a straight path in a uniform medium of infinite
@@ -3518,9 +3526,12 @@ enum pumas_return transport_with_stepping(struct pumas_context * context,
             0;
 
         /* Register the start of the the track, if recording. */
+        struct simulation_context * const context_ =
+            (struct simulation_context *)context;
+        context_->step_event = PUMAS_EVENT_NONE;
         struct pumas_recorder * recorder = context->recorder;
         const int record = (recorder != NULL);
-        if (record) record_state(recorder, medium, state);
+        if (record) record_state(recorder, medium, context_->step_event, state);
 
         /* Initialise some temporary data for the propagation, weights, ect ...
          */
@@ -3538,39 +3549,39 @@ enum pumas_return transport_with_stepping(struct pumas_context * context,
         }
 
         /* Check for any initial violation of external limits. */
-        if ((context->distance_max > 0.) &&
+        if ((context->event & PUMAS_EVENT_LIMIT_DISTANCE) &&
             (state->distance >= context->distance_max))
-                return PUMAS_RETURN_SUCCESS;
-        if ((context->grammage_max > 0.) &&
+                return PUMAS_EVENT_LIMIT_DISTANCE;
+        if ((context->event & PUMAS_EVENT_LIMIT_GRAMMAGE) &&
             (state->grammage >= context->grammage_max))
-                return PUMAS_RETURN_SUCCESS;
-        if ((context->time_max > 0.) && (state->time >= context->time_max))
-                return PUMAS_RETURN_SUCCESS;
-        if (state->weight <= 0.) return PUMAS_RETURN_SUCCESS;
+                return PUMAS_EVENT_LIMIT_GRAMMAGE;
+        if ((context->event & PUMAS_EVENT_LIMIT_TIME) &&
+            (state->time >= context->time_max))
+                return PUMAS_EVENT_LIMIT_TIME;
+        if (state->weight <= 0.) return PUMAS_EVENT_WEIGHT;
 
         /* Initialise the stepping data. */
-        struct simulation_context * const context_ =
-            (struct simulation_context *)context;
         double grammage_max;
+        context_->step_event = PUMAS_EVENT_NONE;
         context_->step_first = 1;
-        context_->step_X_limit = (context->kinetic_limit <= 0.) ?
-            0. :
-            cel_grammage(context, scheme, material, context->kinetic_limit);
+        context_->step_X_limit = (context->event & PUMAS_EVENT_LIMIT_KINETIC) ?
+            cel_grammage(context, scheme, material, context->kinetic_limit) :
+            0.;
         context_->step_invlb1 = 0;
         context_->step_rLarmor = 0.;
         memset(context_->step_uT, 0x0, 3 * sizeof(*(context_->step_uT)));
         transport_limit(context, state, material, Xi, Xf, &grammage_max);
-        if (context_->step_event) return PUMAS_RETURN_SUCCESS;
+        if (context_->step_event) return context_->step_event;
 
         /* Step through the media. */
         int step_index = 1;
         for (;;) {
                 /* Do a transportation step. */
                 struct pumas_medium * new_medium = NULL;
-                enum pumas_return rc = step_transport(context, state, straight,
-                    medium, locals, grammage_max, &step_max_medium,
-                    &step_max_locals, &new_medium);
-                if (rc != PUMAS_RETURN_SUCCESS) return rc;
+                if (step_transport(context, state, straight, medium, locals,
+                        grammage_max, &step_max_medium, &step_max_locals,
+                        &new_medium) != PUMAS_RETURN_SUCCESS)
+                        return context_->step_event;
                 step_index++;
 
                 /* Check for any event. */
@@ -3588,7 +3599,7 @@ enum pumas_return transport_with_stepping(struct pumas_context * context,
                 /* Update the weight if a boundary or hard energy loss
                  * occured.
                  */
-                if (!(context_->step_event & EVENT_EHS)) {
+                if (!(context_->step_event & PUMAS_EVENT_VERTEX_COULOMB)) {
                         const double w0 =
                             (context->decay == PUMAS_DECAY_WEIGHT) ?
                             wi * exp(-fabs(state->time - ti) / s_shared->ctau) :
@@ -3603,34 +3614,51 @@ enum pumas_return transport_with_stepping(struct pumas_context * context,
                 /* Process the event. */
                 if (!context_->step_event) {
                         /* Register the current state. */
-                        record_state(recorder, medium, state);
+                        record_state(
+                            recorder, medium, context_->step_event, state);
                 } else {
                         if (context_->step_event &
-                            (EVENT_KINETIC | EVENT_RANGE | EVENT_GRAMMAGE |
-                                EVENT_TIME | EVENT_WEIGHT)) {
+                            (PUMAS_EVENT_LIMIT | PUMAS_EVENT_WEIGHT |
+                                PUMAS_EVENT_VERTEX_DECAY)) {
                                 /* A boundary was reached. Let's stop the
                                  * simulation.
                                  */
                                 break;
                         } else if (context_->step_event &
-                            (EVENT_DEL | EVENT_EHS)) {
+                            (PUMAS_EVENT_VERTEX_DEL |
+                                PUMAS_EVENT_VERTEX_COULOMB)) {
                                 /* A discrete process occured. */
-                                if (context_->step_event & EVENT_DEL) {
-                                        /* Record the pre step point. */
+                                if (context_->step_event &
+                                    PUMAS_EVENT_VERTEX_DEL) {
+                                        /* Backup the pre step point if
+                                         * recording.
+                                         */
                                         const int rec =
                                             record && (recorder->period != 0);
+                                        struct pumas_state pre;
                                         if (rec != 0)
-                                                record_state(
-                                                    recorder, medium, state);
+                                                memcpy(
+                                                    &pre, state, sizeof(pre));
 
                                         /* Apply the inelastic DEL. */
                                         transport_do_del(
                                             context, state, material);
+                                        if (!context_->step_event) continue;
+
+                                        /* Record the pre step point. */
+                                        if (rec != 0)
+                                                record_state(recorder, medium,
+                                                    context_->step_event, &pre);
+
+                                        /* Check for any stop condition */
+                                        if (context->event &
+                                            context_->step_event)
+                                                break;
 
                                         /* Record the post step point. */
                                         if (rec != 0)
-                                                record_state(
-                                                    recorder, medium, state);
+                                                record_state(recorder, medium,
+                                                    PUMAS_EVENT_NONE, state);
 
                                         /* Reset the stepping data memory since
                                          * the kinetic energy has changed.
@@ -3644,6 +3672,11 @@ enum pumas_return transport_with_stepping(struct pumas_context * context,
                                         /* An EHS event occured. */
                                         transport_do_ehs(
                                             context, state, material);
+
+                                        /* Check for any stop condition */
+                                        if (context->event &
+                                            context_->step_event)
+                                                break;
                                 }
 
                                 /* Recompute the geometric step if the
@@ -3663,10 +3696,14 @@ enum pumas_return transport_with_stepping(struct pumas_context * context,
                                 if (step_max_locals > 0.) {
                                         step_max_locals = transport_set_locals(
                                             medium, state, locals);
-                                        if (locals->api.density <= 0.)
-                                                return PUMAS_RETURN_DENSITY_ERROR;
+                                        if (locals->api.density <= 0.) {
+                                                ERROR_REGISTER_NEGATIVE_DENSITY(
+                                                    s_shared->material_name
+                                                        [medium->material]);
+                                                return context_->step_event;
+                                        }
                                 }
-                        } else if (context_->step_event & EVENT_MEDIUM) {
+                        } else if (context_->step_event & PUMAS_EVENT_MEDIUM) {
                                 /* A medium change occured. Let's update the
                                  * medium.
                                  */
@@ -3676,8 +3713,12 @@ enum pumas_return transport_with_stepping(struct pumas_context * context,
                                 memset(locals, 0x0, sizeof(*locals));
                                 step_max_locals =
                                     transport_set_locals(medium, state, locals);
-                                if (locals->api.density <= 0.)
-                                        return PUMAS_RETURN_DENSITY_ERROR;
+                                if (locals->api.density <= 0.) {
+                                        ERROR_REGISTER_NEGATIVE_DENSITY(
+                                            s_shared->material_name
+                                                [medium->material]);
+                                        return context_->step_event;
+                                }
                                 straight =
                                     (context->longitudinal &&
                                         (scheme <= PUMAS_SCHEME_HYBRID) &&
@@ -3691,10 +3732,11 @@ enum pumas_return transport_with_stepping(struct pumas_context * context,
                                  * to grammage for this material.
                                  */
                                 context_->step_X_limit =
-                                    (context->kinetic_limit <= 0.) ?
-                                    0. :
+                                    (context->event &
+                                        PUMAS_EVENT_LIMIT_KINETIC) ?
                                     cel_grammage(context, scheme, material,
-                                        context->kinetic_limit);
+                                        context->kinetic_limit) :
+                                    0.;
 
                                 /* Reset the stepping data memory. */
                                 context_->step_first = 1;
@@ -3704,8 +3746,11 @@ enum pumas_return transport_with_stepping(struct pumas_context * context,
                                     3 * sizeof(*(context_->step_uT)));
 
                                 /* Record the change of medium. */
-                                if (record)
-                                        record_state(recorder, medium, state);
+                                if ((record) &&
+                                    !(context_->step_event &
+                                        PUMAS_EVENT_MEDIUM))
+                                        record_state(recorder, medium,
+                                            context_->step_event, state);
                         } else {
                                 /*  This should not happen. */
                                 assert(0);
@@ -3714,7 +3759,8 @@ enum pumas_return transport_with_stepping(struct pumas_context * context,
                         /* Update the initial conditions and the tracking of
                          * stepping events.
                          */
-                        if (!(context_->step_event & EVENT_EHS)) {
+                        if (!(context_->step_event &
+                                PUMAS_EVENT_VERTEX_COULOMB)) {
                                 ki = state->kinetic;
                                 ti = state->time;
                                 wi = state->weight;
@@ -3733,23 +3779,26 @@ enum pumas_return transport_with_stepping(struct pumas_context * context,
                 }
         }
 
-        /* Protect final kinetic value against rounding errors. */
+        /* Protect final kinetic energy value against rounding errors. */
         if (context->forward != 0) {
                 const double kinetic_min =
-                    (context->kinetic_limit < 0.) ? 0. : context->kinetic_limit;
+                    (context->event & PUMAS_EVENT_LIMIT_KINETIC) ?
+                    context->kinetic_limit :
+                    0.;
                 if (fabs(state->kinetic - kinetic_min) < FLT_EPSILON)
                         state->kinetic = kinetic_min;
         } else {
-                if ((context->kinetic_limit > 0.) &&
+                if ((context->event & PUMAS_EVENT_LIMIT_KINETIC) &&
                     (fabs(state->kinetic - context->kinetic_limit) <
                         FLT_EPSILON))
                         state->kinetic = context->kinetic_limit;
         }
 
         /* Register the end of the track, if recording. */
-        if (record) record_state(recorder, medium, state);
+        if (record) record_state(recorder, medium, context_->step_event, state);
 
-        return PUMAS_RETURN_SUCCESS;
+        *medium_ptr = medium;
+        return context_->step_event;
 }
 
 /**
@@ -3795,34 +3844,36 @@ void transport_limit(struct pumas_context * context,
         /* Initialise the stepping event flags. */
         struct simulation_context * const context_ =
             (struct simulation_context *)context;
-        context_->step_event = context_->step_foreseen = EVENT_NONE;
+        context_->step_event = context_->step_foreseen = PUMAS_EVENT_NONE;
 
         /* Check the Monte-Carlo weight. */
         if (state->weight <= 0.) {
-                context_->step_event = EVENT_WEIGHT;
+                context_->step_event = PUMAS_EVENT_WEIGHT;
                 return;
         }
 
         /* Check the kinetic limits. */
         if (context->forward != 0) {
                 const double kinetic_min =
-                    (context->kinetic_limit < 0.) ? 0. : context->kinetic_limit;
+                    (context->event & PUMAS_EVENT_LIMIT_KINETIC) ?
+                    context->kinetic_limit :
+                    0.;
                 if (state->kinetic <= kinetic_min) {
-                        context_->step_event = EVENT_KINETIC;
+                        context_->step_event = PUMAS_EVENT_LIMIT_KINETIC;
                         return;
                 }
-        } else if ((context->kinetic_limit > 0.) &&
+        } else if ((context->event & PUMAS_EVENT_LIMIT_KINETIC) &&
             (state->kinetic >= context->kinetic_limit)) {
-                context_->step_event = EVENT_KINETIC;
+                context_->step_event = PUMAS_EVENT_LIMIT_KINETIC;
                 return;
         };
 
         /* Initialise with the context grammage limit. */
-        if (context->grammage_max <= 0.)
+        if (context->event & PUMAS_EVENT_LIMIT_GRAMMAGE)
                 *grammage_max = 0.;
         else {
                 *grammage_max = context->grammage_max;
-                context_->step_foreseen = EVENT_GRAMMAGE;
+                context_->step_foreseen = PUMAS_EVENT_LIMIT_GRAMMAGE;
         }
 
         /* Check the NO LOSS case. */
@@ -3835,7 +3886,8 @@ void transport_limit(struct pumas_context * context,
                                 log(context->random(context));
                         if ((*grammage_max == 0.) || (X < *grammage_max)) {
                                 *grammage_max = X;
-                                context_->step_foreseen = EVENT_EHS;
+                                context_->step_foreseen =
+                                    PUMAS_EVENT_VERTEX_COULOMB;
                                 return;
                         }
                 }
@@ -3844,7 +3896,7 @@ void transport_limit(struct pumas_context * context,
 
         /* Check for an inelastic DEL. */
         const double sgn = context->forward ? 1. : -1.;
-        enum stepping_event foreseen = EVENT_NONE;
+        enum pumas_event foreseen = PUMAS_EVENT_NONE;
         double kinetic_limit = 0.;
         if (scheme == PUMAS_SCHEME_HYBRID) {
                 const double nI =
@@ -3856,7 +3908,7 @@ void transport_limit(struct pumas_context * context,
                         if (!context->forward ||
                             (k > *table_get_Kt(material))) {
                                 kinetic_limit = k;
-                                foreseen = EVENT_DEL;
+                                foreseen = PUMAS_EVENT_VERTEX_DEL;
                         }
                 }
         }
@@ -3873,13 +3925,13 @@ void transport_limit(struct pumas_context * context,
                             ((context->forward != 0) && (k > kinetic_limit)) ||
                             ((context->forward == 0) && (k < kinetic_limit))) {
                                 kinetic_limit = k;
-                                foreseen = EVENT_EHS;
+                                foreseen = PUMAS_EVENT_VERTEX_COULOMB;
                         }
                 }
         }
 
         /* Return if no discrete event might occur. */
-        if (foreseen == EVENT_NONE) return;
+        if (foreseen == PUMAS_EVENT_NONE) return;
 
         /* Convert the kinetic limit to a grammage one and update. */
         const double X = Xi +
@@ -3902,15 +3954,33 @@ void transport_do_del(
 {
         /* Update the energy. */
         double ki, kf;
+        int process = -1;
         polar_function_t * polar_func;
         if (context->forward != 0) {
                 ki = state->kinetic;
-                polar_func = del_randomise_forward(context, state, material);
+                polar_func =
+                    del_randomise_forward(context, state, material, &process);
                 kf = state->kinetic;
         } else {
                 kf = state->kinetic;
-                polar_func = del_randomise_reverse(context, state, material);
+                polar_func =
+                    del_randomise_reverse(context, state, material, &process);
                 ki = state->kinetic;
+        }
+
+        /* Update the event flag */
+        struct simulation_context * context_ =
+            (struct simulation_context *)context;
+        if (process < 0) {
+                context_->step_event = PUMAS_EVENT_NONE;
+        } else {
+                enum pumas_event event_for_[N_DEL_PROCESSES] = {
+                        PUMAS_EVENT_VERTEX_BREMSSTRAHLUNG,
+                        PUMAS_EVENT_VERTEX_PAIR_CREATION,
+                        PUMAS_EVENT_VERTEX_PHOTONUCLEAR,
+                        PUMAS_EVENT_VERTEX_DELTA_RAY
+                };
+                context_->step_event = event_for_[process];
         }
 
         /* Update the direction. */
@@ -4049,8 +4119,9 @@ double transport_hard_coulomb_objective(double mu, void * parameters)
  * Randomise an inelastic DEL in forward MC.
  *
  * @param context  The simulation context.
- * @param material The index of the propagation material.
  * @param state    The initial/final state.
+ * @param material The index of the propagation material.
+ * @param process  The index opf the randomised process.
  * @return The polar function for the randomisation of the corresponding TT or
  * `NULL` if none.
  *
@@ -4058,8 +4129,8 @@ double transport_hard_coulomb_objective(double mu, void * parameters)
  * a ziggurat algorithm is used.
  */
 
-polar_function_t * del_randomise_forward(
-    struct pumas_context * context, struct pumas_state * state, int material)
+polar_function_t * del_randomise_forward(struct pumas_context * context,
+    struct pumas_state * state, int material, int * process)
 {
         /* Check for a *do nothing* process. */
         if (state->kinetic <= *table_get_Kt(material)) return NULL;
@@ -4075,6 +4146,7 @@ polar_function_t * del_randomise_forward(
                 if (state->kinetic <= 0.5 * m1 * m1 / ELECTRON_MASS) {
                         state->kinetic = dcs_ionisation_randomise(
                             context, element, state->kinetic, X_FRACTION);
+                        *process = info.process;
                         return polar_get(info.process);
                 }
         }
@@ -4154,6 +4226,7 @@ polar_function_t * del_randomise_forward(
                     context, state, dcs_func, element, xmin, xmax, dcs_samples);
         }
 
+        *process = info.process;
         return polar_get(info.process);
 }
 
@@ -4161,8 +4234,9 @@ polar_function_t * del_randomise_forward(
  * Randomise an inelastic DEL in backward MC.
  *
  * @param context  The simulation context.
- * @param material The index of the propagation material.
  * @param state    The initial/final state.
+ * @param material The index of the propagation material.
+ * @param process  The index of the randomised process.
  * @return The polar function for the randomisation of the corresponding TT or
  * `NULL` if none.
  *
@@ -4171,8 +4245,8 @@ polar_function_t * del_randomise_forward(
  * DEL is processed by randomising the initial kinetic energy over a power law
  * distribution and then randomising the target element.
  */
-polar_function_t * del_randomise_reverse(
-    struct pumas_context * context, struct pumas_state * state, int material)
+polar_function_t * del_randomise_reverse(struct pumas_context * context,
+    struct pumas_state * state, int material, int * process)
 {
         /* Check for a pure CEL event. */
         const double lnq0 = -log(X_FRACTION);
@@ -4220,6 +4294,8 @@ polar_function_t * del_randomise_reverse(
         state->weight *= w_bias * f *
             del_cross_section(context, material, state->kinetic) /
             (del_cross_section(context, material, kf) * (1. - pCEL));
+
+        *process = info.process;
         return polar_get(info.process);
 }
 
@@ -4622,12 +4698,12 @@ enum pumas_return step_transport(struct pumas_context * context,
 
         /* Check the total distance limitation. */
         *out_medium = medium;
-        enum stepping_event event = EVENT_NONE;
-        if (context->distance_max > 0.) {
+        enum pumas_event event = PUMAS_EVENT_NONE;
+        if (context->event & PUMAS_EVENT_LIMIT_DISTANCE) {
                 const double d = context->distance_max - state->distance;
                 if (d <= step) {
                         step = d;
-                        event = EVENT_RANGE;
+                        event = PUMAS_EVENT_LIMIT_DISTANCE;
                 }
         }
 
@@ -4688,7 +4764,7 @@ enum pumas_return step_transport(struct pumas_context * context,
                         if (*step_max_medium > 0.)
                                 *step_max_medium += 0.5 * STEP_MIN;
                 }
-                event = EVENT_MEDIUM;
+                event = PUMAS_EVENT_MEDIUM;
                 *out_medium = end_medium;
         }
 
@@ -4707,7 +4783,7 @@ enum pumas_return step_transport(struct pumas_context * context,
         }
 
         /* Offset the end step position for a boundary crossing. */
-        if (event & EVENT_MEDIUM) {
+        if (event & PUMAS_EVENT_MEDIUM) {
                 position[0] = end_position[0];
                 position[1] = end_position[1];
                 position[2] = end_position[2];
@@ -4725,7 +4801,7 @@ enum pumas_return step_transport(struct pumas_context * context,
                             state->grammage + Xtot - context_->step_X_limit;
                         if ((grammage_max <= 0.) || (grammage < grammage_max)) {
                                 grammage_max = grammage;
-                                event = EVENT_KINETIC;
+                                event = PUMAS_EVENT_LIMIT_KINETIC;
                         }
                 } else if (!context->forward && (context_->step_X_limit > 0.) &&
                     X > context_->step_X_limit) {
@@ -4734,7 +4810,7 @@ enum pumas_return step_transport(struct pumas_context * context,
                             state->grammage + context_->step_X_limit - Xtot;
                         if ((grammage_max <= 0.) || (grammage < grammage_max)) {
                                 grammage_max = grammage;
-                                event = EVENT_KINETIC;
+                                event = PUMAS_EVENT_LIMIT_KINETIC;
                         }
                 } else
                         k1 = cel_kinetic_energy(context, scheme, material, X);
@@ -4746,12 +4822,12 @@ enum pumas_return step_transport(struct pumas_context * context,
                 double kinetic_limit = -1.;
                 if (context->forward) {
                         const double kinetic_min =
-                            (context->kinetic_limit < 0.) ?
-                            0. :
-                            context->kinetic_limit;
+                            (context->event & PUMAS_EVENT_LIMIT_KINETIC) ?
+                            context->kinetic_limit :
+                            0.;
                         if (k1 <= kinetic_min) kinetic_limit = kinetic_min;
                 } else {
-                        if ((context->kinetic_limit > 0.) &&
+                        if ((context->event & PUMAS_EVENT_LIMIT_KINETIC) &&
                             (k1 >= context->kinetic_limit))
                                 kinetic_limit = context->kinetic_limit;
                 }
@@ -4761,7 +4837,7 @@ enum pumas_return step_transport(struct pumas_context * context,
                         k1 = kinetic_limit;
                         if ((grammage_max <= 0.) || (grammage < grammage_max)) {
                                 grammage_max = grammage;
-                                event = EVENT_KINETIC;
+                                event = PUMAS_EVENT_LIMIT_KINETIC;
                         }
                 }
 
@@ -4788,7 +4864,7 @@ enum pumas_return step_transport(struct pumas_context * context,
                 if (context->random(context) > r) goto no_del_event;
                 k_x = k_del;
                 Xmax = X_del;
-                event = EVENT_DEL;
+                event = PUMAS_EVENT_VERTEX_DEL;
         no_del_event:
 
                 if (!context->longitudinal) {
@@ -4818,7 +4894,7 @@ enum pumas_return step_transport(struct pumas_context * context,
                                 goto no_ehs_event;
                         k_x = k_ehs;
                         Xmax = X_ehs;
-                        event = EVENT_EHS;
+                        event = PUMAS_EVENT_VERTEX_COULOMB;
                 no_ehs_event:;
                 }
 
@@ -4848,7 +4924,7 @@ enum pumas_return step_transport(struct pumas_context * context,
                         step *= h_int;
                 }
                 state->grammage = grammage_max;
-                if (!(event & EVENT_KINETIC)) {
+                if (!(event & PUMAS_EVENT_LIMIT_KINETIC)) {
                         /*  Update the kinetic energy. */
                         if (scheme <= PUMAS_SCHEME_HYBRID) {
                                 if (scheme != PUMAS_SCHEME_NO_LOSS)
@@ -4857,7 +4933,9 @@ enum pumas_return step_transport(struct pumas_context * context,
                                             Xtot -
                                                 sgn * (state->grammage - Xi));
                                 event = context_->step_foreseen;
-                        } else if (!(event & (EVENT_EHS | EVENT_DEL))) {
+                        } else if (!(event &
+                                       (PUMAS_EVENT_VERTEX_COULOMB |
+                                           PUMAS_EVENT_VERTEX_DEL))) {
                                 /*
                                  * This is a grammage limit in the detailed
                                  * scheme.
@@ -4865,7 +4943,7 @@ enum pumas_return step_transport(struct pumas_context * context,
                                 k1 = state->kinetic -
                                     sgn * (state->grammage - Xi) * dk / dX;
                                 if (k1 < 0.) k1 = 0.;
-                                event = EVENT_GRAMMAGE;
+                                event = PUMAS_EVENT_LIMIT_GRAMMAGE;
                         }
                 }
 
@@ -4878,7 +4956,8 @@ enum pumas_return step_transport(struct pumas_context * context,
 
         /* Check the proper time limit. */
         int decayed = 0;
-        double time_max = context->time_max;
+        double time_max =
+            (context->event & PUMAS_EVENT_LIMIT_TIME) ? context->time_max : 0.;
         if (context->decay == PUMAS_DECAY_PROCESS) {
                 if ((time_max <= 0.) || (context_->lifetime < time_max)) {
                         time_max = context_->lifetime;
@@ -4899,7 +4978,7 @@ enum pumas_return step_transport(struct pumas_context * context,
                                         context, scheme, material, Tf));
                                 if (Xi + dxT < state->grammage) {
                                         /* A proper time limit is reached. */
-                                        event = EVENT_TIME;
+                                        event = PUMAS_EVENT_LIMIT_TIME;
                                         state->time = time_max;
                                         state->decayed = decayed;
                                         step = dxT * density_i;
@@ -4912,7 +4991,7 @@ enum pumas_return step_transport(struct pumas_context * context,
                         }
                 }
 
-                if (event != EVENT_TIME) {
+                if (event != PUMAS_EVENT_LIMIT_TIME) {
                         const double Tf =
                             cel_proper_time(context, scheme, material, k1);
                         state->time += fabs(Tf - Ti) * density_i;
@@ -4926,7 +5005,7 @@ enum pumas_return step_transport(struct pumas_context * context,
                     0.5 * step * s_shared->mass * (1. / momentum + 1. / p_f);
                 if ((time_max > 0.) && (state->time >= time_max)) {
                         /* A proper time limit is reached. */
-                        event = EVENT_TIME;
+                        event = PUMAS_EVENT_LIMIT_TIME;
                         state->time = time_max;
                         state->decayed = decayed;
 
@@ -4967,7 +5046,7 @@ enum pumas_return step_transport(struct pumas_context * context,
                 }
         }
 
-        if (event == EVENT_TIME) {
+        if (event == PUMAS_EVENT_LIMIT_TIME) {
                 /* Correct the position. */
                 const double ds_ = step - sf1;
                 position[0] += ds_ * sgn * direction[0];
@@ -5083,7 +5162,7 @@ enum pumas_return step_transport(struct pumas_context * context,
                 rotated = 1;
         }
 
-        if (event & EVENT_MEDIUM) {
+        if (event & PUMAS_EVENT_MEDIUM) {
                 /* Get the geometric step length in the new medium. */
                 *step_max_medium = context->medium(context, state, &end_medium);
                 if (*step_max_medium > 0.) *step_max_medium += 0.5 * STEP_MIN;
@@ -5708,7 +5787,8 @@ double transverse_transport_photonuclear(
  * This routine adds the given state to the recorder's stack.
  */
 void record_state(struct pumas_recorder * recorder,
-    struct pumas_medium * medium, struct pumas_state * state)
+    struct pumas_medium * medium, enum pumas_event event,
+    struct pumas_state * state)
 {
         struct frame_recorder * const rec =
             (struct frame_recorder * const)recorder;
@@ -5738,6 +5818,7 @@ void record_state(struct pumas_recorder * recorder,
         rec->last = frame;
         frame->next = NULL;
         frame->medium = medium;
+        frame->event = event;
         memcpy(&(frame->state), state, sizeof(*state));
         recorder->length++;
 }

@@ -159,6 +159,42 @@ enum pumas_return {
         PUMAS_N_RETURNS
 };
 
+/** Flags for transport events. */
+enum pumas_event {
+        /** No event occured or is foreseen. */
+        PUMAS_EVENT_NONE = 0,
+        /** A kinetic limit was reached or is foreseen. */
+        PUMAS_EVENT_LIMIT_KINETIC = 1,
+        /** A distance limit was reached or is foreseen. */
+        PUMAS_EVENT_LIMIT_DISTANCE = 2,
+        /** A grammage limit was reached or is foreseen. */
+        PUMAS_EVENT_LIMIT_GRAMMAGE = 4,
+        /** A proper time limit was reached or is foreseen. */
+        PUMAS_EVENT_LIMIT_TIME = 8,
+        /** Shortcut for any external limit. */
+        PUMAS_EVENT_LIMIT = 15,
+        /** A change of medium occured or is foreseen. */
+        PUMAS_EVENT_MEDIUM = 16,
+        /** A Bremsstrahlung occured or is foreseen. */
+        PUMAS_EVENT_VERTEX_BREMSSTRAHLUNG = 32,
+        /** A Pair creation occured or is foreseen. */
+        PUMAS_EVENT_VERTEX_PAIR_CREATION = 64,
+        /** A Photonuclear interaction occured or is foreseen. */
+        PUMAS_EVENT_VERTEX_PHOTONUCLEAR = 128,
+        /** A Delta ray occured or is foreseen. */
+        PUMAS_EVENT_VERTEX_DELTA_RAY = 256,
+        /** Shortcut for any Discrete Energy Loss (DEL). */
+        PUMAS_EVENT_VERTEX_DEL = 480,
+        /** A hard Coulombian interaction occured or is foreseen. */
+        PUMAS_EVENT_VERTEX_COULOMB = 512,
+        /** A decay has occured or is foreseen. */
+        PUMAS_EVENT_VERTEX_DECAY = 1024,
+        /** Shortcut for any interaction vertex. */
+        PUMAS_EVENT_VERTEX = 2016,
+        /** The particle has a nul or negative weight. */
+        PUMAS_EVENT_WEIGHT = 2048
+};
+
 /**
  * Container for a Monte-Carlo state.
  */
@@ -249,6 +285,8 @@ struct pumas_frame {
         struct pumas_state state;
         /** The corresponding propagation medium. */
         struct pumas_medium * medium;
+        /** The corresponding step event. */
+        enum pumas_event event;
         /** Link to the next frame in the record. */
         struct pumas_frame * next;
 };
@@ -389,6 +427,12 @@ struct pumas_context {
          * a muon or `PUMAS_DECAY_PROCESS` for a tau.
          */
         enum pumas_decay decay;
+        /**
+         * The events that might stop the transport. Default is
+         * `PUMAS_EVENT_NONE`, i.e. the transport stops only if the particle
+         * exits the simulation media, or if it looses all of its energy.
+         */
+        enum pumas_event event;
 
         /** The minimum kinetic energy for forward transport, or maximum one
          * for backward transport.
@@ -520,13 +564,18 @@ PUMAS_API enum pumas_return pumas_load(FILE * stream);
  * Transport a particle according to the configured `pumas_context`.
  *
  * @param context The simulation context.
- * @param state   The initial or final state.
+ * @param state   The initial state or the final state at return.
+ * @param event   The `pumas_event` at return, or `ǸULL`.
+ * @param media   The initial and final media, or `ǸULL`.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
  * Depending on the *context* configuration the particle is transported through
  * one or more media, as provided by the *medium* callback. At return, the
- * particle *state* is updated.
+ * particle *state* is updated. If *event* is not `NULL` it will be filled
+ * with the end step event flag. In addition, if *media* is not `ǸULL` it will
+ * contain the initial (`media[0]`) and final (`media[1]`) media crossed by the
+ * particle.
  *
  * __Error codes__
  *
@@ -541,8 +590,9 @@ PUMAS_API enum pumas_return pumas_load(FILE * stream);
  *
  *     PUMAS_RETURN_MISSING_RANDOM          A *random* callback is needed.
  */
-PUMAS_API enum pumas_return pumas_transport(
-    struct pumas_context * context, struct pumas_state * state);
+PUMAS_API enum pumas_return pumas_transport(struct pumas_context * context,
+    struct pumas_state * state, enum pumas_event * event,
+    struct pumas_medium * media[2]);
 
 /**
  * Print a summary of the current library configuration.

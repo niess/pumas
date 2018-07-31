@@ -61,7 +61,7 @@ static int exit_gracefully(int rc)
 }
 
 /* Error handler for PUMAS with a graceful exit */
-static void error_handler(
+static void handle_error(
     enum pumas_return rc, pumas_function_t * caller, const char * message)
 {
         /* Dump the error summary */
@@ -165,13 +165,13 @@ int main(int narg, char * argv[])
          * PUMAS function call, the supplied error handler will be evaluated,
          * resulting in an exit to the OS
          */
-        pumas_error_handler_set(&error_handler);
+        pumas_error_handler_set(&handle_error);
 
         /* Initialise PUMAS from a Material Description File (MDF). This can
          * a few seconds, depending on the number of materials in the MDF.
          */
-        pumas_initialise(
-            PUMAS_PARTICLE_MUON, "materials/mdf/standard.xml", "../dedx/muon");
+        pumas_initialise(PUMAS_PARTICLE_MUON, "materials/mdf/standard.xml",
+            "materials/dedx/muon");
 
         /* Map the PUMAS material index */
         pumas_material_index(MATERIAL_NAME, &medium.material);
@@ -230,7 +230,7 @@ int main(int narg, char * argv[])
                         .direction = { -sin_theta, 0., -cos_theta } };
 
                 /* Transport the muon backwards */
-                pumas_transport(context, &state);
+                pumas_transport(context, &state, NULL, NULL);
 
                 /* Update the integrated flux */
                 const double wi = state.weight *
