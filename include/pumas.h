@@ -192,7 +192,11 @@ enum pumas_event {
         /** Shortcut for any interaction vertex. */
         PUMAS_EVENT_VERTEX = 2016,
         /** The particle has a nul or negative weight. */
-        PUMAS_EVENT_WEIGHT = 2048
+        PUMAS_EVENT_WEIGHT = 2048,
+        /** Extra flag for records tagging the 1st transport step. */
+        PUMAS_EVENT_START = 4096,
+        /** Extra flag for records tagging the last transport step. */
+        PUMAS_EVENT_STOP = 8192
 };
 
 /**

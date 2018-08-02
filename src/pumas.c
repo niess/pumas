@@ -2008,8 +2008,8 @@ enum pumas_return pumas_transport(struct pumas_context * context,
                 if (event != NULL) *event = PUMAS_EVENT_MEDIUM;
                 /* Register the start of the the track, if recording. */
                 if (context->recorder != NULL)
-                        record_state(
-                            context, medium, PUMAS_EVENT_MEDIUM, state);
+                        record_state(context, medium,
+                            PUMAS_EVENT_MEDIUM | PUMAS_EVENT_START, state);
                 return PUMAS_RETURN_SUCCESS;
         } else if (step_max_medium > 0.)
                 step_max_medium += 0.5 * STEP_MIN;
@@ -3137,7 +3137,8 @@ enum pumas_event transport_with_csda(struct pumas_context * context,
         enum pumas_event event = PUMAS_EVENT_NONE;
         struct pumas_recorder * recorder = context->recorder;
         const int record = (recorder != NULL);
-        if (record) record_state(context, medium, event, state);
+        if (record)
+                record_state(context, medium, event | PUMAS_EVENT_START, state);
 
         /* Get the end point with CSDA. */
         double xB;
@@ -3264,7 +3265,8 @@ enum pumas_event transport_with_csda(struct pumas_context * context,
         }
 
         /* Register the end of the track, if recording. */
-        if (record) record_state(context, medium, event, state);
+        if (record)
+                record_state(context, medium, event | PUMAS_EVENT_STOP, state);
 
         return event;
 }
@@ -3536,7 +3538,9 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
         context_->step_event = PUMAS_EVENT_NONE;
         struct pumas_recorder * recorder = context->recorder;
         const int record = (recorder != NULL);
-        if (record) record_state(context, medium, context_->step_event, state);
+        if (record)
+                record_state(context, medium,
+                    context_->step_event | PUMAS_EVENT_START, state);
 
         /* Initialise some temporary data for the propagation, weights, ect ...
          */
@@ -3766,8 +3770,7 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
 
                                 /* Record the change of medium. */
                                 if ((record) &&
-                                    !(context->event &
-                                        PUMAS_EVENT_MEDIUM))
+                                    !(context->event & PUMAS_EVENT_MEDIUM))
                                         record_state(context, medium,
                                             context_->step_event, state);
                         } else {
@@ -3814,7 +3817,9 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
         }
 
         /* Register the end of the track, if recording. */
-        if (record) record_state(context, medium, context_->step_event, state);
+        if (record)
+                record_state(context, medium,
+                    context_->step_event | PUMAS_EVENT_STOP, state);
 
         *medium_ptr = medium;
         return context_->step_event;
@@ -5801,6 +5806,7 @@ double transverse_transport_photonuclear(
  *
  * @param recorder     The recorder handle.
  * @param medium       The medium in which the particle is located.
+ * @param event        The current stepping event.
  * @param state        The Monte-Carlo state to record.
  *
  * This routine adds the given state to the recorder's stack.
