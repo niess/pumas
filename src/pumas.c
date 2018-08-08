@@ -3653,7 +3653,6 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
                                         /* Apply the inelastic DEL. */
                                         transport_do_del(
                                             context, state, material);
-                                        if (!context_->step_event) continue;
 
                                         /* Record the pre step point. */
                                         if (rec != 0) {
@@ -3893,11 +3892,12 @@ void transport_limit(struct pumas_context * context,
         };
 
         /* Initialise with the context grammage limit. */
-        if (context->event & PUMAS_EVENT_LIMIT_GRAMMAGE)
-                *grammage_max = 0.;
-        else {
+        if (context->event & PUMAS_EVENT_LIMIT_GRAMMAGE) {
                 *grammage_max = context->grammage_max;
                 context_->step_foreseen = PUMAS_EVENT_LIMIT_GRAMMAGE;
+
+        } else {
+                *grammage_max = 0.;
         }
 
         /* Check the NO LOSS case. */
