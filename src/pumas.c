@@ -3730,7 +3730,9 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
                                  * medium.
                                  */
                                 medium = new_medium;
-                                if (medium == NULL) break;
+                                if ((medium == NULL) ||
+                                    (context->event & PUMAS_EVENT_MEDIUM))
+                                        break;
                                 material = medium->material;
                                 memset(locals, 0x0, sizeof(*locals));
                                 step_max_locals =

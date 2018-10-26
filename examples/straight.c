@@ -93,7 +93,7 @@ static double medium1(struct pumas_context * context,
     struct pumas_state * state, struct pumas_medium ** medium_ptr)
 {
         /* Set the medium */
-        *medium_ptr = &medium;
+        if (medium_ptr != NULL) *medium_ptr = &medium;
 
         /* Propose a maximum stepping distance. Returning zero or less indicates
          * an infinite medium

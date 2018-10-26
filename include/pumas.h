@@ -356,13 +356,13 @@ struct pumas_recorder {
  *
  * @param context   The Monte-Carlo context requiring a medium.
  * @param state     The Monte-Carlo state for which the medium is requested.
- * @param medium    A pointer to the corresponding medium or `NULL` if the state
- * has exit the simulation area.
- * @return The proposed step size or `0` for an infinite medium.
+ * @param medium    A pointer to store the medium or `NULL` if not requested.
+ * @return The proposed step size or zero or less for an infinite medium.
  *
  * The callback must propose a Monte-Carlo stepping distance, in m,
  * consistent with the geometry. Note that returning zero or less
- * signs that the corresponding medium has no boundaries.
+ * signs that the corresponding medium has no boundaries. When *medium* is
+ * not `NULL` it must be set to the located `pumas_medium`.
  *
  * **Warning** : it is an error to return zero or less for any state if the
  * extension is finite.
