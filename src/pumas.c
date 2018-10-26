@@ -1555,7 +1555,7 @@ enum pumas_return pumas_error_raise(void)
 
 /* Public library functions: simulation context management. */
 enum pumas_return pumas_context_create(
-    int extra_memory, struct pumas_context ** context_)
+    struct pumas_context ** context_, int extra_memory)
 {
         ERROR_INITIALISE(pumas_context_create);
         *context_ = NULL;
@@ -6977,7 +6977,7 @@ enum pumas_return mdf_parse_composites(
                 /* Set the composition data. */
                 if (node.key == MDF_KEY_COMPOSITE_COMPONENT) {
                         int i = mdf->materials_in - 1;
-                        int ima;
+                        int ima = 0;
                         if (material_index(node.at1.name, &ima, error_) !=
                             PUMAS_RETURN_SUCCESS)
                                 break;

@@ -177,7 +177,7 @@ int main(int narg, char * argv[])
         pumas_material_index(MATERIAL_NAME, &medium.material);
 
         /* Create a new PUMAS simulation context */
-        pumas_context_create(0, &context);
+        pumas_context_create(&context, 0);
 
         /* Configure the context for simulating the detailed energy loss, à
          * la Geant4

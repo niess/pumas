@@ -245,7 +245,7 @@ int main(int narg, char * argv[])
         pumas_material_index("Air", &media[1].material);
 
         /* Create a new PUMAS simulation context */
-        pumas_context_create(0, &context);
+        pumas_context_create(&context, 0);
 
         /* Configure the context for a backward transport */
         context->forward = 0;

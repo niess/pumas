@@ -775,7 +775,7 @@ PUMAS_API enum pumas_return pumas_error_raise(void);
  *     PUMAS_RETURN_MEMORY_ERROR            Couldn't allocate memory.
  */
 PUMAS_API enum pumas_return pumas_context_create(
-    int extra_memory, struct pumas_context ** context);
+    struct pumas_context ** context, int extra_memory);
 
 /**
  * Destroy a simulation context.
