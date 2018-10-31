@@ -2038,7 +2038,8 @@ enum pumas_return pumas_transport(struct pumas_context * context,
 
         /* Call the relevant transport engine. */
         enum pumas_event e = PUMAS_EVENT_NONE;
-        if ((step_max_medium <= 0.) && (step_max_locals <= 0.)) {
+        if ((step_max_medium <= 0.) && (step_max_locals <= 0.) &&
+            (context->scheme <= PUMAS_SCHEME_CSDA)) {
                 /* This is an infinite and uniform medium. */
                 if ((context->scheme == PUMAS_SCHEME_NO_LOSS) &&
                     ((context->event & PUMAS_EVENT_LIMIT) == 0)) {
