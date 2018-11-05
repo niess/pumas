@@ -3522,14 +3522,11 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
         struct pumas_medium * medium = *medium_ptr;
         int material = medium->material;
 
-        /* Check for a straight path in a uniform medium of infinite
-         * extension.
-         */
+        /* Check for a straight path in a uniform medium */
         const enum pumas_scheme scheme = context->scheme;
         int straight =
             (context->longitudinal && (scheme <= PUMAS_SCHEME_HYBRID) &&
-                (step_max_medium <= 0.) && (step_max_locals <= 0.) &&
-                !locals->magnetized) ?
+                (step_max_locals <= 0.) && !locals->magnetized) ?
             1 :
             0;
 
@@ -3747,7 +3744,6 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
                                 straight =
                                     (context->longitudinal &&
                                         (scheme <= PUMAS_SCHEME_HYBRID) &&
-                                        (step_max_medium <= 0.) &&
                                         (step_max_locals <= 0.) &&
                                         !locals->magnetized) ?
                                     1 :

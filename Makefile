@@ -1,4 +1,4 @@
-CFLAGS := -O2 -std=c99 -pedantic -Wall -D_BUILD_TABULATE -Wfatal-errors
+CFLAGS := -O3 -std=c99 -pedantic -Wall -D_BUILD_TABULATE -Wfatal-errors
 INCLUDES := -Iinclude
 LIBS := -Llib -lpumas -Wl,-rpath,$(PWD)/lib -lm
 

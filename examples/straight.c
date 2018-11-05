@@ -198,6 +198,7 @@ int main(int narg, char * argv[])
 
         /* Set a distance limit for the transport as the total rock depth */
         context->distance_max = (rock_thickness <= 0.) ? 1E-06 : rock_thickness;
+        context->event |= PUMAS_EVENT_LIMIT_DISTANCE;
 
         /* Run the Monte-Carlo */
         const double cos_theta = cos((90. - elevation) / 180. * M_PI);
