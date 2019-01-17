@@ -420,9 +420,9 @@ typedef double(pumas_random_cb)(struct pumas_context * context);
  * + Depending on the level of detail of the simulation a random stream must
  * be provided by the user before any call to `pumas_transport`.
  *
- * + For `kinetic_limit`, `distance_max` or `grammage_max` a strictly positive
- * value activates the corresponding limitation. Setting it to `0` or less
- * disables it however.
+ * + Note that for `kinetic_limit`, `distance_max` or `grammage_max` to be
+ * taken into account, the corresponding events must be activated as well, with
+ * the `event` flag.
  */
 struct pumas_context {
         /** A medium callback. */
