@@ -45,7 +45,7 @@
 
 /* For the versioning. */
 #define PUMAS_VERSION 0
-#define PUMAS_SUBVERSION 12
+#define PUMAS_SUBVERSION 13
 
 /* Some tuning factors as macros. */
 /**
@@ -1361,6 +1361,11 @@ enum pumas_return pumas_load(FILE * stream)
 
         /* Check if the library is already initialised. */
         if (s_shared != NULL) { return ERROR_ALREADY_INITIALISED(); }
+
+        /* Check the input stream */
+        if (stream == NULL)
+                return ERROR_MESSAGE(PUMAS_RETURN_PATH_ERROR,
+                    "invalid input stream (null)");
 #if (GDB_MODE)
         /* Save the floating points exceptions status and enable them. */
         fe_status = fegetexcept();
@@ -1434,8 +1439,13 @@ enum pumas_return pumas_dump(FILE * stream)
 
         /* Check if the library is initialised. */
         if (s_shared == NULL)
-                ERROR_MESSAGE(PUMAS_RETURN_INITIALISATION_ERROR,
+                return ERROR_MESSAGE(PUMAS_RETURN_INITIALISATION_ERROR,
                     "the library hasn't been initialised");
+
+        /* Check the output stream */
+        if (stream == NULL)
+                return ERROR_MESSAGE(PUMAS_RETURN_PATH_ERROR,
+                    "invalid output stream (null)");
 
         /* Dump the configuration. */
         int tag = BINARY_DUMP_TAG;
@@ -2241,8 +2251,6 @@ enum pumas_return pumas_table_index(enum pumas_property property,
     enum pumas_scheme scheme, int material, double value, int * index)
 {
         ERROR_INITIALISE(pumas_table_index);
-        const int imax = s_shared->n_kinetics - 1;
-        const double * table;
 
         /* Check some input parameters. */
         *index = 0;
@@ -2252,6 +2260,7 @@ enum pumas_return pumas_table_index(enum pumas_property property,
         }
 
         /* Get the tabulated value's index. */
+        const double * table;
         if (property == PUMAS_PROPERTY_KINETIC_ENERGY)
                 table = table_get_K(0);
         else if (property == PUMAS_PROPERTY_GRAMMAGE) {
@@ -2282,10 +2291,14 @@ enum pumas_return pumas_table_index(enum pumas_property property,
                     "invalid `property' index [%d]", property);
         }
 
+        const int imax = s_shared->n_kinetics - 1;
         if (value < table[0]) {
                 return ERROR_FORMAT(PUMAS_RETURN_VALUE_ERROR,
                     "out of range `value' [%.5lE < %.5lE]", value < table[0]);
-        } else if (value >= table[imax]) {
+        } else if (value == table[imax]) {
+                *index = imax;
+                return PUMAS_RETURN_SUCCESS;
+        } else if (value > table[imax]) {
                 *index = imax;
                 return ERROR_FORMAT(PUMAS_RETURN_VALUE_ERROR,
                     "out of range `value' [%.5lE < %.5lE]",

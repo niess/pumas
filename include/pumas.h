@@ -516,7 +516,7 @@ struct pumas_context {
  *     PUMAS_RETURN_TOO_LONG                Some XML node in the MDF is
  * too long.
  *
- *     PUMAS_RETURN_UNDEFINED_MDF           No energy loss path was provided.
+ *     PUMAS_RETURN_UNDEFINED_DEDX          No energy loss path was provided.
  *
  *     PUMAS_RETURN_UNDEFINED_MDF           No MDF was provided.
  *
@@ -561,6 +561,8 @@ PUMAS_API void pumas_finalise(void);
  *
  *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
  *
+ *     PUMAS_RETURN_PATH_ERROR              The output stream in invalid (null).
+ *
  *     PUMAS_RETURN_IO_ERROR                Couldn't write to the stream.
  */
 PUMAS_API enum pumas_return pumas_dump(FILE * stream);
@@ -584,6 +586,8 @@ PUMAS_API enum pumas_return pumas_dump(FILE * stream);
  * with the current version.
  *
  *     PUMAS_RETURN_INITIALISATION_ERROR    The library is already initialised.
+ *
+ *     PUMAS_RETURN_PATH_ERROR              The input stream in invalid (null).
  *
  *     PUMAS_RETURN_IO_ERROR                Couldn't read from the stream.
  */
@@ -905,7 +909,7 @@ PUMAS_API enum pumas_return pumas_property_kinetic_energy(
  *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
  */
 PUMAS_API enum pumas_return pumas_property_energy_loss(
-    enum pumas_scheme scheme, int material, double kinetic, double * deddx);
+    enum pumas_scheme scheme, int material, double kinetic, double * dedx);
 
 /**
  * Compute the Multiple SCattering (MSC) 1^(st) transport path length for a
@@ -933,7 +937,7 @@ PUMAS_API enum pumas_return pumas_property_scattering_length(
     int material, double kinetic, double * length);
 
 /**
- * The macroscopic inelastic total cross-section.
+ * The macroscopic total inelastic cross-section.
  *
  * @param material         The material index.
  * @param kinetic          The kinetic energy, in GeV.
@@ -1013,6 +1017,7 @@ PUMAS_API int pumas_composite_length(void);
  * @param material  The composite material index.
  * @param fractions The vector of mass fractions of the base materials
  *                  components.
+ * @param densities  The vector of densities of the base materials components.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *

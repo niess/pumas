@@ -1,52 +1,66 @@
+cmake_minimum_required (VERSION 3.6.3)
+project (Pumas C)
 
-cmake_minimum_required (VERSION 2.6)
-project (Pumas)
+# Build options
+if (NOT CMAKE_BUILD_TYPE)
+        set (CMAKE_BUILD_TYPE "Release" CACHE STRING
+                 "Choose the type of build, options are: Debug Release
+                  RelWithDebInfo MinSizeRel and Test." FORCE)
+endif ()
 
-# Build options.
-set (BUILD_SHARED_LIBS TRUE
-    CACHE BOOL "Build the library as shared")
-option (BUILD_TABULATE
-    "Build the pumas-tabulate utility" ON)
-if (BUILD_TABULATE)
-    add_definitions(-D_BUILD_TABULATE)
-endif (BUILD_TABULATE)
+if (NOT BUILD_SHARED_LIBS)
+    set (BUILD_SHARED_LIBS TRUE CACHE BOOL "Build the library as shared")
+endif ()
+
+option (PUMAS_BUILD_TABULATE "Build the pumas-tabulate utility" OFF)
+
 if ("${CMAKE_SYSTEM}" MATCHES "Linux")
-    option(GDB_MODE
-    "Additional features for debugging with gdb" OFF)
-    if (GDB_MODE)
-        add_definitions(-DGDB_MODE)
-    endif (GDB_MODE)
-endif ("${CMAKE_SYSTEM}" MATCHES "Linux")
+        option (PUMAS_USE_GDB "Additional features for debugging with gdb" OFF)
+endif ()
 
 # Build and install rules for the PUMAS library.
-include_directories (include)
 add_library (pumas src/pumas.c include/pumas.h)
+target_include_directories (pumas PUBLIC "${PROJECT_SOURCE_DIR}/include")
+target_link_libraries (pumas m)
+
+if (PUMAS_BUILD_TABULATE)
+    target_compile_definitions (pumas PRIVATE "-D_BUILD_TABULATE")
+endif ()
+
+if (PUMAS_USE_GDB)
+        target_compile_definitions (pumas PRIVATE "-DGDB_MODE")
+endif ()
+
 if (WIN32)
-    add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+        target_compile_definitions (pumas PRIVATE "-D_CRT_SECURE_NO_WARNINGS")
     if (BUILD_SHARED_LIBS)
-        target_compile_definitions(pumas
-            PUBLIC "-DPUMAS_API=__declspec(dllexport)")
-    endif (BUILD_SHARED_LIBS)
+        target_compile_definitions (pumas
+                PRIVATE "-DPUMAS_API=__declspec(dllexport)")
+    endif ()
     install (TARGETS pumas DESTINATION .)
     install (FILES include/pumas.h DESTINATION .)
-else (WIN32)
+else ()
     install (TARGETS pumas DESTINATION lib)
     install (FILES include/pumas.h DESTINATION include)
-endif (WIN32)
+endif ()
 
 # Build and install rules for the tabulate utility, if enabled.
-if (BUILD_TABULATE)
+if (PUMAS_BUILD_TABULATE)
     add_executable (pumas-tabulate src/pumas-tabulate.c src/pumas-tabulate.h)
+    target_link_libraries (pumas-tabulate pumas)
     if (WIN32)
         if (BUILD_SHARED_LIBS)
-            target_compile_definitions(pumas-tabulate
-                PUBLIC "-DPUMAS_API=__declspec(dllimport)")
-        endif (BUILD_SHARED_LIBS)
-        target_link_libraries (pumas-tabulate pumas)
+            target_compile_definitions (pumas-tabulate
+                    PRIVATE "-DPUMAS_API=__declspec(dllimport)")
+        endif ()
         install (TARGETS pumas-tabulate DESTINATION .)
-    else (WIN32)
-        target_link_libraries (pumas-tabulate m)
-        target_link_libraries (pumas-tabulate pumas)
+    else ()
         install (TARGETS pumas-tabulate DESTINATION bin)
-    endif (WIN32)
-endif (BUILD_TABULATE)
+    endif ()
+endif ()
+
+# Build the test(s), if enabled
+option (PUMAS_BUILD_TEST "Build the test suite" OFF)
+if (PUMAS_BUILD_TEST)
+    include ("tests/test-pumas.cmake")
+endif ()
