@@ -1631,15 +1631,16 @@ enum pumas_return pumas_context_create(
 
 void pumas_context_destroy(struct pumas_context ** context)
 {
-        /* Check that the context hasn't already been destroyed. */
-        if (*context == NULL) return;
+        /* Check that the context hasn't already been destroyed */
+        if ((context == NULL) || (*context == NULL))
+                return;
 
-        /* Release the memory. */
+        /* Release the memory */
         deallocate(*context);
         *context = NULL;
 }
 
-/* Public library functions: global print routines. */
+/* Public library functions: global print routines */
 enum pumas_return pumas_print(
     FILE * stream, const char * tabulation, const char * newline)
 {
@@ -1648,10 +1649,13 @@ enum pumas_return pumas_print(
         const char * tab = (tabulation == NULL) ? "" : tabulation;
         const char * cr = (newline == NULL) ? "" : newline;
 
-        /* Check the library initialisation. */
+        /* Check the library initialisation */
         if (s_shared == NULL) { return ERROR_NOT_INITIALISED(); }
 
-        /* Print the particle info. */
+        /* Check the output stream */
+        if (stream == NULL) goto error;
+
+        /* Print the particle info */
         if (fprintf(stream,
                 "{%s%s\"particle\" : {%s%s%s\"mass (GeV/c^2)\""
                 " : %.6lf",
@@ -1661,7 +1665,7 @@ enum pumas_return pumas_print(
                 tab, s_shared->ctau, cr, tab) < 0)
                 goto error;
 
-        /* Print the atomic elements. */
+        /* Print the atomic elements */
         if (fprintf(stream, ",%s%s\"elements\" : {", cr, tab) < 0) goto error;
         int iel = 0;
         for (; iel < s_shared->n_elements; iel++) {
@@ -1681,7 +1685,7 @@ enum pumas_return pumas_print(
                         goto error;
         }
 
-        /* Print the materials. */
+        /* Print the materials */
         if (fprintf(stream, ",%s%s\"materials\" : {", cr, tab) < 0) goto error;
         int material = 0;
         for (; material < s_shared->n_materials - s_shared->n_composites;
@@ -1708,7 +1712,7 @@ enum pumas_return pumas_print(
         if (fprintf(stream, "%s%s}", cr, tab) < 0) goto error;
         if (s_shared->n_composites <= 0) goto closure;
 
-        /* Print the composites. */
+        /* Print the composites */
         if (fprintf(stream, ",%s%s\"composites\" : {", cr, tab) < 0) goto error;
         const int material0 = s_shared->n_materials - s_shared->n_composites;
         material = material0;
@@ -1767,9 +1771,10 @@ int pumas_tag() { return 1000 * PUMAS_VERSION + PUMAS_SUBVERSION; }
 
 /* Public library functions: recorder handling. */
 enum pumas_return pumas_recorder_create(
-    int extra_memory, struct pumas_recorder ** recorder_)
+    struct pumas_recorder ** recorder_, int extra_memory)
 {
         ERROR_INITIALISE(pumas_recorder_create);
+        *recorder_ = NULL;
 
         /*  Allocate memory for the new recorder. */
         struct frame_recorder * recorder = NULL;
@@ -2275,18 +2280,10 @@ enum pumas_return pumas_table_index(enum pumas_property property,
                         return ERROR_INVALID_SCHEME(scheme);
                 }
                 table = table_get_T(scheme, material, 0);
-        } else if (property == PUMAS_PROPERTY_ENERGY_LOSS) {
-                if ((scheme <= PUMAS_SCHEME_NO_LOSS) ||
-                    (scheme >= PUMAS_SCHEME_DETAILED)) {
-                        return ERROR_INVALID_SCHEME(scheme);
-                }
-                table = table_get_dE(scheme, material, 0);
         } else if (property == PUMAS_PROPERTY_MAGNETIC_ROTATION) {
                 value *= s_shared->mass / LARMOR_FACTOR;
                 table = table_get_T(PUMAS_SCHEME_CSDA, material, 0);
-        } else if (property == PUMAS_PROPERTY_CROSS_SECTION)
-                table = table_get_CS(material, 0);
-        else {
+        } else {
                 return ERROR_FORMAT(PUMAS_RETURN_INDEX_ERROR,
                     "invalid `property' index [%d]", property);
         }
@@ -2294,15 +2291,14 @@ enum pumas_return pumas_table_index(enum pumas_property property,
         const int imax = s_shared->n_kinetics - 1;
         if (value < table[0]) {
                 return ERROR_FORMAT(PUMAS_RETURN_VALUE_ERROR,
-                    "out of range `value' [%.5lE < %.5lE]", value < table[0]);
+                    "out of range `value' [%.5lE < %.5lE]", value, table[0]);
         } else if (value == table[imax]) {
                 *index = imax;
                 return PUMAS_RETURN_SUCCESS;
         } else if (value > table[imax]) {
                 *index = imax;
                 return ERROR_FORMAT(PUMAS_RETURN_VALUE_ERROR,
-                    "out of range `value' [%.5lE < %.5lE]",
-                    value >= table[imax]);
+                    "out of range `value' [%.5lE > %.5lE]", value, table[imax]);
         }
 
         int i1 = 0, i2 = imax;
@@ -2531,7 +2527,7 @@ double del_cross_section(
 
         /* Interpolation. */
         return table_interpolate(
-            NULL, table_get_K(0), table_get_CS(material, 0), kinetic);
+            context, table_get_K(0), table_get_CS(material, 0), kinetic);
 }
 
 /**

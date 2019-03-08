@@ -636,9 +636,9 @@ PUMAS_API enum pumas_return pumas_transport(struct pumas_context * context,
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * The summary provides information on loaded materials as well as some basic
- * statistics. The *tabulation* and *newline* parameters allow to control the
- * output rendering.
+ * The summary is JSON formated. It provides information on loaded materials as
+ * well as some basic statistics. The *tabulation* and *newline* parameters
+ * allow to control the output rendering.
  *
  * __Warnings__
  *
@@ -1079,6 +1079,9 @@ PUMAS_API enum pumas_return pumas_composite_properties(int index,
  * tabulated data corresponding to the given `property` column and `row` index.
  * Each row of the table corresponds to a different kinetic energy value.
  *
+ * **Note** that `PUMAS_PROPERTY_SCATTERING_LENGTH` is not supported since it
+ * is not tabulated but computed on the fly.
+ *
  * __Error codes__
  *
  *     PUMAS_RETURN_INDEX_ERROR             Some input index is not valid
@@ -1110,6 +1113,11 @@ PUMAS_API int pumas_table_length(void);
  * In the case of an out of bounds value the closest index value is provided
  * and `PUMAS_RETURN_VALUE_ERROR` is returned.
  *
+ * **Note** that only monotone properties are supported, i.e. where there is
+ * at most one solution. Those are: `PUMAS_PROPERTY_GRAMMAGE`,
+ * `PUMAS_PROPERTY_KINETIC_ENERGY`, `PUMAS_PROPERTY_MAGNETIC_ROTATION` and
+ * `PUMAS_PROPERTY_PROPER_TIME`.
+ *
  * __Error codes__
  *
  *     PUMAS_RETURN_INDEX_ERROR             Some input index is not valid
@@ -1126,8 +1134,8 @@ PUMAS_API enum pumas_return pumas_table_index(enum pumas_property property,
 /**
  * Create a new particle recorder.
  *
- * @param extra_memory The size of the user extra memory, if any is claimed.
  * @param recorder     A handle for the recorder.
+ * @param extra_memory The size of the user extra memory, if any is claimed.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
@@ -1143,7 +1151,7 @@ PUMAS_API enum pumas_return pumas_table_index(enum pumas_property property,
  *     PUMAS_RETURN_MEMORY_ERROR    Couldn't allocate memory.
  */
 PUMAS_API enum pumas_return pumas_recorder_create(
-    int extra_memory, struct pumas_recorder ** recorder);
+    struct pumas_recorder ** recorder, int extra_memory);
 
 /**
  * Clear all recorded frames.

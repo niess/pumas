@@ -283,6 +283,53 @@ START_TEST (test_init)
 END_TEST
 
 
+static int dyn_mem_count = 0;
+
+static void * test_malloc(size_t size)
+{
+        dyn_mem_count++;
+        return malloc(size);
+}
+
+static void * test_realloc(void * ptr, size_t size)
+{
+        if (ptr == NULL)
+                dyn_mem_count++;
+        return realloc(ptr, size);
+}
+
+static void test_free(void * ptr)
+{
+        if (ptr != NULL)
+                dyn_mem_count--;
+        free(ptr);
+}
+
+
+/* Test the memory API */
+START_TEST (test_memory)
+{
+        /* Set the test memory routines */
+        pumas_memory_allocator(&test_malloc);
+        pumas_memory_reallocator(&test_realloc);
+        pumas_memory_deallocator(&test_free);
+
+        /* Load the muon data */
+        load_muon();
+        ck_assert_int_gt(dyn_mem_count, 0);
+
+        /* Release the memory */
+        pumas_finalise();
+        ck_assert_int_eq(dyn_mem_count, 0);
+
+        /* Set the system memory routines */
+        pumas_memory_allocator(NULL);
+        pumas_memory_reallocator(NULL);
+        pumas_memory_deallocator(NULL);
+}
+END_TEST
+
+
 /* Test the materials API */
 START_TEST (test_material)
 {
@@ -534,6 +581,11 @@ START_TEST (test_property)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq(value, 0.);
 
+        pumas_property_cross_section(0, 1E+03, &value);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_double_gt(value, 0.);
+        ck_assert_double_lt(1. / (value * 2.65E+03), 1E+03);
+
         pumas_property_cross_section(0, 1E+06, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_gt(value, 0.);
@@ -729,62 +781,6 @@ START_TEST (test_table)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_gt(value, 5.534E+03);
 
-        pumas_table_value(PUMAS_PROPERTY_CROSS_SECTION, PUMAS_SCHEME_HYBRID,
-            0, 0, &value);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq(value, 0.);
-
-        pumas_table_value(PUMAS_PROPERTY_CROSS_SECTION, PUMAS_SCHEME_HYBRID,
-            0, 145, &value);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_gt(value, 0.);
-        ck_assert_double_lt(1. / (value * 2.65E+03), 1E+03);
-
-        pumas_table_index(PUMAS_PROPERTY_CROSS_SECTION, PUMAS_SCHEME_HYBRID,
-            0, value, &index);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_int_eq(index, 145);
-
-        pumas_table_index(PUMAS_PROPERTY_CROSS_SECTION, PUMAS_SCHEME_HYBRID,
-            0, 0., &index);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_int_eq(index, 0);
-
-        pumas_table_index(PUMAS_PROPERTY_ENERGY_LOSS, PUMAS_SCHEME_CSDA, 0,
-            value, &index);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_int_eq(index, 0);
-
-        pumas_table_value(PUMAS_PROPERTY_ENERGY_LOSS, PUMAS_SCHEME_CSDA, 0,
-            49, &value);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq(value, 1.808E-04);
-
-        pumas_table_index(PUMAS_PROPERTY_ENERGY_LOSS, PUMAS_SCHEME_CSDA, 0,
-            value, &index);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_int_eq(index, 49);
-
-        pumas_table_value(PUMAS_PROPERTY_ENERGY_LOSS, PUMAS_SCHEME_CSDA, 0,
-            97, &value);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq(value, 6.604E-04);
-
-        pumas_table_index(PUMAS_PROPERTY_ENERGY_LOSS, PUMAS_SCHEME_CSDA, 0,
-            value, &index);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_int_eq(index, 97);
-
-        pumas_table_value(PUMAS_PROPERTY_ENERGY_LOSS, PUMAS_SCHEME_HYBRID, 0,
-            97, &value);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_lt(value, 6.604E-04);
-
-        pumas_table_index(PUMAS_PROPERTY_ENERGY_LOSS, PUMAS_SCHEME_HYBRID, 0,
-            value, &index);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_int_eq(index, 97);
-
         pumas_table_value(PUMAS_PROPERTY_MAGNETIC_ROTATION, 0, 0, 49, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_gt(value, 0.);
@@ -815,9 +811,17 @@ START_TEST (test_table)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(index, 17);
 
-        /* Check the case of non tabulated properties  */
+        /* Check unsuported properties  */
         pumas_table_value(
             PUMAS_PROPERTY_SCATTERING_LENGTH, 0, 0, 17, &value);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
+
+        pumas_table_index(PUMAS_PROPERTY_CROSS_SECTION, 0,
+            0, value, &index);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
+
+        pumas_table_index(PUMAS_PROPERTY_ENERGY_LOSS, 0,
+            0, value, &index);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         pumas_table_index(PUMAS_PROPERTY_SCATTERING_LENGTH, 0,
@@ -825,6 +829,195 @@ START_TEST (test_table)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         /* Unload the data */
+        pumas_finalise();
+}
+END_TEST
+
+
+static void * fail_malloc(size_t size)
+{
+        return NULL;
+}
+
+static void * fail_realloc(void * ptr, size_t size)
+{
+        return NULL;
+}
+
+
+/* Test the context API */
+START_TEST (test_context)
+{
+        struct pumas_context * context;
+
+        /* Test the initialisation error */
+        reset_error();
+        context = (void *)0x1;
+        pumas_context_create(&context, 0);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
+        ck_assert_ptr_null(context);
+
+        /* Load the muon data */
+        load_muon();
+
+        /* Test a memory error */
+        pumas_memory_allocator(&fail_malloc);
+        reset_error();
+        context = (void *)0x1;
+        pumas_context_create(&context, 0);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_MEMORY_ERROR);
+        ck_assert_ptr_null(context);
+        pumas_memory_allocator(NULL);
+
+        /* Test the finalisation of a NULL context */
+        reset_error();
+        pumas_context_destroy(NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+
+        context = NULL;
+        pumas_context_destroy(&context);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_ptr_null(context);
+
+        /* Test the allocation of user_data */
+        const int n = 1024;
+        int i, * data;
+
+        pumas_context_create(&context, n * sizeof *data);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_ptr_nonnull(context->user_data);
+
+        data = context->user_data;
+        for (i = 0; i < n; i++) data[i] = i;
+
+        /* Test the initialisation of a muon context */
+        ck_assert_ptr_null(context->medium);
+        ck_assert_ptr_null(context->random);
+        ck_assert_ptr_null(context->recorder);
+        ck_assert_int_eq(context->longitudinal, 0);
+        ck_assert_int_eq(context->forward, 1);
+        ck_assert_int_eq(context->scheme, PUMAS_SCHEME_DETAILED);
+        ck_assert_int_eq(context->decay, PUMAS_DECAY_WEIGHT);
+        ck_assert_int_eq(context->event, PUMAS_EVENT_NONE);
+
+        ck_assert_double_eq(context->kinetic_limit, 0.);
+        ck_assert_double_eq(context->distance_max, 0.);
+        ck_assert_double_eq(context->grammage_max, 0.);
+
+        /* Test the context destruction */
+        pumas_context_destroy(&context);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_ptr_null(context);
+
+        /* Load the tau data */
+        pumas_finalise();
+        load_tau();
+
+        /* Test the initialisation of a tau context */
+        pumas_context_create(&context, -1);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_ptr_null(context->user_data);
+
+        ck_assert_ptr_null(context->medium);
+        ck_assert_ptr_null(context->random);
+        ck_assert_ptr_null(context->recorder);
+        ck_assert_int_eq(context->longitudinal, 0);
+        ck_assert_int_eq(context->forward, 1);
+        ck_assert_int_eq(context->scheme, PUMAS_SCHEME_DETAILED);
+        ck_assert_int_eq(context->decay, PUMAS_DECAY_PROCESS);
+        ck_assert_int_eq(context->event, PUMAS_EVENT_NONE);
+
+        ck_assert_double_eq(context->kinetic_limit, 0.);
+        ck_assert_double_eq(context->distance_max, 0.);
+        ck_assert_double_eq(context->grammage_max, 0.);
+
+        /* Free the data */
+        pumas_finalise();
+}
+END_TEST
+
+
+/* Test the recorder API */
+START_TEST (test_recorder)
+{
+        struct pumas_recorder * recorder;
+
+        /* Check the memory error */
+        pumas_memory_allocator(&fail_malloc);
+        reset_error();
+        recorder = (void *)0x1;
+        pumas_recorder_create(&recorder, 0);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_MEMORY_ERROR);
+        ck_assert_ptr_null(recorder);
+        pumas_memory_allocator(NULL);
+
+        /* Check the null dellocator */
+        reset_error();
+        recorder = NULL;
+
+        pumas_recorder_destroy(NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+
+        pumas_recorder_destroy(&recorder);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+
+        /* Check the recorder initialisation */
+        pumas_recorder_create(&recorder, 0);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_ptr_null(recorder->first);
+        ck_assert_int_eq(recorder->length, 0);
+        ck_assert_int_eq(recorder->period, 1);
+        ck_assert_ptr_null(recorder->record);
+        ck_assert_ptr_null(recorder->user_data);
+
+        /* Test the destruction of a valid recorder */
+        pumas_recorder_destroy(&recorder);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_ptr_null(recorder);
+
+        /* Test the allocation of user_data */
+        const int n = 1024;
+        int i, * data;
+
+        pumas_recorder_create(&recorder, n * sizeof *data);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_ptr_nonnull(recorder->user_data);
+
+        data = recorder->user_data;
+        for (i = 0; i < n; i++) data[i] = i;
+        pumas_recorder_destroy(&recorder);
+
+        /* Test the NULL clear */
+        pumas_recorder_clear(NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+}
+END_TEST
+
+
+/* Test the print API */
+START_TEST (test_print)
+{
+        /* Test the initialisation_error */
+        reset_error();
+        pumas_print(NULL, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
+
+        /* Load the tau data */
+        load_tau();
+
+        /* Check the NULL stream case */
+        reset_error();
+        pumas_print(NULL, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_IO_ERROR);
+
+        /* Check printing to a file */
+        FILE * stream = fopen("tau.json", "w+");
+        pumas_print(stream, NULL, NULL);
+        fputs("\n===\n", stream);
+        pumas_print(stream, "    ", "\n");
+        fclose(stream);
+
+        /* Free the data */
         pumas_finalise();
 }
 END_TEST
@@ -844,10 +1037,14 @@ Suite * create_suite(void)
         tcase_add_test(tc_api, test_error);
         tcase_add_test(tc_api, test_tag);
         tcase_add_test(tc_api, test_init);
+        tcase_add_test(tc_api, test_memory);
         tcase_add_test(tc_api, test_material);
         tcase_add_test(tc_api, test_composite);
         tcase_add_test(tc_api, test_property);
         tcase_add_test(tc_api, test_table);
+        tcase_add_test(tc_api, test_context);
+        tcase_add_test(tc_api, test_recorder);
+        tcase_add_test(tc_api, test_print);
 
         return suite;
 }
