@@ -3177,9 +3177,10 @@ enum pumas_event transport_with_csda(struct pumas_context * context,
         }
         if (time_max > 0.) {
                 const double dt = time_max - ti;
-                if (dt <= 0.)
+                if (dt <= 0.) {
                         xB = 0.;
-                else {
+                        event = PUMAS_EVENT_LIMIT_TIME;
+                } else {
                         const double sgn = context->forward ? 1. : -1.;
                         const double Tf = Ti - sgn * dt * density;
                         if (Tf > 0.) {
@@ -3203,6 +3204,7 @@ enum pumas_event transport_with_csda(struct pumas_context * context,
                             context, PUMAS_SCHEME_CSDA, material, xf);
                 } else {
                         xf = kf = 0.;
+                        event = PUMAS_EVENT_LIMIT_KINETIC;
                 }
 
                 if (context->event & PUMAS_EVENT_LIMIT_KINETIC) {
@@ -3551,12 +3553,12 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
 
         /* Initialise some temporary data for the propagation, weights, ect ...
          */
-        double ki = state->kinetic;
         double ti = state->time;
         double wi = state->weight;
         double Xi = state->grammage;
         double dei, Xf;
         if (scheme > PUMAS_SCHEME_NO_LOSS) {
+                const double ki = state->kinetic;
                 Xf = cel_grammage(context, scheme, material, ki);
                 dei = 1. / cel_energy_loss(context, scheme, material, ki);
 
@@ -3613,8 +3615,7 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
                 /* Update the weight if a boundary or hard energy loss
                  * occured.
                  */
-                if ((context->scheme >= PUMAS_SCHEME_CSDA) &&
-                    (!(context_->step_event & PUMAS_EVENT_VERTEX_COULOMB))) {
+                if (context->scheme >= PUMAS_SCHEME_CSDA) {
                         const double w0 =
                             (context->decay == PUMAS_DECAY_WEIGHT) ?
                             wi * exp(-fabs(state->time - ti) / s_shared->ctau) :
@@ -3788,19 +3789,16 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
                         /* Update the initial conditions and the tracking of
                          * stepping events.
                          */
-                        if (!(context_->step_event &
-                                PUMAS_EVENT_VERTEX_COULOMB)) {
-                                ki = state->kinetic;
-                                ti = state->time;
-                                wi = state->weight;
-                                Xi = state->grammage;
-                                if (scheme > PUMAS_SCHEME_NO_LOSS) {
-                                        Xf = cel_grammage(
-                                            context, scheme, material, ki);
-                                        dei = 1. /
-                                            cel_energy_loss(
-                                                context, scheme, material, ki);
-                                }
+                        ti = state->time;
+                        wi = state->weight;
+                        Xi = state->grammage;
+                        if (context->scheme >= PUMAS_SCHEME_CSDA) {
+                                const double ki = state->kinetic;
+                                Xf = cel_grammage(
+                                    context, scheme, material, ki);
+                                dei = 1. /
+                                    cel_energy_loss(
+                                        context, scheme, material, ki);
                         }
                         transport_limit(
                             context, state, material, Xi, Xf, &grammage_max);

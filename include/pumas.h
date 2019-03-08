@@ -56,7 +56,7 @@ enum pumas_property {
         PUMAS_PROPERTY_GRAMMAGE,
         /** The particle kinetic energy, in GeV. */
         PUMAS_PROPERTY_KINETIC_ENERGY,
-        /** The total magnetic rotation angle, in radians/(kg/m^(3)). */
+        /** The total magnetic rotation angle, in rad kg/m^(3). */
         PUMAS_PROPERTY_MAGNETIC_ROTATION,
         /** The particle proper time, in kg/m^(2). */
         PUMAS_PROPERTY_PROPER_TIME,
@@ -420,9 +420,9 @@ typedef double(pumas_random_cb)(struct pumas_context * context);
  * + Depending on the level of detail of the simulation a random stream must
  * be provided by the user before any call to `pumas_transport`.
  *
- * + Note that for `kinetic_limit`, `distance_max` or `grammage_max` to be
- * taken into account, the corresponding events must be activated as well, with
- * the `event` flag.
+ * + Note that for `kinetic_limit`, `distance_max`, `grammage_max` or `time_max`
+ * to be taken into account, the corresponding events must be activated as well,
+ * with the `event` flag.
  */
 struct pumas_context {
         /** A medium callback. */
@@ -464,14 +464,14 @@ struct pumas_context {
         enum pumas_event event;
 
         /** The minimum kinetic energy for forward transport, or maximum one
-         * for backward transport.
+         * for backward transport, in GeV.
          */
         double kinetic_limit;
-        /** The maximum travelled distance. */
+        /** The maximum travelled distance, in m. */
         double distance_max;
-        /** The maximum travelled grammage. */
+        /** The maximum travelled grammage, in kg / m^2. */
         double grammage_max;
-        /** The maximum travelled proper time. */
+        /** The maximum travelled proper time, in m. */
         double time_max;
 };
 
@@ -848,7 +848,7 @@ PUMAS_API enum pumas_return pumas_property_proper_time(
  *
  * @param material    The material index.
  * @param kinetic     The initial kinetic energy, in GeV.
- * @param angle       The normalised rotation angle in kg/m^(2)/T.
+ * @param angle       The normalised rotation angle in rad kg/m^(3)/T.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
