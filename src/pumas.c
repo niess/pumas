@@ -4826,7 +4826,8 @@ enum pumas_return step_transport(struct pumas_context * context,
                 /* Deterministic CEL with check for any kinetic limit. */
                 const double X = Xtot - sgn * dX;
                 if (context->forward && (X <= context_->step_X_limit)) {
-                        k1 = context->kinetic_limit;
+                        k1 = (context->event & PUMAS_EVENT_LIMIT_KINETIC) ?
+                            context->kinetic_limit : 0.;
                         const double grammage =
                             state->grammage + Xtot - context_->step_X_limit;
                         if ((grammage_max <= 0.) || (grammage < grammage_max)) {
@@ -4835,7 +4836,8 @@ enum pumas_return step_transport(struct pumas_context * context,
                         }
                 } else if (!context->forward && (context_->step_X_limit > 0.) &&
                     X > context_->step_X_limit) {
-                        k1 = context->kinetic_limit;
+                        k1 = (context->event & PUMAS_EVENT_LIMIT_KINETIC) ?
+                            context->kinetic_limit : 0.;
                         const double grammage =
                             state->grammage + context_->step_X_limit - Xtot;
                         if ((grammage_max <= 0.) || (grammage < grammage_max)) {
@@ -5177,6 +5179,12 @@ enum pumas_return step_transport(struct pumas_context * context,
                     c * u[1] + 0.5 * (si * uT[1] + sf * context_->step_uT[1]);
                 direction[2] =
                     c * u[2] + 0.5 * (si * uT[2] + sf * context_->step_uT[2]);
+                const double norm = 1./ sqrt(direction[0] * direction[0]
+                    + direction[1] * direction[1] +
+                    direction[2] * direction[2]);
+                direction[0] *= norm;
+                direction[1] *= norm;
+                direction[2] *= norm;
                 rotated = 1;
         }
 
