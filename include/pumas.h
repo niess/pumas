@@ -622,6 +622,8 @@ PUMAS_API enum pumas_return pumas_load(FILE * stream);
  *     PUMAS_RETURN_MISSING_LIMIT           An external limit is needed.
  *
  *     PUMAS_RETURN_MISSING_RANDOM          A *random* callback is needed.
+
+ *     PUMAS_RETURN_VALUE_ERROR             State or context is `NULL`.
  */
 PUMAS_API enum pumas_return pumas_transport(struct pumas_context * context,
     struct pumas_state * state, enum pumas_event * event,

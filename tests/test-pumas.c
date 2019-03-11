@@ -32,7 +32,11 @@
 #include "pumas.h"
 
 
+/* Media densities and geometric parameters */
 #define TEST_ROCK_DENSITY 2.65E+03
+#define TEST_ROCK_DEPTH 1E+02
+#define TEST_AIR_DENSITY 1.205E+00
+#define TEST_MAX_ALTITUDE 1E+04
 
 
 /* Global handles for common PUMAS objects */
@@ -61,6 +65,13 @@ static void reset_error(void)
         error_data.rc = PUMAS_RETURN_SUCCESS;
         error_data.caller = NULL;
         error_data.message[0] = 0x0;
+}
+
+
+/* PRNG for test cases */
+static double uniform01(struct pumas_context * context)
+{
+        return (1. + rand()) / (RAND_MAX + 2.);
 }
 
 
@@ -287,6 +298,11 @@ START_TEST (test_api_init)
 
         reset_error();
         pumas_dump(NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
+
+        /* Check the transport error */
+        reset_error();
+        pumas_transport(NULL, NULL, NULL, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
 }
 END_TEST
@@ -655,6 +671,28 @@ START_TEST (test_api_property)
         ck_assert_double_gt(value, 0.3);
         ck_assert_double_lt(value, 3.);
 
+        /* Check overflows */
+        double vmax;
+        pumas_property_energy_loss(PUMAS_SCHEME_CSDA, 0, 1E+08, &value);
+        pumas_table_value(
+            PUMAS_PROPERTY_ENERGY_LOSS, PUMAS_SCHEME_CSDA, 0, 145, &vmax);
+        ck_assert_double_gt(value, vmax);
+
+        pumas_property_grammage(PUMAS_SCHEME_CSDA, 0, 1E+08, &value);
+        pumas_table_value(
+            PUMAS_PROPERTY_GRAMMAGE, PUMAS_SCHEME_CSDA, 0, 145, &vmax);
+        ck_assert_double_gt(value, vmax);
+
+        pumas_property_proper_time(PUMAS_SCHEME_CSDA, 0, 1E+08, &value);
+        pumas_table_value(
+            PUMAS_PROPERTY_PROPER_TIME, PUMAS_SCHEME_CSDA, 0, 145, &vmax);
+        ck_assert_double_gt(value, vmax);
+
+        pumas_property_cross_section(0, 1E+08, &value);
+        pumas_table_value(
+            PUMAS_PROPERTY_CROSS_SECTION, PUMAS_SCHEME_HYBRID, 0, 145, &vmax);
+        ck_assert_double_eq(value, vmax);
+
         /* Unload the data */
         pumas_finalise();
 }
@@ -789,6 +827,16 @@ START_TEST (test_api_table)
             49, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_gt(value, 5.534E+03);
+
+        pumas_table_value(PUMAS_PROPERTY_ENERGY_LOSS, PUMAS_SCHEME_CSDA, 0,
+            0, &value);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_double_eq(value, 0.);
+
+        pumas_table_value(PUMAS_PROPERTY_CROSS_SECTION, PUMAS_SCHEME_HYBRID, 0,
+            0, &value);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_double_eq(value, 0.);
 
         pumas_table_value(PUMAS_PROPERTY_MAGNETIC_ROTATION, 0, 0, 49, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
@@ -1031,38 +1079,87 @@ START_TEST (test_api_print)
 END_TEST
 
 
-/* Geometry for CSDA tests  */
-static double magnet[3] = { 0., 0., 0. };
+/* Geometry for test cases  */
+static struct {
+        int uniform;
+        double magnet[3];
+} geometry = {1, {0., 0., 0.}};
 
-static double csda_locals(struct pumas_medium * medium,
+static double rock_locals(struct pumas_medium * medium,
     struct pumas_state * state, struct pumas_locals * locals)
 {
         locals->density = TEST_ROCK_DENSITY;
-        memcpy(locals->magnet, magnet, sizeof locals->magnet);
+        memcpy(locals->magnet, geometry.magnet, sizeof locals->magnet);
+
         return 0.;
 }
 
-static double csda_medium(struct pumas_context * context,
+static double air_locals(struct pumas_medium * medium,
+    struct pumas_state * state, struct pumas_locals * locals)
+{
+        const double lambda = 1E+04;
+
+        locals->density = TEST_AIR_DENSITY * exp(-state->position[2] / lambda);
+        memcpy(locals->magnet, geometry.magnet, sizeof locals->magnet);
+
+        return 1E-02 * lambda;
+}
+
+static double geometry_medium(struct pumas_context * context,
     struct pumas_state * state, struct pumas_medium ** medium_ptr)
 {
-        static struct pumas_medium medium = { 0, &csda_locals };
+        static struct pumas_medium media[2] = {
+                {0, &rock_locals}, {1, &air_locals}};
 
-        *medium_ptr = &medium;
-        return 0.;
+        if (geometry.uniform) {
+                if (medium_ptr != NULL) *medium_ptr = media;
+                return 0.;
+        } else {
+                if (medium_ptr != NULL) *medium_ptr = NULL;
+                const double z = state->position[2];
+                if (z < -0.5 * TEST_ROCK_DEPTH) {
+                        return 0.;
+                } else if (z < 0.5 * TEST_ROCK_DEPTH) {
+                        if (medium_ptr != NULL) *medium_ptr = media;
+
+                        const double dz1 = z + 0.5 * TEST_ROCK_DEPTH;
+                        const double dz2 = 0.5 * TEST_ROCK_DEPTH - z;
+                        const double dz = dz1 < dz2 ? dz1 : dz2;
+                        return dz > 0. ? dz : 1E-03;
+                } else if (z < TEST_MAX_ALTITUDE) {
+                        if (medium_ptr != NULL) *medium_ptr = media + 1;
+
+                        const double sgn = context->forward ? 1. : -1.;
+                        const double uz = state->direction[2] * sgn;
+                        if (fabs(uz) < 1E-03)
+                                return 1E+03;
+
+                        double s;
+                        if (uz > 0.)
+                                s = (TEST_MAX_ALTITUDE - z) / uz;
+                        else
+                                s = (0.5 * TEST_ROCK_DEPTH - z) / uz;
+                        return s > 0. ? s : 1E-03;
+                } else {
+                        return 0.;
+                }
+        }
 }
 
 
-/* Fixtures for CSDA tests */
-static void csda_setup(void)
+/* Fixtures for Lossless tests */
+static void lossless_setup(void)
 {
         /* Load the muon data and create a simulation context */
         load_muon();
+        geometry.uniform = 1;
         pumas_context_create(&context, 0);
-        context->medium = &csda_medium;
-        context->scheme = PUMAS_SCHEME_CSDA;
+        context->medium = &geometry_medium;
+        context->longitudinal = 1;
+        context->scheme = PUMAS_SCHEME_NO_LOSS;
 }
 
-static void csda_teardown(void)
+static void lossless_teardown(void)
 {
         /* Destroy the simulation context and unload the data */
         pumas_context_destroy(&context);
@@ -1071,7 +1168,7 @@ static void csda_teardown(void)
 
 
 /* Helper function for initialising a particle state */
-static void csda_initialise_state(void)
+static void initialise_state(void)
 {
         state->charge = -1.;
         state->distance = 0.;
@@ -1085,6 +1182,368 @@ static void csda_initialise_state(void)
 }
 
 
+/* Test the Lossless straight case */
+START_TEST (test_lossless_straight)
+{
+        int i, forward;
+        enum pumas_event event_data, * event;
+        struct pumas_medium * media_data[2], ** media;
+        struct pumas_medium * rock;
+        geometry_medium(context, state, &rock);
+
+        double ctau, mu;
+        pumas_particle(NULL, &ctau, &mu);
+
+        /* Check some basic errors */
+        reset_error();
+        initialise_state();
+        pumas_transport(context, state, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_MISSING_LIMIT);
+
+
+        for (forward = 0; forward < 2; forward++) {
+                context->forward = forward;
+                const double sgn = forward ? 1. : -1.;
+
+                /* Check the forward distance limit */
+                context->event = PUMAS_EVENT_LIMIT_DISTANCE;
+                context->distance_max = 1E+03;
+
+                double k = 1.;
+                double d = context->distance_max;
+                double X = d * TEST_ROCK_DENSITY;
+                double gamma = k / mu + 1.;
+                double t = d / sqrt(gamma * gamma - 1.);
+                for (i = 0; i < 2; i++) {
+                        if (i == 0)
+                                event = NULL, media = NULL;
+                        else
+                                event = &event_data, media = media_data;
+
+                        reset_error();
+                        initialise_state();
+                        state->kinetic = k;
+
+                        pumas_transport(context, state, event, media);
+                        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                        ck_assert_double_eq(state->charge, -1.);
+                        ck_assert_double_eq(state->kinetic, k);
+                        ck_assert_double_eq(state->distance, d);
+                        ck_assert_double_eq(state->grammage, X);
+                        ck_assert_double_eq_tol(state->time, t, FLT_EPSILON);
+                        ck_assert_double_eq_tol(
+                            state->weight, exp(-state->time / ctau),
+                            FLT_EPSILON);
+                        ck_assert_double_eq(state->position[0], 0.);
+                        ck_assert_double_eq(state->position[1], 0.);
+                        ck_assert_double_eq_tol(
+                            state->position[2], sgn * state->distance,
+                            FLT_EPSILON);
+                        ck_assert_double_eq(state->direction[0], 0.);
+                        ck_assert_double_eq(state->direction[1], 0.);
+                        ck_assert_double_eq(state->direction[2], 1.);
+                        ck_assert_int_eq(state->decayed, 0);
+
+                        if (i == 0) {
+                                ck_assert_ptr_null(event);
+                                ck_assert_ptr_null(media);
+                        } else {
+                                ck_assert_int_eq(
+                                    *event, PUMAS_EVENT_LIMIT_DISTANCE);
+                                ck_assert_ptr_eq(media[0], rock);
+                                ck_assert_ptr_eq(media[0], media[1]);
+                        }
+                }
+                context->distance_max = 0.;
+
+                /* Check the forward grammage limit */
+                context->event = PUMAS_EVENT_LIMIT_GRAMMAGE;
+                context->grammage_max = 1E+03;
+
+                X = context->grammage_max;
+                d = X / TEST_ROCK_DENSITY;
+                t = d / sqrt(gamma * gamma - 1.);
+                for (i = 0; i < 2; i++) {
+                        if (i == 0)
+                                event = NULL, media = NULL;
+                        else
+                                event = &event_data, media = media_data;
+
+                        reset_error();
+                        initialise_state();
+                        state->kinetic = k;
+
+                        pumas_transport(context, state, event, media);
+                        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                        ck_assert_double_eq(state->charge, -1.);
+                        ck_assert_double_eq(state->kinetic, k);
+                        ck_assert_double_eq(state->distance, d);
+                        ck_assert_double_eq(state->grammage, X);
+                        ck_assert_double_eq_tol(state->time, t, FLT_EPSILON);
+                        ck_assert_double_eq_tol(
+                            state->weight, exp(-state->time / ctau),
+                            FLT_EPSILON);
+                        ck_assert_double_eq(state->position[0], 0.);
+                        ck_assert_double_eq(state->position[1], 0.);
+                        ck_assert_double_eq_tol(
+                            state->position[2], sgn * state->distance,
+                            FLT_EPSILON);
+                        ck_assert_double_eq(state->direction[0], 0.);
+                        ck_assert_double_eq(state->direction[1], 0.);
+                        ck_assert_double_eq(state->direction[2], 1.);
+                        ck_assert_int_eq(state->decayed, 0);
+
+                        if (i == 0) {
+                                ck_assert_ptr_null(event);
+                                ck_assert_ptr_null(media);
+                        } else {
+                                ck_assert_int_eq(*event,
+                                    PUMAS_EVENT_LIMIT_GRAMMAGE);
+                                ck_assert_ptr_eq(media[0], rock);
+                                ck_assert_ptr_eq(media[0], media[1]);
+                        }
+                }
+
+                /* Check the forward time limit */
+                context->event = PUMAS_EVENT_LIMIT_TIME;
+                context->time_max = 1E+03;
+
+                t = context->time_max;
+                d = t * sqrt(gamma * gamma - 1.);
+                X = d * TEST_ROCK_DENSITY;
+                for (i = 0; i < 2; i++) {
+                        if (i == 0)
+                                event = NULL, media = NULL;
+                        else
+                                event = &event_data, media = media_data;
+
+                        reset_error();
+                        initialise_state();
+                        state->kinetic = k;
+
+                        pumas_transport(context, state, event, media);
+                        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                        ck_assert_double_eq(state->charge, -1.);
+                        ck_assert_double_eq(state->kinetic, k);
+                        ck_assert_double_eq(state->distance, d);
+                        ck_assert_double_eq(state->grammage, X);
+                        ck_assert_double_eq_tol(state->time, t, FLT_EPSILON);
+                        ck_assert_double_eq_tol(
+                            state->weight, exp(-state->time / ctau),
+                            FLT_EPSILON);
+                        ck_assert_double_eq(state->position[0], 0.);
+                        ck_assert_double_eq(state->position[1], 0.);
+                        ck_assert_double_eq_tol(
+                            state->position[2], sgn * state->distance,
+                            FLT_EPSILON);
+                        ck_assert_double_eq(state->direction[0], 0.);
+                        ck_assert_double_eq(state->direction[1], 0.);
+                        ck_assert_double_eq(state->direction[2], 1.);
+                        ck_assert_int_eq(state->decayed, 0);
+
+                        if (i == 0) {
+                                ck_assert_ptr_null(event);
+                                ck_assert_ptr_null(media);
+                        } else {
+                                ck_assert_int_eq(
+                                    *event, PUMAS_EVENT_LIMIT_TIME);
+                                ck_assert_ptr_eq(media[0], rock);
+                                ck_assert_ptr_eq(media[0], media[1]);
+                        }
+                }
+        }
+}
+END_TEST
+
+
+START_TEST (test_lossless_magnet)
+{
+        geometry.magnet[1] = 0.1;
+        context->distance_max = 1E+03;
+        context->event = PUMAS_EVENT_LIMIT_DISTANCE;
+
+        double ctau, mu;
+        pumas_particle(NULL, &ctau, &mu);
+
+        /* Check the MC deflection and the analytical computation when no
+         * energy loss
+         */
+        const double tol = 1E-02;
+        const double k = 1E+00;
+        const double gamma = k / mu + 1.;
+        const double bg = sqrt(gamma * gamma - 1.);
+        const double d = context->distance_max;
+        const double rL = mu * bg / (geometry.magnet[1] * 0.299792458);
+        const double X = d * TEST_ROCK_DENSITY;
+        const double t = d / bg;
+        const double phi = d / rL;
+        double * r = state->position, * u = state->direction;
+
+        reset_error();
+        initialise_state();
+        state->kinetic = k;
+
+        pumas_transport(context, state, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_double_eq(state->kinetic, k);
+        ck_assert_double_eq(state->distance, d);
+        ck_assert_double_eq_tol(state->grammage, X, X * 1E-09);
+        ck_assert_double_eq_tol(state->time, t, FLT_EPSILON);
+        ck_assert_double_eq_tol(
+            state->weight, exp(-state->time / ctau), FLT_EPSILON);
+
+        ck_assert_double_eq_tol(r[0], rL * (1. - cos(phi)), rL * tol);
+        ck_assert_double_eq(r[1], 0.);
+        ck_assert_double_eq_tol(r[2], rL * sin(phi), rL * tol);
+
+        ck_assert_double_eq_tol(u[0], sin(phi), tol);
+        ck_assert_double_eq(u[1], 0.);
+        ck_assert_double_eq_tol(u[2], cos(phi), tol);
+
+        double norm2 = u[0] * u[0] + u[1] * u[1] + u[2] * u[2];
+        ck_assert_double_eq_tol(norm2, 1., FLT_EPSILON);
+
+        /* Erase the magnetic field and restore the context */
+        geometry.magnet[1] = 0.;
+        context->distance_max = 0.;
+        context->event = PUMAS_EVENT_NONE;
+}
+END_TEST
+
+
+START_TEST (test_lossless_geometry)
+{
+        int i;
+        enum pumas_event event;
+        struct pumas_medium * media[2], * rock, * air;
+        struct pumas_frame * frame;
+        pumas_recorder_create(&recorder, 0);
+        context->recorder = recorder;
+        recorder->period = 0;
+
+        geometry.uniform = 0;
+        initialise_state();
+        geometry_medium(context, state, &rock);
+        state->position[2] = 0.5 * (0.5 * TEST_ROCK_DEPTH + TEST_MAX_ALTITUDE);
+        geometry_medium(context, state, &air);
+
+        /* Test the initially out of world case */
+        state->position[2] = 2 * TEST_MAX_ALTITUDE;
+        reset_error();
+        pumas_transport(context, state, &event, media);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_int_eq(event, PUMAS_EVENT_MEDIUM);
+        ck_assert_ptr_eq(media[0], NULL);
+        ck_assert_ptr_eq(media[1], NULL);
+        ck_assert_int_eq(recorder->length, 1);
+        frame = recorder->first;
+        ck_assert_ptr_eq(frame->medium, NULL);
+        ck_assert_int_eq(frame->event, PUMAS_EVENT_START | PUMAS_EVENT_MEDIUM |
+            PUMAS_EVENT_STOP);
+        ck_assert_ptr_null(frame->next);
+
+        for (i = 0; i < 2; i++) {
+                /* Test the unconstrained transport */
+                context->event = PUMAS_EVENT_NONE;
+                initialise_state();
+                state->kinetic = 1E+03;
+                if (i) {
+                        context->forward = 0;
+                        state->direction[2] = -1.;
+                } else {
+                        context->forward = 1;
+                }
+
+                reset_error();
+                pumas_recorder_clear(recorder);
+                pumas_transport(context, state, &event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_int_eq(event, PUMAS_EVENT_MEDIUM);
+                ck_assert_ptr_eq(media[0], rock);
+                ck_assert_ptr_eq(media[1], NULL);
+                ck_assert_double_eq_tol(
+                    state->position[2], TEST_MAX_ALTITUDE, FLT_EPSILON);
+                ck_assert_int_eq(recorder->length, 3);
+                frame = recorder->first;
+                ck_assert_ptr_eq(frame->medium, rock);
+                ck_assert_int_eq(frame->event, PUMAS_EVENT_START);
+                frame = frame->next;
+                ck_assert_ptr_eq(frame->medium, air);
+                ck_assert_int_eq(frame->event, PUMAS_EVENT_MEDIUM);
+                frame = frame->next;
+                ck_assert_ptr_null(frame->medium);
+                ck_assert_int_eq(frame->event,
+                    PUMAS_EVENT_STOP | PUMAS_EVENT_MEDIUM);
+
+                /* Test the medium stop condition */
+                context->event = PUMAS_EVENT_MEDIUM;
+                initialise_state();
+                state->kinetic = 1E+03;
+                if (i) {
+                        state->direction[2] = -1.;
+                }
+
+                reset_error();
+                pumas_recorder_clear(recorder);
+                pumas_transport(context, state, &event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_int_eq(event, PUMAS_EVENT_MEDIUM);
+                ck_assert_ptr_eq(media[0], rock);
+                ck_assert_ptr_eq(media[1], air);
+                ck_assert_int_eq(recorder->length, 2);
+                frame = recorder->first;
+                ck_assert_ptr_eq(frame->medium, rock);
+                ck_assert_int_eq(frame->event, PUMAS_EVENT_START);
+                frame = frame->next;
+                ck_assert_ptr_eq(frame->medium, air);
+                ck_assert_int_eq(frame->event,
+                    PUMAS_EVENT_STOP | PUMAS_EVENT_MEDIUM);
+
+                pumas_recorder_clear(recorder);
+                pumas_transport(context, state, &event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_int_eq(event, PUMAS_EVENT_MEDIUM);
+                ck_assert_ptr_eq(media[0], air);
+                ck_assert_ptr_eq(media[1], NULL);
+                ck_assert_int_eq(recorder->length, 2);
+                frame = recorder->first;
+                ck_assert_ptr_eq(frame->medium, air);
+                ck_assert_int_eq(frame->event, PUMAS_EVENT_START);
+                frame = frame->next;
+                ck_assert_ptr_null(frame->medium);
+                ck_assert_int_eq(frame->event,
+                    PUMAS_EVENT_STOP | PUMAS_EVENT_MEDIUM);
+        }
+
+        pumas_recorder_destroy(&recorder);
+        context->recorder = NULL;
+        geometry.uniform = 1;
+        context->event = PUMAS_EVENT_NONE;
+        context->forward = 1;
+}
+END_TEST
+
+
+/* Fixtures for CSDA tests */
+static void csda_setup(void)
+{
+        /* Load the muon data and create a simulation context */
+        load_muon();
+        geometry.uniform = 1;
+        pumas_context_create(&context, 0);
+        context->medium = &geometry_medium;
+        context->longitudinal = 1;
+        context->scheme = PUMAS_SCHEME_CSDA;
+}
+
+static void csda_teardown(void)
+{
+        /* Destroy the simulation context and unload the data */
+        pumas_context_destroy(&context);
+        pumas_finalise();
+}
+
+
 /* Test the CSDA straight case */
 START_TEST (test_csda_straight)
 {
@@ -1092,11 +1551,46 @@ START_TEST (test_csda_straight)
         enum pumas_event event_data, * event;
         struct pumas_medium * media_data[2], ** media;
         struct pumas_medium * rock;
-        csda_medium(context, state, &rock);
+        geometry_medium(context, state, &rock);
 
-        context->longitudinal = 1;
         double ctau;
         pumas_particle(NULL, &ctau, NULL);
+
+        /* Check some basic errors */
+        reset_error();
+        pumas_transport(NULL, NULL, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_VALUE_ERROR);
+
+        reset_error();
+        pumas_transport(context, NULL, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_VALUE_ERROR);
+
+        reset_error();
+        initialise_state();
+        state->decayed = 1;
+        pumas_transport(context, state, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+
+        event = &event_data;
+        pumas_transport(context, state, event, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_int_eq(*event, PUMAS_EVENT_VERTEX_DECAY);
+
+        context->medium = NULL;
+        reset_error();
+        initialise_state();
+        pumas_transport(context, state, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_MEDIUM_ERROR);
+        context->medium = &geometry_medium;
+
+        context->random = NULL;
+        context->decay = PUMAS_DECAY_PROCESS;
+        reset_error();
+        initialise_state();
+        pumas_transport(context, state, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_MISSING_RANDOM);
+        context->random = &uniform01;
+        context->decay = PUMAS_DECAY_WEIGHT;
 
         /* Check the forward full path transport */
         double X, d, t0;
@@ -1106,7 +1600,7 @@ START_TEST (test_csda_straight)
                 else
                         event = &event_data, media = media_data;
                 reset_error();
-                csda_initialise_state();
+                initialise_state();
                 state->kinetic = 1.;
                 pumas_property_grammage(
                     PUMAS_SCHEME_CSDA, 0, state->kinetic, &X);
@@ -1141,7 +1635,7 @@ START_TEST (test_csda_straight)
                 }
         }
 
-        /* Check the no event case with limits */
+        /* Check the no event case but with limit values set */
         for (i = 0; i < 2; i++) {
                 if (i == 0)
                         event = NULL, media = NULL;
@@ -1150,7 +1644,7 @@ START_TEST (test_csda_straight)
 
                 context->kinetic_limit = 0.5;
                 reset_error();
-                csda_initialise_state();
+                initialise_state();
                 state->kinetic = 1.;
                 pumas_transport(context, state, event, media);
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
@@ -1167,7 +1661,7 @@ START_TEST (test_csda_straight)
                 context->kinetic_limit = 0.;
                 context->distance_max = 0.5 * d;
                 reset_error();
-                csda_initialise_state();
+                initialise_state();
                 state->kinetic = 1.;
                 pumas_transport(context, state, event, media);
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
@@ -1184,7 +1678,7 @@ START_TEST (test_csda_straight)
                 context->distance_max = 0.;
                 context->grammage_max = 0.5 * X;
                 reset_error();
-                csda_initialise_state();
+                initialise_state();
                 state->kinetic = 1.;
                 pumas_transport(context, state, event, media);
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
@@ -1201,7 +1695,7 @@ START_TEST (test_csda_straight)
                 context->grammage_max = 0.;
                 context->time_max = 0.5 * t0;
                 reset_error();
-                csda_initialise_state();
+                initialise_state();
                 state->kinetic = 1.;
                 pumas_transport(context, state, event, media);
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
@@ -1235,7 +1729,7 @@ START_TEST (test_csda_straight)
                         event = &event_data, media = media_data;
 
                 reset_error();
-                csda_initialise_state();
+                initialise_state();
                 state->kinetic = 1.;
                 pumas_transport(context, state, event, media);
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
@@ -1278,7 +1772,7 @@ START_TEST (test_csda_straight)
                         event = &event_data, media = media_data;
 
                 reset_error();
-                csda_initialise_state();
+                initialise_state();
                 state->kinetic = 1.;
                 pumas_transport(context, state, event, media);
                 k1 = state->kinetic;
@@ -1322,7 +1816,7 @@ START_TEST (test_csda_straight)
                         event = &event_data, media = media_data;
 
                 reset_error();
-                csda_initialise_state();
+                initialise_state();
                 state->kinetic = 1.;
                 pumas_transport(context, state, event, media);
                 k1 = state->kinetic;
@@ -1365,7 +1859,7 @@ START_TEST (test_csda_straight)
                         event = &event_data, media = media_data;
 
                 reset_error();
-                csda_initialise_state();
+                initialise_state();
                 state->kinetic = 1.;
                 pumas_transport(context, state, event, media);
                 k1 = state->kinetic;
@@ -1419,7 +1913,7 @@ START_TEST (test_csda_straight)
                         event = &event_data, media = media_data;
 
                 reset_error();
-                csda_initialise_state();
+                initialise_state();
                 state->kinetic = k1;
                 pumas_transport(context, state, event, media);
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
@@ -1462,7 +1956,7 @@ START_TEST (test_csda_straight)
                         event = &event_data, media = media_data;
 
                 reset_error();
-                csda_initialise_state();
+                initialise_state();
                 state->kinetic = k1;
                 pumas_transport(context, state, event, media);
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
@@ -1503,7 +1997,7 @@ START_TEST (test_csda_straight)
                         event = &event_data, media = media_data;
 
                 reset_error();
-                csda_initialise_state();
+                initialise_state();
                 state->kinetic = k1;
                 pumas_transport(context, state, event, media);
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
@@ -1544,7 +2038,7 @@ START_TEST (test_csda_straight)
                         event = &event_data, media = media_data;
 
                 reset_error();
-                csda_initialise_state();
+                initialise_state();
                 state->kinetic = k1;
                 pumas_transport(context, state, event, media);
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
@@ -1586,7 +2080,7 @@ START_TEST (test_csda_straight)
                         event = &event_data, media = media_data;
 
                 reset_error();
-                csda_initialise_state();
+                initialise_state();
                 state->kinetic = 1.;
                 pumas_transport(context, state, event, media);
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
@@ -1612,7 +2106,7 @@ START_TEST (test_csda_straight)
                         event = &event_data, media = media_data;
 
                 reset_error();
-                csda_initialise_state();
+                initialise_state();
                 state->kinetic = 0.5;
                 pumas_transport(context, state, event, media);
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
@@ -1641,7 +2135,7 @@ START_TEST (test_csda_straight)
                         event = &event_data, media = media_data;
 
                 reset_error();
-                csda_initialise_state();
+                initialise_state();
                 state->kinetic = 1.;
                 state->grammage = X;
                 pumas_transport(context, state, event, media);
@@ -1667,7 +2161,7 @@ START_TEST (test_csda_straight)
                         event = &event_data, media = media_data;
 
                 reset_error();
-                csda_initialise_state();
+                initialise_state();
                 state->kinetic = 1.;
                 state->grammage = X;
                 pumas_transport(context, state, event, media);
@@ -1698,7 +2192,7 @@ START_TEST (test_csda_straight)
                         event = &event_data, media = media_data;
 
                 reset_error();
-                csda_initialise_state();
+                initialise_state();
                 state->kinetic = 1.;
                 state->distance = d;
                 pumas_transport(context, state, event, media);
@@ -1724,7 +2218,7 @@ START_TEST (test_csda_straight)
                         event = &event_data, media = media_data;
 
                 reset_error();
-                csda_initialise_state();
+                initialise_state();
                 state->kinetic = 1.;
                 state->distance = d;
                 pumas_transport(context, state, event, media);
@@ -1755,7 +2249,7 @@ START_TEST (test_csda_straight)
                         event = &event_data, media = media_data;
 
                 reset_error();
-                csda_initialise_state();
+                initialise_state();
                 state->kinetic = 1.;
                 state->time = t0;
                 pumas_transport(context, state, event, media);
@@ -1781,7 +2275,7 @@ START_TEST (test_csda_straight)
                         event = &event_data, media = media_data;
 
                 reset_error();
-                csda_initialise_state();
+                initialise_state();
                 state->kinetic = 1.;
                 state->time = t0;
                 pumas_transport(context, state, event, media);
@@ -1798,10 +2292,52 @@ START_TEST (test_csda_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-
-        context->forward = 1;
         context->time_max = 0.;
         context->event = PUMAS_EVENT_NONE;
+
+        /* Check the overflow case */
+        context->forward = 1;
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E+08;
+                pumas_property_grammage(
+                    PUMAS_SCHEME_CSDA, 0, state->kinetic, &X);
+                pumas_property_proper_time(
+                    PUMAS_SCHEME_CSDA, 0, state->kinetic, &t0);
+                t0 /= TEST_ROCK_DENSITY;
+                d = X / TEST_ROCK_DENSITY;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->charge, -1.);
+                ck_assert_double_eq(state->kinetic, 0.);
+                ck_assert_double_eq(state->distance, d);
+                ck_assert_double_eq(state->grammage, X);
+                ck_assert_double_eq(state->time, t0);
+                ck_assert_double_eq_tol(
+                    state->weight, exp(-t0 / ctau), FLT_EPSILON);
+                ck_assert_double_eq(state->position[0], 0.);
+                ck_assert_double_eq(state->position[1], 0.);
+                ck_assert_double_eq(state->position[2], d);
+                ck_assert_double_eq(state->direction[0], 0.);
+                ck_assert_double_eq(state->direction[1], 0.);
+                ck_assert_double_eq(state->direction[2], 1.);
+                ck_assert_int_eq(state->decayed, 0);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_KINETIC);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
 }
 END_TEST
 
@@ -1812,14 +2348,13 @@ START_TEST (test_csda_record)
         pumas_particle(NULL, &ctau, NULL);
 
         struct pumas_medium * rock;
-        csda_medium(context, state, &rock);
+        geometry_medium(context, state, &rock);
 
         pumas_recorder_create(&recorder, 0);
         context->recorder = recorder;
 
-        context->longitudinal = 1;
         reset_error();
-        csda_initialise_state();
+        initialise_state();
         state->kinetic = 1.;
 
         double X, d, t0;
@@ -1881,29 +2416,2028 @@ END_TEST
 
 START_TEST (test_csda_magnet)
 {
-        context->longitudinal = 1;
-        magnet[1] = 0.1;
+        geometry.magnet[1] = 0.1;
 
         reset_error();
-        csda_initialise_state();
+        initialise_state();
         state->kinetic = 1.;
 
-        double X, d, phi0, phi1, phi;
+        double X, d, phi0, phi1, phi, * u = state->direction;
         pumas_property_grammage(
             PUMAS_SCHEME_CSDA, 0, state->kinetic, &X);
         d = X / TEST_ROCK_DENSITY;
         pumas_property_magnetic_rotation(0, state->kinetic, &phi0);
         pumas_property_magnetic_rotation(0, 0., &phi1);
-        phi = -(phi1 - phi0) * magnet[1] / TEST_ROCK_DENSITY * state->charge;
+        phi = -(phi1 - phi0) * geometry.magnet[1] / TEST_ROCK_DENSITY *
+            state->charge;
 
         pumas_transport(context, state, NULL, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
 
-        ck_assert_double_eq(state->direction[0], sin(phi));
-        ck_assert_double_eq(state->direction[1], 0.);
-        ck_assert_double_eq(state->direction[2], cos(phi));
+        ck_assert_double_eq(u[0], sin(phi));
+        ck_assert_double_eq(u[1], 0.);
+        ck_assert_double_eq(u[2], cos(phi));
 
-        magnet[1] = 0.;
+        double norm2 = u[0] * u[0] + u[1] * u[1] + u[2] * u[2];
+        ck_assert_double_eq_tol(norm2, 1., FLT_EPSILON);
+
+        geometry.magnet[1] = 0.;
+}
+END_TEST
+
+
+START_TEST (test_csda_geometry)
+{
+        int i;
+        enum pumas_event event;
+        struct pumas_medium * media[2], * rock, * air;
+        struct pumas_frame * frame;
+        pumas_recorder_create(&recorder, 0);
+        context->recorder = recorder;
+        recorder->period = 0;
+
+        geometry.uniform = 0;
+        initialise_state();
+        geometry_medium(context, state, &rock);
+        state->position[2] = 0.5 * (0.5 * TEST_ROCK_DEPTH + TEST_MAX_ALTITUDE);
+        geometry_medium(context, state, &air);
+
+        /* Test the initially out of world case */
+        state->position[2] = 2 * TEST_MAX_ALTITUDE;
+        reset_error();
+        pumas_transport(context, state, &event, media);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_int_eq(event, PUMAS_EVENT_MEDIUM);
+        ck_assert_ptr_eq(media[0], NULL);
+        ck_assert_ptr_eq(media[1], NULL);
+        ck_assert_int_eq(recorder->length, 1);
+        frame = recorder->first;
+        ck_assert_ptr_eq(frame->medium, NULL);
+        ck_assert_int_eq(frame->event, PUMAS_EVENT_START | PUMAS_EVENT_MEDIUM |
+            PUMAS_EVENT_STOP);
+        ck_assert_ptr_null(frame->next);
+
+        for (i = 0; i < 2; i++) {
+                /* Test the unconstrained transport */
+                context->event = PUMAS_EVENT_NONE;
+                initialise_state();
+                state->kinetic = 1E+03;
+                if (i) {
+                        context->forward = 0;
+                        state->direction[2] = -1.;
+                } else {
+                        context->forward = 1;
+                }
+
+                reset_error();
+                pumas_recorder_clear(recorder);
+                pumas_transport(context, state, &event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_int_eq(event, PUMAS_EVENT_MEDIUM);
+                ck_assert_ptr_eq(media[0], rock);
+                ck_assert_ptr_eq(media[1], NULL);
+                ck_assert_double_eq_tol(
+                    state->position[2], TEST_MAX_ALTITUDE, FLT_EPSILON);
+                ck_assert_int_eq(recorder->length, 3);
+                frame = recorder->first;
+                ck_assert_ptr_eq(frame->medium, rock);
+                ck_assert_int_eq(frame->event, PUMAS_EVENT_START);
+                frame = frame->next;
+                ck_assert_ptr_eq(frame->medium, air);
+                ck_assert_int_eq(frame->event, PUMAS_EVENT_MEDIUM);
+                frame = frame->next;
+                ck_assert_ptr_null(frame->medium);
+                ck_assert_int_eq(frame->event,
+                    PUMAS_EVENT_STOP | PUMAS_EVENT_MEDIUM);
+
+                /* Test the medium stop condition */
+                context->event = PUMAS_EVENT_MEDIUM;
+                initialise_state();
+                state->kinetic = 1E+03;
+                if (i) {
+                        state->direction[2] = -1.;
+                }
+
+                reset_error();
+                pumas_recorder_clear(recorder);
+                pumas_transport(context, state, &event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_int_eq(event, PUMAS_EVENT_MEDIUM);
+                ck_assert_ptr_eq(media[0], rock);
+                ck_assert_ptr_eq(media[1], air);
+                ck_assert_int_eq(recorder->length, 2);
+                frame = recorder->first;
+                ck_assert_ptr_eq(frame->medium, rock);
+                ck_assert_int_eq(frame->event, PUMAS_EVENT_START);
+                frame = frame->next;
+                ck_assert_ptr_eq(frame->medium, air);
+                ck_assert_int_eq(frame->event,
+                    PUMAS_EVENT_STOP | PUMAS_EVENT_MEDIUM);
+
+                pumas_recorder_clear(recorder);
+                pumas_transport(context, state, &event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_int_eq(event, PUMAS_EVENT_MEDIUM);
+                ck_assert_ptr_eq(media[0], air);
+                ck_assert_ptr_eq(media[1], NULL);
+                ck_assert_int_eq(recorder->length, 2);
+                frame = recorder->first;
+                ck_assert_ptr_eq(frame->medium, air);
+                ck_assert_int_eq(frame->event, PUMAS_EVENT_START);
+                frame = frame->next;
+                ck_assert_ptr_null(frame->medium);
+                ck_assert_int_eq(frame->event,
+                    PUMAS_EVENT_STOP | PUMAS_EVENT_MEDIUM);
+        }
+
+        pumas_recorder_destroy(&recorder);
+        context->recorder = NULL;
+        geometry.uniform = 1;
+        context->event = PUMAS_EVENT_NONE;
+        context->forward = 1;
+}
+END_TEST
+
+
+/* Fixtures for hybrid tests */
+static void hybrid_setup(void)
+{
+        /* Load the tau data and create a simulation context */
+        load_muon();
+        geometry.uniform = 1;
+        pumas_context_create(&context, 0);
+        context->medium = &geometry_medium;
+        context->longitudinal = 1;
+        context->scheme = PUMAS_SCHEME_HYBRID;
+        context->random = &uniform01;
+}
+
+static void hybrid_teardown(void)
+{
+        /* Destroy the simulation context and unload the data */
+        pumas_context_destroy(&context);
+        pumas_finalise();
+}
+
+
+START_TEST (test_hybrid_straight)
+{
+        int i, ik;
+        enum pumas_event event_data, * event;
+        struct pumas_medium * media_data[2], ** media;
+        struct pumas_medium * rock;
+        geometry_medium(context, state, &rock);
+
+        double ctau;
+        pumas_particle(NULL, &ctau, NULL);
+
+        /* Check the missing random engine case */
+        reset_error();
+        context->random = NULL;
+        pumas_transport(context, state, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_MISSING_RANDOM);
+        context->random = &uniform01;
+
+        /* Check the forward full path transport */
+        double X, d, t0;
+        for (ik = 0; ik < 2; ik++) {
+                for (i = 0; i < 2; i++) {
+                        if (i == 0)
+                                event = NULL, media = NULL;
+                        else
+                                event = &event_data, media = media_data;
+
+                        reset_error();
+                        initialise_state();
+                        state->kinetic = (ik == 0) ? 1E+08 : 1E+03;
+                        pumas_property_grammage(
+                            PUMAS_SCHEME_HYBRID, 0, state->kinetic, &X);
+                        pumas_property_proper_time(
+                            PUMAS_SCHEME_HYBRID, 0, state->kinetic, &t0);
+                        t0 /= TEST_ROCK_DENSITY;
+                        d = X / TEST_ROCK_DENSITY;
+                        pumas_transport(context, state, event, media);
+                        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                        ck_assert_double_eq(state->charge, -1.);
+                        ck_assert_double_eq(state->kinetic, 0.);
+                        ck_assert_double_le(state->distance, d);
+                        ck_assert_double_le(state->grammage, X);
+                        ck_assert_double_le(state->time, t0);
+                        ck_assert_double_eq_tol(
+                            state->weight, exp(-state->time / ctau),
+                            FLT_EPSILON);
+                        ck_assert_double_eq(state->position[0], 0.);
+                        ck_assert_double_eq(state->position[1], 0.);
+                        ck_assert_double_le(
+                            state->position[2], d + FLT_EPSILON);
+                        ck_assert_double_eq(state->direction[0], 0.);
+                        ck_assert_double_eq(state->direction[1], 0.);
+                        ck_assert_double_eq(state->direction[2], 1.);
+                        ck_assert_int_eq(state->decayed, 0);
+
+                        if (i == 0) {
+                                ck_assert_ptr_null(event);
+                                ck_assert_ptr_null(media);
+                        } else {
+                                ck_assert_int_eq(
+                                    *event, PUMAS_EVENT_LIMIT_KINETIC);
+                                ck_assert_ptr_eq(media[0], rock);
+                                ck_assert_ptr_eq(media[0], media[1]);
+                        }
+                }
+        }
+
+        /* Check the no event case but with limit values set */
+        context->event = PUMAS_EVENT_NONE;
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                context->kinetic_limit = 0.5E+03;
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E+03;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->kinetic, 0.);
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_KINETIC);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+
+                context->kinetic_limit = 0.;
+                context->distance_max = 0.5 * d;
+                reset_error();
+                initialise_state();
+                state->kinetic = 1.;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->kinetic, 0.);
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_KINETIC);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+
+                context->distance_max = 0.;
+                context->grammage_max = 0.5 * X;
+                reset_error();
+                initialise_state();
+                state->kinetic = 1.;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->kinetic, 0.);
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_KINETIC);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+
+                context->grammage_max = 0.;
+                context->time_max = 0.5 * t0;
+                reset_error();
+                initialise_state();
+                state->kinetic = 1.;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->kinetic, 0.);
+                context->time_max = 0.;
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_KINETIC);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+
+        /* Check the forward kinetic limit */
+        double X1, d1, t1;
+        context->kinetic_limit = 0.5E+03;
+        context->event = PUMAS_EVENT_LIMIT_KINETIC;
+        pumas_property_grammage(
+            PUMAS_SCHEME_HYBRID, 0, context->kinetic_limit, &X1);
+        pumas_property_proper_time(
+            PUMAS_SCHEME_HYBRID, 0, context->kinetic_limit, &t1);
+        t1 /= TEST_ROCK_DENSITY;
+        d1 = X1 / TEST_ROCK_DENSITY;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E+03;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_le(state->kinetic, context->kinetic_limit);
+                ck_assert_double_le(state->distance, d - d1);
+                ck_assert_double_le(state->grammage, X - X1);
+                ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
+                ck_assert_double_eq_tol(
+                    state->weight, exp(-state->time / ctau), FLT_EPSILON);
+                ck_assert_double_eq(state->position[0], 0.);
+                ck_assert_double_eq(state->position[1], 0.);
+                ck_assert_double_le(state->position[2], d - d1 + FLT_EPSILON);
+                ck_assert_double_eq(state->direction[0], 0.);
+                ck_assert_double_eq(state->direction[1], 0.);
+                ck_assert_double_eq(state->direction[2], 1.);
+                ck_assert_int_eq(state->decayed, 0);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_KINETIC);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+        context->kinetic_limit = 0.;
+
+        /* Check the forward grammage limit */
+        double k1;
+        X1 = 1E-02 * X;
+        d1 = X1 / TEST_ROCK_DENSITY;
+        context->grammage_max = X1;
+        context->event = PUMAS_EVENT_LIMIT_GRAMMAGE;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E+03;
+                pumas_transport(context, state, event, media);
+                k1 = state->kinetic;
+                pumas_property_proper_time(PUMAS_SCHEME_HYBRID, 0, k1, &t1);
+                t1 /= TEST_ROCK_DENSITY;
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_le(state->distance, d - d1);
+                ck_assert_double_le(state->grammage, X - X1);
+                ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
+                ck_assert_double_eq_tol(
+                    state->weight, exp(-state->time / ctau), FLT_EPSILON);
+                ck_assert_double_eq(state->position[0], 0.);
+                ck_assert_double_eq(state->position[1], 0.);
+                ck_assert_double_le(state->position[2], d - d1 + FLT_EPSILON);
+                ck_assert_double_eq(state->direction[0], 0.);
+                ck_assert_double_eq(state->direction[1], 0.);
+                ck_assert_double_eq(state->direction[2], 1.);
+                ck_assert_int_eq(state->decayed, 0);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_GRAMMAGE);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+        context->grammage_max = 0.;
+
+        /* Check the forward distance limit */
+        d1 = 1E-02 * d;
+        X1 = d1 * TEST_ROCK_DENSITY;
+        context->distance_max = d1;
+        context->event = PUMAS_EVENT_LIMIT_DISTANCE;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E+03;
+                pumas_transport(context, state, event, media);
+                k1 = state->kinetic;
+                pumas_property_proper_time(PUMAS_SCHEME_HYBRID, 0, k1, &t1);
+                t1 /= TEST_ROCK_DENSITY;
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_le(state->distance, d - d1);
+                ck_assert_double_le(state->grammage, X - X1);
+                ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
+                ck_assert_double_eq_tol(
+                    state->weight, exp(-state->time / ctau), FLT_EPSILON);
+                ck_assert_double_eq(state->position[0], 0.);
+                ck_assert_double_eq(state->position[1], 0.);
+                ck_assert_double_le(state->position[2], d - d1 + FLT_EPSILON);
+                ck_assert_double_eq(state->direction[0], 0.);
+                ck_assert_double_eq(state->direction[1], 0.);
+                ck_assert_double_eq(state->direction[2], 1.);
+                ck_assert_int_eq(state->decayed, 0);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_DISTANCE);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+        context->distance_max = 0.;
+
+        /* Check the forward time limit */
+        t1 = 1E-02 * t0;
+        context->time_max = t1;
+        context->event = PUMAS_EVENT_LIMIT_TIME;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E+03;
+                pumas_transport(context, state, event, media);
+                k1 = state->kinetic;
+                pumas_property_grammage(PUMAS_SCHEME_HYBRID, 0, k1, &X1);
+                d1 = X1 / TEST_ROCK_DENSITY;
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_le(state->distance, d - d1);
+                ck_assert_double_le(state->grammage, X - X1);
+                ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
+                ck_assert_double_eq_tol(
+                    state->weight, exp(-state->time / ctau), FLT_EPSILON);
+                ck_assert_double_eq(state->position[0], 0.);
+                ck_assert_double_eq(state->position[1], 0.);
+                ck_assert_double_le(state->position[2], d - d1 + FLT_EPSILON);
+                ck_assert_double_eq(state->direction[0], 0.);
+                ck_assert_double_eq(state->direction[1], 0.);
+                ck_assert_double_eq(state->direction[2], 1.);
+                ck_assert_int_eq(state->decayed, 0);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_TIME);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+        context->time_max = 0.;
+
+        /* Check the backward transport with a kinetic limit */
+        context->forward = 0;
+        context->kinetic_limit = 1E+03;
+        context->event = PUMAS_EVENT_LIMIT_KINETIC;
+        k1 = 0.5 * context->kinetic_limit;
+        pumas_property_grammage(PUMAS_SCHEME_HYBRID, 0, k1, &X1);
+        pumas_property_proper_time(PUMAS_SCHEME_HYBRID, 0, k1, &t1);
+        t1 /= TEST_ROCK_DENSITY;
+        d1 = X1 / TEST_ROCK_DENSITY;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = k1;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->charge, -1.);
+                ck_assert_double_ge(state->kinetic, context->kinetic_limit);
+                ck_assert_double_le(state->distance, d - d1);
+                ck_assert_double_le(state->grammage, X - X1);
+                ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
+                ck_assert_double_eq(state->position[0], 0.);
+                ck_assert_double_eq(state->position[1], 0.);
+                ck_assert_double_ge(
+                    state->position[2], -(d - d1) - FLT_EPSILON);
+                ck_assert_double_eq(state->direction[0], 0.);
+                ck_assert_double_eq(state->direction[1], 0.);
+                ck_assert_double_eq(state->direction[2], 1.);
+                ck_assert_int_eq(state->decayed, 0);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_KINETIC);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+        context->kinetic_limit = 0.;
+
+        /* Check the backward transport with a grammage limit */
+        context->grammage_max = X - X1;
+        context->kinetic_limit = 0.75E+03; /* Not activated  */
+        context->distance_max = 0.5 * (d - d1); /* Not activated  */
+        context->time_max = 0.5 * (t0 - t1); /* Not activated  */
+        context->event = PUMAS_EVENT_LIMIT_GRAMMAGE;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = k1;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->charge, -1.);
+                ck_assert_double_gt(state->kinetic, k1);
+                ck_assert_double_eq_tol(state->distance, d - d1, FLT_EPSILON);
+                ck_assert_double_eq(state->grammage, X - X1);
+                ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
+                ck_assert_double_eq(state->position[0], 0.);
+                ck_assert_double_eq(state->position[1], 0.);
+                ck_assert_double_eq_tol(
+                    state->position[2], -(d - d1), FLT_EPSILON);
+                ck_assert_double_eq(state->direction[0], 0.);
+                ck_assert_double_eq(state->direction[1], 0.);
+                ck_assert_double_eq(state->direction[2], 1.);
+                ck_assert_int_eq(state->decayed, 0);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_GRAMMAGE);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+        context->grammage_max = 0.;
+
+        /* Check the backward transport with a distance limit */
+        context->distance_max = d - d1;
+        context->grammage_max = 0.5 * (X - X1); /* Not activated  */
+        context->event = PUMAS_EVENT_LIMIT_DISTANCE;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = k1;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->charge, -1.);
+                ck_assert_double_gt(state->kinetic, k1);
+                ck_assert_double_eq(state->distance, d - d1);
+                ck_assert_double_eq_tol(state->grammage, X - X1, FLT_EPSILON);
+                ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
+                ck_assert_double_eq(state->position[0], 0.);
+                ck_assert_double_eq(state->position[1], 0.);
+                ck_assert_double_eq_tol(
+                    state->position[2], -(d - d1), FLT_EPSILON);
+                ck_assert_double_eq(state->direction[0], 0.);
+                ck_assert_double_eq(state->direction[1], 0.);
+                ck_assert_double_eq(state->direction[2], 1.);
+                ck_assert_int_eq(state->decayed, 0);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_DISTANCE);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+        context->grammage_max = 0.;
+
+        /* Check the backward transport with a time limit */
+        context->time_max = t0 - t1;
+        context->distance_max = 0.5 * (d - d1); /* Not activated  */
+        context->event = PUMAS_EVENT_LIMIT_TIME;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = k1;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->charge, -1.);
+                ck_assert_double_gt(state->kinetic, k1);
+                ck_assert_double_eq_tol(state->time, t0 - t1, FLT_EPSILON);
+                ck_assert_double_eq(state->position[0], 0.);
+                ck_assert_double_eq(state->position[1], 0.);
+                ck_assert_double_lt(state->position[2], 0.);
+                ck_assert_double_eq(state->direction[0], 0.);
+                ck_assert_double_eq(state->direction[1], 0.);
+                ck_assert_double_eq(state->direction[2], 1.);
+                ck_assert_int_eq(state->decayed, 0);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_TIME);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+        context->grammage_max = 0.;
+        context->time_max = 0.5 * (t0 - t1); /* Not activated */
+
+        /* Check the case of an initial kinetic limit violation */
+        context->kinetic_limit = 0.5E+03;
+        context->event = PUMAS_EVENT_LIMIT_KINETIC;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E+03;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->kinetic, 1E+03);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_KINETIC);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+
+        context->forward = 1;
+        context->kinetic_limit = 1E+03;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 0.5E+03;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->kinetic, 0.5E+03);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_KINETIC);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+        context->forward = 0;
+        context->kinetic_limit = 0.;
+
+        /* Check the case of an initial grammage limit violation */
+        context->grammage_max = 0.5 * X;
+        context->event = PUMAS_EVENT_LIMIT_GRAMMAGE;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E+03;
+                state->grammage = X;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->kinetic, 1E+03);
+                ck_assert_double_eq(state->grammage, X);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_GRAMMAGE);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+
+        context->forward = 1;
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E+03;
+                state->grammage = X;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->kinetic, 1E+03);
+                ck_assert_double_eq(state->grammage, X);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_GRAMMAGE);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+        context->forward = 0;
+        context->grammage_max = 0.;
+
+        /* Check the case of an initial distance limit violation */
+        context->distance_max = 0.5 * d;
+        context->event = PUMAS_EVENT_LIMIT_DISTANCE;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E+03;
+                state->distance = d;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->kinetic, 1E+03);
+                ck_assert_double_eq(state->distance, d);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_DISTANCE);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+
+        context->forward = 1;
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E+03;
+                state->distance = d;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->kinetic, 1E+03);
+                ck_assert_double_eq(state->distance, d);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_DISTANCE);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+        context->forward = 0;
+        context->distance_max = 0.;
+
+        /* Check the case of an initial time limit violation */
+        context->time_max = 0.5 * t0;
+        context->event = PUMAS_EVENT_LIMIT_TIME;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E+03;
+                state->time = t0;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->kinetic, 1E+03);
+                ck_assert_double_eq(state->time, t0);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_TIME);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+
+        context->forward = 1;
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E03;
+                state->time = t0;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->kinetic, 1E+03);
+                ck_assert_double_eq(state->time, t0);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_TIME);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+
+        context->forward = 1;
+        context->time_max = 0.;
+        context->event = PUMAS_EVENT_NONE;
+}
+END_TEST
+
+
+START_TEST (test_hybrid_scattering)
+{
+        context->longitudinal = 0;
+
+        double ctau;
+        pumas_particle(NULL, &ctau, NULL);
+
+        /* Check the forward transport with scattering */
+        double X, d, t0, * u = state->direction;
+
+        reset_error();
+        initialise_state();
+        state->kinetic = 1E+03;
+
+        pumas_property_grammage(
+            PUMAS_SCHEME_HYBRID, 0, state->kinetic, &X);
+        pumas_property_proper_time(
+            PUMAS_SCHEME_HYBRID, 0, state->kinetic, &t0);
+        t0 /= TEST_ROCK_DENSITY;
+        d = X / TEST_ROCK_DENSITY;
+
+        pumas_transport(context, state, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_double_eq(state->charge, -1.);
+        ck_assert_double_eq(state->kinetic, 0.);
+        ck_assert_double_le(state->distance, d);
+        ck_assert_double_le(state->grammage, X);
+        ck_assert_double_le(state->time, t0);
+        ck_assert_double_eq_tol(
+            state->weight, exp(-state->time / ctau), FLT_EPSILON);
+        ck_assert_double_le(state->position[2], d + FLT_EPSILON);
+        ck_assert_int_eq(state->decayed, 0);
+
+        double norm2 = u[0] * u[0] + u[1] * u[1] + u[2] * u[2];
+        ck_assert_double_eq_tol(norm2, 1., FLT_EPSILON);
+
+        /* Check the backward transport with scattering */
+        context->forward = 0;
+        context->kinetic_limit = 1E+03;
+        context->event = PUMAS_EVENT_LIMIT_KINETIC;
+
+        double k1, X1, d1, t1;
+        k1 = 0.5 * context->kinetic_limit;
+        pumas_property_grammage(PUMAS_SCHEME_HYBRID, 0, k1, &X1);
+        pumas_property_proper_time(PUMAS_SCHEME_HYBRID, 0, k1, &t1);
+        t1 /= TEST_ROCK_DENSITY;
+        d1 = X1 / TEST_ROCK_DENSITY;
+
+        reset_error();
+        initialise_state();
+        state->kinetic = k1;
+        pumas_transport(context, state, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_double_eq(state->charge, -1.);
+        ck_assert_double_ge(state->kinetic, context->kinetic_limit);
+        ck_assert_double_le(state->distance, d - d1 + FLT_EPSILON);
+        ck_assert_double_le(state->grammage, X - X1 + FLT_EPSILON);
+        ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
+        ck_assert_double_ge(
+            state->position[2], -(d - d1) - FLT_EPSILON);
+        ck_assert_int_eq(state->decayed, 0);
+
+        norm2 = u[0] * u[0] + u[1] * u[1] + u[2] * u[2];
+        ck_assert_double_eq_tol(norm2, 1., FLT_EPSILON);
+
+        /* Restore the context status */
+        context->event = PUMAS_EVENT_NONE;
+        context->kinetic_limit = 0.;
+        context->forward = 1;
+        context->longitudinal = 1;
+}
+END_TEST
+
+
+START_TEST (test_hybrid_record)
+{
+        double ctau;
+        pumas_particle(NULL, &ctau, NULL);
+
+        struct pumas_medium * rock;
+        geometry_medium(context, state, &rock);
+
+        pumas_recorder_create(&recorder, 0);
+        context->recorder = recorder;
+
+        reset_error();
+        initialise_state();
+        state->kinetic = 1E+03;
+
+        double X, d, t0;
+        pumas_property_grammage(
+            PUMAS_SCHEME_HYBRID, 0, state->kinetic, &X);
+        pumas_property_proper_time(
+            PUMAS_SCHEME_HYBRID, 0, state->kinetic, &t0);
+        t0 /= TEST_ROCK_DENSITY;
+        d = X / TEST_ROCK_DENSITY;
+        pumas_transport(context, state, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+
+        ck_assert_int_ge(recorder->length, 2);
+        ck_assert_ptr_nonnull(recorder->first);
+
+        struct pumas_frame * frame = recorder->first;
+        ck_assert_ptr_eq(frame->medium, rock);
+        ck_assert_double_eq(frame->state.charge, -1.);
+        ck_assert_double_eq(frame->state.kinetic, 1E+03);
+        ck_assert_double_eq(frame->state.distance, 0.);
+        ck_assert_double_eq(frame->state.grammage, 0.);
+        ck_assert_double_eq(frame->state.time, 0.);
+        ck_assert_double_eq(frame->state.weight, 1.);
+        ck_assert_double_eq(frame->state.position[0], 0.);
+        ck_assert_double_eq(frame->state.position[1], 0.);
+        ck_assert_double_eq(frame->state.position[2], 0.);
+        ck_assert_double_eq(frame->state.direction[0], 0.);
+        ck_assert_double_eq(frame->state.direction[1], 0.);
+        ck_assert_double_eq(frame->state.direction[2], 1.);
+        ck_assert_int_eq(frame->state.decayed, 0);
+        ck_assert_int_eq(frame->event, PUMAS_EVENT_START);
+        ck_assert_ptr_nonnull(frame->next);
+
+        while (frame->next != NULL) frame = frame->next;
+        ck_assert_ptr_eq(frame->medium, rock);
+        ck_assert_double_eq(frame->state.charge, -1.);
+        ck_assert_double_eq(frame->state.kinetic, 0.);
+        ck_assert_double_le(frame->state.distance, d + FLT_EPSILON);
+        ck_assert_double_le(frame->state.grammage, X + FLT_EPSILON);
+        ck_assert_double_le(frame->state.time, t0 + FLT_EPSILON);
+        ck_assert_double_eq(frame->state.position[0], 0.);
+        ck_assert_double_eq(frame->state.position[1], 0.);
+        ck_assert_double_le(frame->state.position[2], d + FLT_EPSILON);
+        ck_assert_double_eq(frame->state.direction[0], 0.);
+        ck_assert_double_eq(frame->state.direction[1], 0.);
+        ck_assert_double_eq(frame->state.direction[2], 1.);
+        ck_assert_int_eq(frame->state.decayed, 0);
+        ck_assert_int_eq(frame->event,
+            PUMAS_EVENT_LIMIT_KINETIC | PUMAS_EVENT_STOP);
+        ck_assert_ptr_null(frame->next);
+
+        pumas_recorder_destroy(&recorder);
+        context->recorder = NULL;
+}
+END_TEST
+
+
+START_TEST (test_hybrid_magnet)
+{
+        geometry.magnet[1] = 0.1;
+
+        /* Compare the MC deflection and the analytical computation at low
+         * energy, i.e. when no DEL */
+        double tol = 5E-02;
+        reset_error();
+        initialise_state();
+        state->kinetic = 1E+00;
+
+        double X, d, phi0, phi1, phi, * u = state->direction;
+        pumas_property_grammage(
+            PUMAS_SCHEME_HYBRID, 0, state->kinetic, &X);
+        d = X / TEST_ROCK_DENSITY;
+        pumas_property_magnetic_rotation(0, state->kinetic, &phi0);
+        pumas_property_magnetic_rotation(0, 0., &phi1);
+        phi = -(phi1 - phi0) * geometry.magnet[1] / TEST_ROCK_DENSITY *
+            state->charge;
+
+        pumas_transport(context, state, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+
+        ck_assert_double_eq_tol(u[0], sin(phi), tol);
+        ck_assert_double_eq(u[1], 0.);
+        ck_assert_double_eq_tol(u[2], cos(phi), tol);
+
+        double norm2 = u[0] * u[0] + u[1] * u[1] + u[2] * u[2];
+        ck_assert_double_eq_tol(norm2, 1., FLT_EPSILON);
+
+        /* Check a high energy case */
+        reset_error();
+        initialise_state();
+        state->kinetic = 1E+03;
+
+        pumas_property_grammage(
+            PUMAS_SCHEME_HYBRID, 0, state->kinetic, &X);
+        d = X / TEST_ROCK_DENSITY;
+        pumas_property_magnetic_rotation(0, state->kinetic, &phi0);
+        phi = -(phi1 - phi0) * geometry.magnet[1] / TEST_ROCK_DENSITY *
+            state->charge;
+
+        pumas_transport(context, state, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+
+        ck_assert_double_le(u[0], sin(phi) + tol);
+        ck_assert_double_eq(u[1], 0.);
+        ck_assert_double_ge(u[2], cos(phi) - tol);
+
+        norm2 = u[0] * u[0] + u[1] * u[1] + u[2] * u[2];
+        ck_assert_double_eq_tol(norm2, 1., FLT_EPSILON);
+
+        /* Erase the magnetic field */
+        geometry.magnet[1] = 0.;
+}
+END_TEST
+
+
+/* Fixtures for the detailed tests */
+static void detailed_setup(void)
+{
+        /* Load the tau data and create a simulation context */
+        load_muon();
+        geometry.uniform = 1;
+        pumas_context_create(&context, 0);
+        context->medium = &geometry_medium;
+        context->longitudinal = 0;
+        context->scheme = PUMAS_SCHEME_DETAILED;
+        context->random = &uniform01;
+}
+
+static void detailed_teardown(void)
+{
+        /* Destroy the simulation context and unload the data */
+        pumas_context_destroy(&context);
+        pumas_finalise();
+}
+
+
+START_TEST (test_detailed_straight)
+{
+        context->longitudinal = 1;
+
+        int i;
+        enum pumas_event event_data, * event;
+        struct pumas_medium * media_data[2], ** media;
+        struct pumas_medium * rock;
+        geometry_medium(context, state, &rock);
+
+        double ctau;
+        pumas_particle(NULL, &ctau, NULL);
+
+        /* Check the missing random engine case */
+        reset_error();
+        context->random = NULL;
+        pumas_transport(context, state, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_MISSING_RANDOM);
+        context->random = &uniform01;
+
+        /* Check the forward full path transport */
+        double X, d, t0;
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E+03;
+                pumas_property_grammage(
+                    PUMAS_SCHEME_HYBRID, 0, state->kinetic, &X);
+                pumas_property_proper_time(
+                    PUMAS_SCHEME_HYBRID, 0, state->kinetic, &t0);
+                t0 /= TEST_ROCK_DENSITY;
+                d = X / TEST_ROCK_DENSITY;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->charge, -1.);
+                ck_assert_double_eq(state->kinetic, 0.);
+                ck_assert_double_le(state->distance, d);
+                ck_assert_double_le(state->grammage, X);
+                ck_assert_double_le(state->time, t0);
+                ck_assert_double_eq_tol(
+                    state->weight, exp(-state->time / ctau), FLT_EPSILON);
+                ck_assert_double_eq(state->position[0], 0.);
+                ck_assert_double_eq(state->position[1], 0.);
+                ck_assert_double_le(state->position[2], d + FLT_EPSILON);
+                ck_assert_double_eq(state->direction[0], 0.);
+                ck_assert_double_eq(state->direction[1], 0.);
+                ck_assert_double_eq(state->direction[2], 1.);
+                ck_assert_int_eq(state->decayed, 0);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_KINETIC);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+
+        /* Check the no event case but with limit values set */
+        context->event = PUMAS_EVENT_NONE;
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                context->kinetic_limit = 0.5E+03;
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E+03;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->kinetic, 0.);
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_KINETIC);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+
+                context->kinetic_limit = 0.;
+                context->distance_max = 0.5 * d;
+                reset_error();
+                initialise_state();
+                state->kinetic = 1.;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->kinetic, 0.);
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_KINETIC);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+
+                context->distance_max = 0.;
+                context->grammage_max = 0.5 * X;
+                reset_error();
+                initialise_state();
+                state->kinetic = 1.;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->kinetic, 0.);
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_KINETIC);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+
+                context->grammage_max = 0.;
+                context->time_max = 0.5 * t0;
+                reset_error();
+                initialise_state();
+                state->kinetic = 1.;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->kinetic, 0.);
+                context->time_max = 0.;
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_KINETIC);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+
+        /* Check the forward kinetic limit */
+        double X1, d1, t1;
+        context->kinetic_limit = 0.5E+03;
+        context->event = PUMAS_EVENT_LIMIT_KINETIC;
+        pumas_property_grammage(
+            PUMAS_SCHEME_HYBRID, 0, context->kinetic_limit, &X1);
+        pumas_property_proper_time(
+            PUMAS_SCHEME_HYBRID, 0, context->kinetic_limit, &t1);
+        t1 /= TEST_ROCK_DENSITY;
+        d1 = X1 / TEST_ROCK_DENSITY;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E+03;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_le(state->kinetic, context->kinetic_limit);
+                ck_assert_double_le(state->distance, d - d1);
+                ck_assert_double_le(state->grammage, X - X1);
+                ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
+                ck_assert_double_eq_tol(
+                    state->weight, exp(-state->time / ctau), FLT_EPSILON);
+                ck_assert_double_eq(state->position[0], 0.);
+                ck_assert_double_eq(state->position[1], 0.);
+                ck_assert_double_le(state->position[2], d - d1 + FLT_EPSILON);
+                ck_assert_double_eq(state->direction[0], 0.);
+                ck_assert_double_eq(state->direction[1], 0.);
+                ck_assert_double_eq(state->direction[2], 1.);
+                ck_assert_int_eq(state->decayed, 0);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_KINETIC);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+        context->kinetic_limit = 0.;
+
+        /* Check the forward grammage limit */
+        double k1;
+        X1 = 1E-02 * X;
+        d1 = X1 / TEST_ROCK_DENSITY;
+        context->grammage_max = X1;
+        context->event = PUMAS_EVENT_LIMIT_GRAMMAGE;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E+03;
+                pumas_transport(context, state, event, media);
+                k1 = state->kinetic;
+                pumas_property_proper_time(PUMAS_SCHEME_HYBRID, 0, k1, &t1);
+                t1 /= TEST_ROCK_DENSITY;
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_le(state->distance, d - d1);
+                ck_assert_double_le(state->grammage, X - X1);
+                ck_assert_double_eq_tol(
+                    state->weight, exp(-state->time / ctau), FLT_EPSILON);
+                ck_assert_double_eq(state->position[0], 0.);
+                ck_assert_double_eq(state->position[1], 0.);
+                ck_assert_double_le(state->position[2], d - d1 + FLT_EPSILON);
+                ck_assert_double_eq(state->direction[0], 0.);
+                ck_assert_double_eq(state->direction[1], 0.);
+                ck_assert_double_eq(state->direction[2], 1.);
+                ck_assert_int_eq(state->decayed, 0);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_GRAMMAGE);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+        context->grammage_max = 0.;
+
+        /* Check the forward distance limit */
+        d1 = 1E-02 * d;
+        X1 = d1 * TEST_ROCK_DENSITY;
+        context->distance_max = d1;
+        context->event = PUMAS_EVENT_LIMIT_DISTANCE;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E+03;
+                pumas_transport(context, state, event, media);
+                k1 = state->kinetic;
+                pumas_property_proper_time(PUMAS_SCHEME_HYBRID, 0, k1, &t1);
+                t1 /= TEST_ROCK_DENSITY;
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_le(state->distance, d - d1);
+                ck_assert_double_le(state->grammage, X - X1);
+                ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
+                ck_assert_double_eq_tol(
+                    state->weight, exp(-state->time / ctau), FLT_EPSILON);
+                ck_assert_double_eq(state->position[0], 0.);
+                ck_assert_double_eq(state->position[1], 0.);
+                ck_assert_double_le(state->position[2], d - d1 + FLT_EPSILON);
+                ck_assert_double_eq(state->direction[0], 0.);
+                ck_assert_double_eq(state->direction[1], 0.);
+                ck_assert_double_eq(state->direction[2], 1.);
+                ck_assert_int_eq(state->decayed, 0);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_DISTANCE);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+        context->distance_max = 0.;
+
+        /* Check the forward time limit */
+        t1 = 1E-02 * t0;
+        context->time_max = t1;
+        context->event = PUMAS_EVENT_LIMIT_TIME;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E+03;
+                pumas_transport(context, state, event, media);
+                k1 = state->kinetic;
+                pumas_property_grammage(PUMAS_SCHEME_HYBRID, 0, k1, &X1);
+                d1 = X1 / TEST_ROCK_DENSITY;
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq_tol(state->distance / (d - d1), 1., 0.5);
+                ck_assert_double_eq_tol(state->grammage / (X - X1), 1., 0.5);
+                ck_assert_double_eq_tol(state->time, t1, FLT_EPSILON);
+                ck_assert_double_eq_tol(
+                    state->weight, exp(-state->time / ctau), FLT_EPSILON);
+                ck_assert_double_eq(state->position[0], 0.);
+                ck_assert_double_eq(state->position[1], 0.);
+                ck_assert_double_eq_tol(
+                    state->position[2], state->distance, FLT_EPSILON);
+                ck_assert_double_eq(state->direction[0], 0.);
+                ck_assert_double_eq(state->direction[1], 0.);
+                ck_assert_double_eq(state->direction[2], 1.);
+                ck_assert_int_eq(state->decayed, 0);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_TIME);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+        context->time_max = 0.;
+
+        /* Check the backward transport with a kinetic limit */
+        context->forward = 0;
+        context->kinetic_limit = 1E+03;
+        context->event = PUMAS_EVENT_LIMIT_KINETIC;
+        k1 = 0.5 * context->kinetic_limit;
+        pumas_property_grammage(PUMAS_SCHEME_HYBRID, 0, k1, &X1);
+        pumas_property_proper_time(PUMAS_SCHEME_HYBRID, 0, k1, &t1);
+        t1 /= TEST_ROCK_DENSITY;
+        d1 = X1 / TEST_ROCK_DENSITY;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = k1;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->charge, -1.);
+                ck_assert_double_ge(state->kinetic, context->kinetic_limit);
+                ck_assert_double_le(state->distance, d - d1);
+                ck_assert_double_le(state->grammage, X - X1);
+                ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
+                ck_assert_double_eq(state->position[0], 0.);
+                ck_assert_double_eq(state->position[1], 0.);
+                ck_assert_double_ge(
+                    state->position[2], -(d - d1) - FLT_EPSILON);
+                ck_assert_double_eq(state->direction[0], 0.);
+                ck_assert_double_eq(state->direction[1], 0.);
+                ck_assert_double_eq(state->direction[2], 1.);
+                ck_assert_int_eq(state->decayed, 0);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_KINETIC);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+        context->kinetic_limit = 0.;
+
+        /* Check the backward transport with a grammage limit */
+        context->grammage_max = X - X1;
+        context->kinetic_limit = 0.75E+03; /* Not activated  */
+        context->distance_max = 0.5 * (d - d1); /* Not activated  */
+        context->time_max = 0.5 * (t0 - t1); /* Not activated  */
+        context->event = PUMAS_EVENT_LIMIT_GRAMMAGE;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = k1;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->charge, -1.);
+                ck_assert_double_gt(state->kinetic, k1);
+                ck_assert_double_eq_tol(state->distance, d - d1, FLT_EPSILON);
+                ck_assert_double_eq(state->grammage, X - X1);
+                ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
+                ck_assert_double_eq(state->position[0], 0.);
+                ck_assert_double_eq(state->position[1], 0.);
+                ck_assert_double_eq_tol(
+                    state->position[2], -(d - d1), FLT_EPSILON);
+                ck_assert_double_eq(state->direction[0], 0.);
+                ck_assert_double_eq(state->direction[1], 0.);
+                ck_assert_double_eq(state->direction[2], 1.);
+                ck_assert_int_eq(state->decayed, 0);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_GRAMMAGE);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+        context->grammage_max = 0.;
+
+        /* Check the backward transport with a distance limit */
+        context->distance_max = d - d1;
+        context->grammage_max = 0.5 * (X - X1); /* Not activated  */
+        context->event = PUMAS_EVENT_LIMIT_DISTANCE;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = k1;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->charge, -1.);
+                ck_assert_double_gt(state->kinetic, k1);
+                ck_assert_double_eq(state->distance, d - d1);
+                ck_assert_double_eq_tol(state->grammage, X - X1, FLT_EPSILON);
+                ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
+                ck_assert_double_eq(state->position[0], 0.);
+                ck_assert_double_eq(state->position[1], 0.);
+                ck_assert_double_eq_tol(
+                    state->position[2], -(d - d1), FLT_EPSILON);
+                ck_assert_double_eq(state->direction[0], 0.);
+                ck_assert_double_eq(state->direction[1], 0.);
+                ck_assert_double_eq(state->direction[2], 1.);
+                ck_assert_int_eq(state->decayed, 0);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_DISTANCE);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+        context->grammage_max = 0.;
+
+        /* Check the backward transport with a time limit */
+        context->time_max = t0 - t1;
+        context->distance_max = 0.5 * (d - d1); /* Not activated  */
+        context->event = PUMAS_EVENT_LIMIT_TIME;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = k1;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->charge, -1.);
+                ck_assert_double_gt(state->kinetic, k1);
+                ck_assert_double_eq_tol(state->time, t0 - t1, FLT_EPSILON);
+                ck_assert_double_eq(state->position[0], 0.);
+                ck_assert_double_eq(state->position[1], 0.);
+                ck_assert_double_lt(state->position[2], 0.);
+                ck_assert_double_eq(state->direction[0], 0.);
+                ck_assert_double_eq(state->direction[1], 0.);
+                ck_assert_double_eq(state->direction[2], 1.);
+                ck_assert_int_eq(state->decayed, 0);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_TIME);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+        context->grammage_max = 0.;
+        context->time_max = 0.5 * (t0 - t1); /* Not activated */
+
+        /* Check the case of an initial kinetic limit violation */
+        context->kinetic_limit = 0.5E+03;
+        context->event = PUMAS_EVENT_LIMIT_KINETIC;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E+03;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->kinetic, 1E+03);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_KINETIC);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+
+        context->forward = 1;
+        context->kinetic_limit = 1E+03;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 0.5E+03;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->kinetic, 0.5E+03);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_KINETIC);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+        context->forward = 0;
+        context->kinetic_limit = 0.;
+
+        /* Check the case of an initial grammage limit violation */
+        context->grammage_max = 0.5 * X;
+        context->event = PUMAS_EVENT_LIMIT_GRAMMAGE;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E+03;
+                state->grammage = X;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->kinetic, 1E+03);
+                ck_assert_double_eq(state->grammage, X);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_GRAMMAGE);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+
+        context->forward = 1;
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E+03;
+                state->grammage = X;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->kinetic, 1E+03);
+                ck_assert_double_eq(state->grammage, X);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_GRAMMAGE);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+        context->forward = 0;
+        context->grammage_max = 0.;
+
+        /* Check the case of an initial distance limit violation */
+        context->distance_max = 0.5 * d;
+        context->event = PUMAS_EVENT_LIMIT_DISTANCE;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E+03;
+                state->distance = d;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->kinetic, 1E+03);
+                ck_assert_double_eq(state->distance, d);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_DISTANCE);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+
+        context->forward = 1;
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E+03;
+                state->distance = d;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->kinetic, 1E+03);
+                ck_assert_double_eq(state->distance, d);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_DISTANCE);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+        context->forward = 0;
+        context->distance_max = 0.;
+
+        /* Check the case of an initial time limit violation */
+        context->time_max = 0.5 * t0;
+        context->event = PUMAS_EVENT_LIMIT_TIME;
+
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E+03;
+                state->time = t0;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->kinetic, 1E+03);
+                ck_assert_double_eq(state->time, t0);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_TIME);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+
+        context->forward = 1;
+        for (i = 0; i < 2; i++) {
+                if (i == 0)
+                        event = NULL, media = NULL;
+                else
+                        event = &event_data, media = media_data;
+
+                reset_error();
+                initialise_state();
+                state->kinetic = 1E03;
+                state->time = t0;
+                pumas_transport(context, state, event, media);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_double_eq(state->kinetic, 1E+03);
+                ck_assert_double_eq(state->time, t0);
+
+                if (i == 0) {
+                        ck_assert_ptr_null(event);
+                        ck_assert_ptr_null(media);
+                } else {
+                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_TIME);
+                        ck_assert_ptr_eq(media[0], rock);
+                        ck_assert_ptr_eq(media[0], media[1]);
+                }
+        }
+
+        context->forward = 1;
+        context->time_max = 0.;
+        context->event = PUMAS_EVENT_NONE;
+        context->longitudinal = 0;
+}
+END_TEST
+
+
+START_TEST (test_detailed_scattering)
+{
+        double ctau;
+        pumas_particle(NULL, &ctau, NULL);
+
+        /* Check the forward transport with scattering */
+        double X, d, t0, * u = state->direction;
+
+        reset_error();
+        initialise_state();
+        state->kinetic = 1E+03;
+
+        pumas_property_grammage(
+            PUMAS_SCHEME_HYBRID, 0, state->kinetic, &X);
+        pumas_property_proper_time(
+            PUMAS_SCHEME_HYBRID, 0, state->kinetic, &t0);
+        t0 /= TEST_ROCK_DENSITY;
+        d = X / TEST_ROCK_DENSITY;
+
+        pumas_transport(context, state, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_double_eq(state->charge, -1.);
+        ck_assert_double_eq(state->kinetic, 0.);
+        ck_assert_double_le(state->distance, d);
+        ck_assert_double_le(state->grammage, X);
+        ck_assert_double_le(state->time, t0);
+        ck_assert_double_eq_tol(
+            state->weight, exp(-state->time / ctau), FLT_EPSILON);
+        ck_assert_double_le(state->position[2], d + FLT_EPSILON);
+        ck_assert_int_eq(state->decayed, 0);
+
+        double norm2 = u[0] * u[0] + u[1] * u[1] + u[2] * u[2];
+        ck_assert_double_eq_tol(norm2, 1., FLT_EPSILON);
+
+        /* Check the backward transport with scattering */
+        context->forward = 0;
+        context->kinetic_limit = 1E+03;
+        context->event = PUMAS_EVENT_LIMIT_KINETIC;
+
+        double k1, X1, d1, t1;
+        k1 = 1E-03;
+        pumas_property_grammage(PUMAS_SCHEME_HYBRID, 0, k1, &X1);
+        pumas_property_proper_time(PUMAS_SCHEME_HYBRID, 0, k1, &t1);
+        t1 /= TEST_ROCK_DENSITY;
+        d1 = X1 / TEST_ROCK_DENSITY;
+
+        reset_error();
+        initialise_state();
+        state->kinetic = k1;
+        pumas_transport(context, state, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_double_eq(state->charge, -1.);
+        ck_assert_double_ge(state->kinetic, context->kinetic_limit);
+        ck_assert_double_eq_tol(state->distance / (d - d1), 1., 0.5);
+        ck_assert_double_eq_tol(state->grammage / (X - X1), 1., 0.5);
+        ck_assert_double_eq_tol(state->time / (t0 - t1), 1., 0.5);
+        ck_assert_int_eq(state->decayed, 0);
+
+        norm2 = u[0] * u[0] + u[1] * u[1] + u[2] * u[2];
+        ck_assert_double_eq_tol(norm2, 1., FLT_EPSILON);
+
+        /* Restore the context status */
+        context->event = PUMAS_EVENT_NONE;
+        context->kinetic_limit = 0.;
+        context->forward = 1;
+}
+END_TEST
+
+
+START_TEST (test_detailed_magnet)
+{
+        context->longitudinal = 1;
+        geometry.magnet[1] = 0.1;
+
+        /* Compare the MC deflection and the analytical computation at low
+         * energy, i.e. when no DEL */
+        context->forward = 0;
+        context->event = PUMAS_EVENT_LIMIT_KINETIC;
+        context->kinetic_limit = 1E+01;
+
+        double tol = 5E-02;
+        reset_error();
+        initialise_state();
+        state->kinetic = 1E+00;
+
+        double X, d, phi0, phi1, phi, * u = state->direction;
+        pumas_property_grammage(
+            PUMAS_SCHEME_HYBRID, 0, state->kinetic, &X);
+        d = X / TEST_ROCK_DENSITY;
+        pumas_property_magnetic_rotation(0, state->kinetic, &phi0);
+        pumas_property_magnetic_rotation(0, context->kinetic_limit, &phi1);
+        phi = -(phi1 - phi0) * geometry.magnet[1] / TEST_ROCK_DENSITY *
+            state->charge;
+
+        pumas_transport(context, state, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+
+        ck_assert_double_eq_tol(u[0], sin(phi), tol);
+        ck_assert_double_eq(u[1], 0.);
+        ck_assert_double_eq_tol(u[2], cos(phi), tol);
+
+        double norm2 = u[0] * u[0] + u[1] * u[1] + u[2] * u[2];
+        ck_assert_double_eq_tol(norm2, 1., FLT_EPSILON);
+
+        /* Check a high energy case */
+        context->forward = 1;
+        context->event = PUMAS_EVENT_NONE;
+        context->kinetic_limit = 0.;
+
+        reset_error();
+        initialise_state();
+        state->kinetic = 1E+03;
+
+        pumas_property_grammage(
+            PUMAS_SCHEME_HYBRID, 0, state->kinetic, &X);
+        d = X / TEST_ROCK_DENSITY;
+        pumas_property_magnetic_rotation(0, state->kinetic, &phi0);
+        pumas_property_magnetic_rotation(0, 0., &phi1);
+        phi = -(phi1 - phi0) * geometry.magnet[1] / TEST_ROCK_DENSITY *
+            state->charge;
+
+        pumas_transport(context, state, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+
+        ck_assert_double_le(u[0], sin(phi) + tol);
+        ck_assert_double_eq(u[1], 0.);
+        ck_assert_double_ge(u[2], cos(phi) - tol);
+
+        norm2 = u[0] * u[0] + u[1] * u[1] + u[2] * u[2];
+        ck_assert_double_eq_tol(norm2, 1., FLT_EPSILON);
+
+        /* Restore the context and the geometry */
+        geometry.magnet[1] = 0.;
+        context->longitudinal = 0;
+}
+END_TEST
+
+
+/* Fixtures for tau tests */
+static void tau_setup(void)
+{
+        /* Load the tau data and create a simulation context */
+        load_tau();
+        geometry.uniform = 1;
+        pumas_context_create(&context, 0);
+        context->medium = &geometry_medium;
+        context->random = &uniform01;
+}
+
+static void tau_teardown(void)
+{
+        /* Destroy the simulation context and unload the data */
+        pumas_context_destroy(&context);
+        pumas_finalise();
+}
+
+
+START_TEST (test_tau_csda)
+{
+        enum pumas_event event;
+        context->longitudinal = 1;
+        context->scheme = PUMAS_SCHEME_CSDA;
+
+        /* Test some errors */
+        context->decay = PUMAS_DECAY_WEIGHT;
+        reset_error();
+        initialise_state();
+        pumas_transport(context, state, &event, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_DECAY_ERROR);
+        context->decay = PUMAS_DECAY_PROCESS;
+
+        /* Test the forward transport */
+        reset_error();
+        initialise_state();
+        state->kinetic = 1.;
+
+        double X, d;
+        pumas_property_grammage(
+            PUMAS_SCHEME_CSDA, 0, state->kinetic, &X);
+        d = X / TEST_ROCK_DENSITY;
+
+        pumas_transport(context, state, &event, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_int_eq(event, PUMAS_EVENT_VERTEX_DECAY);
+
+        ck_assert_double_eq(state->direction[0], 0.);
+        ck_assert_double_eq(state->direction[1], 0.);
+        ck_assert_double_eq(state->direction[2], 1.);
+
+        context->longitudinal = 0;
+        context->scheme = PUMAS_SCHEME_DETAILED;
 }
 END_TEST
 
@@ -1931,6 +4465,16 @@ Suite * create_suite(void)
         tcase_add_test(tc_api, test_api_recorder);
         tcase_add_test(tc_api, test_api_print);
 
+        /* The no loss test case */
+        TCase * tc_lossless = tcase_create("Lossless");
+        suite_add_tcase(suite, tc_lossless);
+        tcase_set_timeout(tc_lossless, timeout);
+        tcase_add_unchecked_fixture(
+            tc_lossless, lossless_setup, lossless_teardown);
+        tcase_add_test(tc_lossless, test_lossless_straight);
+        tcase_add_test(tc_lossless, test_lossless_magnet);
+        tcase_add_test(tc_lossless, test_lossless_geometry);
+
         /* The CSDA test case */
         TCase * tc_csda = tcase_create("CSDA");
         suite_add_tcase(suite, tc_csda);
@@ -1939,6 +4483,34 @@ Suite * create_suite(void)
         tcase_add_test(tc_csda, test_csda_straight);
         tcase_add_test(tc_csda, test_csda_record);
         tcase_add_test(tc_csda, test_csda_magnet);
+        tcase_add_test(tc_csda, test_csda_geometry);
+
+        /* The hybrid test case */
+        TCase * tc_hybrid = tcase_create("Hybrid");
+        suite_add_tcase(suite, tc_hybrid);
+        tcase_set_timeout(tc_hybrid, timeout);
+        tcase_add_unchecked_fixture(tc_hybrid, hybrid_setup, hybrid_teardown);
+        tcase_add_test(tc_hybrid, test_hybrid_straight);
+        tcase_add_test(tc_hybrid, test_hybrid_scattering);
+        tcase_add_test(tc_hybrid, test_hybrid_record);
+        tcase_add_test(tc_hybrid, test_hybrid_magnet);
+
+        /* The detailed test case */
+        TCase * tc_detailed = tcase_create("Detailed");
+        suite_add_tcase(suite, tc_detailed);
+        tcase_set_timeout(tc_detailed, timeout);
+        tcase_add_unchecked_fixture(
+            tc_detailed, detailed_setup, detailed_teardown);
+        tcase_add_test(tc_detailed, test_detailed_straight);
+        tcase_add_test(tc_detailed, test_detailed_scattering);
+        tcase_add_test(tc_detailed, test_detailed_magnet);
+
+        /* The tau test case */
+        TCase * tc_tau = tcase_create("Tau");
+        suite_add_tcase(suite, tc_tau);
+        tcase_set_timeout(tc_tau, timeout);
+        tcase_add_unchecked_fixture(tc_tau, tau_setup, tau_teardown);
+        tcase_add_test(tc_tau, test_tau_csda);
 
         return suite;
 }
@@ -1946,6 +4518,9 @@ Suite * create_suite(void)
 
 int main(void)
 {
+        /* Initialise the PRNG */
+        srand(0);
+
         /* Configure the tests and the runner */
         Suite * suite = create_suite();
         SRunner * runner = srunner_create(suite);

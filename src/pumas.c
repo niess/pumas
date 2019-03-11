@@ -1993,6 +1993,18 @@ enum pumas_return pumas_transport(struct pumas_context * context,
 {
         ERROR_INITIALISE(pumas_transport);
 
+        /* Check the library initialisation */
+        if (s_shared == NULL)
+                return ERROR_NOT_INITIALISED();
+
+        /* Check the context and state */
+        if (context == NULL)
+                return ERROR_MESSAGE(
+                    PUMAS_RETURN_VALUE_ERROR, "no context (null)");
+        if (state == NULL)
+                return ERROR_MESSAGE(
+                    PUMAS_RETURN_VALUE_ERROR, "no state (null)");
+
         /* Check the initial state. */
         if (state->decayed) {
                 if (event != NULL) *event = PUMAS_EVENT_VERTEX_DECAY;
@@ -2001,9 +2013,7 @@ enum pumas_return pumas_transport(struct pumas_context * context,
 
         /* Check the configuration. */
         if (event != NULL) *event = PUMAS_EVENT_NONE;
-        if (s_shared == NULL) {
-                return ERROR_NOT_INITIALISED();
-        } else if (context->medium == NULL) {
+        if (context->medium == NULL) {
                 return ERROR_MESSAGE(
                     PUMAS_RETURN_MEDIUM_ERROR, "no medium specified");
         } else if ((s_shared->particle == PUMAS_PARTICLE_TAU) &&
@@ -2024,7 +2034,8 @@ enum pumas_return pumas_transport(struct pumas_context * context,
                 /* Register the start of the the track, if recording. */
                 if (context->recorder != NULL)
                         record_state(context, medium,
-                            PUMAS_EVENT_MEDIUM | PUMAS_EVENT_START, state);
+                            PUMAS_EVENT_MEDIUM | PUMAS_EVENT_START |
+                            PUMAS_EVENT_STOP, state);
                 return PUMAS_RETURN_SUCCESS;
         } else if (step_max_medium > 0.)
                 step_max_medium += 0.5 * STEP_MIN;
@@ -2052,6 +2063,7 @@ enum pumas_return pumas_transport(struct pumas_context * context,
         }
 
         /* Call the relevant transport engine. */
+        int do_stepping = 1;
         enum pumas_event e = PUMAS_EVENT_NONE;
         if ((step_max_medium <= 0.) && (step_max_locals <= 0.) &&
             (context->scheme <= PUMAS_SCHEME_CSDA)) {
@@ -2062,14 +2074,18 @@ enum pumas_return pumas_transport(struct pumas_context * context,
                             "infinite medium without external limit(s)");
                 } else if ((context->longitudinal != 0) &&
                     (context->scheme == PUMAS_SCHEME_CSDA)) {
-                        /* This is a purely deterministic case. */
-                        e = transport_with_csda(
-                            context, state, medium, &locals, error_);
+                        do_stepping = 0;
                 }
-        } else {
+        }
+
+        if (do_stepping) {
                 /* Transport with a detailed stepping. */
                 e = transport_with_stepping(context, state, &medium, &locals,
                     step_max_medium, step_max_locals, error_);
+        } else {
+                /* This is a purely deterministic case. */
+                e = transport_with_csda(
+                    context, state, medium, &locals, error_);
         }
 
         if (event != NULL) *event = e;
@@ -3522,8 +3538,10 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
     struct medium_locals * locals, double step_max_medium,
     double step_max_locals, struct error_context * error_)
 {
-        /* Check the config. */
-        if (context->random == NULL) {
+        /* Check the config */
+        if ((context->random == NULL) && (
+            (context->scheme > PUMAS_SCHEME_CSDA) || (!context->longitudinal) ||
+            (context->decay == PUMAS_DECAY_PROCESS))) {
                 ERROR_REGISTER(
                     PUMAS_RETURN_MISSING_RANDOM, "no random engine provided");
                 return PUMAS_EVENT_NONE;
@@ -3625,6 +3643,9 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
                                 cel_energy_loss(
                                     context, scheme, material, state->kinetic) *
                                 dei;
+                } else {
+                        state->weight =
+                            wi * exp(-fabs(state->time - ti) / s_shared->ctau);
                 }
 
                 /* Process the event. */
@@ -4826,7 +4847,8 @@ enum pumas_return step_transport(struct pumas_context * context,
                 /* Deterministic CEL with check for any kinetic limit. */
                 const double X = Xtot - sgn * dX;
                 if (context->forward && (X <= context_->step_X_limit)) {
-                        k1 = context->kinetic_limit;
+                        k1 = (context->event & PUMAS_EVENT_LIMIT_KINETIC) ?
+                            context->kinetic_limit : 0.;
                         const double grammage =
                             state->grammage + Xtot - context_->step_X_limit;
                         if ((grammage_max <= 0.) || (grammage < grammage_max)) {
@@ -4835,7 +4857,8 @@ enum pumas_return step_transport(struct pumas_context * context,
                         }
                 } else if (!context->forward && (context_->step_X_limit > 0.) &&
                     X > context_->step_X_limit) {
-                        k1 = context->kinetic_limit;
+                        k1 = (context->event & PUMAS_EVENT_LIMIT_KINETIC) ?
+                            context->kinetic_limit : 0.;
                         const double grammage =
                             state->grammage + context_->step_X_limit - Xtot;
                         if ((grammage_max <= 0.) || (grammage < grammage_max)) {
@@ -5177,6 +5200,12 @@ enum pumas_return step_transport(struct pumas_context * context,
                     c * u[1] + 0.5 * (si * uT[1] + sf * context_->step_uT[1]);
                 direction[2] =
                     c * u[2] + 0.5 * (si * uT[2] + sf * context_->step_uT[2]);
+                const double norm = 1./ sqrt(direction[0] * direction[0]
+                    + direction[1] * direction[1] +
+                    direction[2] * direction[2]);
+                direction[0] *= norm;
+                direction[1] *= norm;
+                direction[2] *= norm;
                 rotated = 1;
         }
 
