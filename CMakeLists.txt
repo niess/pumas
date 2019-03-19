@@ -1,6 +1,7 @@
 cmake_minimum_required (VERSION 3.6.3)
 project (Pumas C)
 
+
 # Build options
 if (NOT CMAKE_BUILD_TYPE)
         set (CMAKE_BUILD_TYPE "Release" CACHE STRING
@@ -14,13 +15,26 @@ endif ()
 
 option (PUMAS_BUILD_TABULATE "Build the pumas-tabulate utility" OFF)
 
+option (PUMAS_BUILD_EXAMPLES "Build the pumas example binaries" OFF)
+
 if ("${CMAKE_SYSTEM}" MATCHES "Linux")
         option (PUMAS_USE_GDB "Additional features for debugging with gdb" OFF)
 endif ()
 
-# Build and install rules for the PUMAS library.
+if (WIN32)
+    if (BUILD_SHARED_LIBS)
+            set (PUMAS_API "-DPUMAS_API=__declspec(dllexport)")
+    endif ()
+    set (PUMAS_BIN ".")
+else ()
+    set (PUMAS_BIN "bin")
+endif ()
+
+
+# Build and install rules for the PUMAS library
 add_library (pumas src/pumas.c include/pumas.h)
 target_include_directories (pumas PUBLIC "${PROJECT_SOURCE_DIR}/include")
+target_compile_definitions (pumas PRIVATE ${PUMAS_API})
 target_link_libraries (pumas m)
 
 if (PUMAS_BUILD_TABULATE)
@@ -32,11 +46,7 @@ if (PUMAS_USE_GDB)
 endif ()
 
 if (WIN32)
-        target_compile_definitions (pumas PRIVATE "-D_CRT_SECURE_NO_WARNINGS")
-    if (BUILD_SHARED_LIBS)
-        target_compile_definitions (pumas
-                PRIVATE "-DPUMAS_API=__declspec(dllexport)")
-    endif ()
+    target_compile_definitions (pumas PRIVATE "-D_CRT_SECURE_NO_WARNINGS")
     install (TARGETS pumas DESTINATION .)
     install (FILES include/pumas.h DESTINATION .)
 else ()
@@ -44,19 +54,29 @@ else ()
     install (FILES include/pumas.h DESTINATION include)
 endif ()
 
-# Build and install rules for the tabulate utility, if enabled.
+
+# Build and install rules for the tabulate utility, if enabled
 if (PUMAS_BUILD_TABULATE)
     add_executable (pumas-tabulate src/pumas-tabulate.c src/pumas-tabulate.h)
+    target_compile_definitions (pumas-tabulate PRIVATE ${PUMAS_API})
     target_link_libraries (pumas-tabulate pumas)
-    if (WIN32)
-        if (BUILD_SHARED_LIBS)
-            target_compile_definitions (pumas-tabulate
-                    PRIVATE "-DPUMAS_API=__declspec(dllimport)")
-        endif ()
-        install (TARGETS pumas-tabulate DESTINATION .)
-    else ()
-        install (TARGETS pumas-tabulate DESTINATION bin)
-    endif ()
+    install (TARGETS pumas-tabulate DESTINATION ${PUMAS_BIN})
+endif ()
+
+
+# Build and install rules for the examples, if enabled
+if (PUMAS_BUILD_EXAMPLES)
+        macro (pumas_example __tag)
+                set (__name "pumas-example-${__tag}")
+                add_executable (${__name} "examples/${__tag}.c")
+                target_compile_definitions (${__name} PRIVATE ${PUMAS_API})
+                target_link_libraries (${__name} pumas)
+                install (TARGETS ${__name} DESTINATION ${PUMAS_BIN} OPTIONAL)
+        endmacro ()
+
+        pumas_example (geometry)
+        pumas_example (load)
+        pumas_example (straight)
 endif ()
 
 # Build the test(s), if enabled
