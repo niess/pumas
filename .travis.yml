@@ -1,0 +1,25 @@
+matrix:
+  include:
+    - name: "Linux"
+      os: linux
+    - name: "OSX"
+      os: osx
+
+addons:
+  apt:
+    packages: lcov
+
+language: c
+
+install:
+  - mkdir build && cd build
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then cmake -DCMAKE_BUILD_TYPE=Test -DPUMAS_BUILD_TEST=true .. ; fi
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then cmake -DPUMAS_BUILD_TABULATE=true -DPUMAS_BUILD_EXAMPLES=true .. ; fi
+
+script:
+  - make
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then make test ; fi
+
+after_success:
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then rm -rf "CMakeFiles/test-pumas.dir" && ls ; fi
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then bash <(curl -s https://codecov.io/bash) ; fi
