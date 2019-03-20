@@ -1083,11 +1083,16 @@ END_TEST
 static struct {
         int uniform;
         double magnet[3];
-} geometry = {1, {0., 0., 0.}};
+        double last_position[3];
+} geometry = {1, {0., 0., 0.}, {-1., 1., -1.}};
 
 static double rock_locals(struct pumas_medium * medium,
     struct pumas_state * state, struct pumas_locals * locals)
 {
+        /* Check the API consistency */
+        ck_assert_mem_eq(
+            state->position, geometry.last_position, sizeof state->position);
+
         locals->density = TEST_ROCK_DENSITY;
         memcpy(locals->magnet, geometry.magnet, sizeof locals->magnet);
 
@@ -1097,6 +1102,10 @@ static double rock_locals(struct pumas_medium * medium,
 static double air_locals(struct pumas_medium * medium,
     struct pumas_state * state, struct pumas_locals * locals)
 {
+        /* Check the API consistency */
+        ck_assert_mem_eq(
+            state->position, geometry.last_position, sizeof state->position);
+
         const double lambda = 1E+04;
 
         locals->density = TEST_AIR_DENSITY * exp(-state->position[2] / lambda);
@@ -1108,6 +1117,9 @@ static double air_locals(struct pumas_medium * medium,
 static double geometry_medium(struct pumas_context * context,
     struct pumas_state * state, struct pumas_medium ** medium_ptr)
 {
+        memcpy(geometry.last_position, state->position,
+            sizeof geometry.last_position);
+
         static struct pumas_medium media[2] = {
                 {0, &rock_locals}, {1, &air_locals}};
 
