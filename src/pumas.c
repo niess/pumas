@@ -5139,7 +5139,8 @@ enum pumas_return step_transport(struct pumas_context * context,
                         B[1] = Bi[1] + h_int * (B[1] - Bi[1]);
                         B[2] = Bi[2] + h_int * (B[2] - Bi[2]);
                         magnetized =
-                            (B[0] * B[0] + B[1] * B[1] + B[2] * B[2] == 0.);
+                            ((B[0] != 0.) || (B[1] != 0.) || (B[2] != 0.)) ?
+                            1 : 0;
                 }
 
                 /* Compute the Larmor radius and the magnetic deflection
