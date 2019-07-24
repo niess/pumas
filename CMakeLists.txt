@@ -1,5 +1,8 @@
 cmake_minimum_required (VERSION 3.6.3)
-project (Pumas C)
+project (PUMAS
+    LANGUAGES C
+    VERSION 0.14
+)
 
 
 # Build options
@@ -33,8 +36,9 @@ endif ()
 
 # Build and install rules for the PUMAS library
 add_library (pumas src/pumas.c include/pumas.h)
+set_target_properties (pumas PROPERTIES VERSION ${PUMAS_VERSION})
 target_include_directories (pumas PUBLIC "${PROJECT_SOURCE_DIR}/include")
-target_compile_definitions (pumas PRIVATE ${PUMAS_API})
+target_compile_definitions (pumas PRIVATE ${PUMAS_API} -DPUMAS_VERSION=${PUMAS_VERSION})
 target_link_libraries (pumas m)
 
 if (PUMAS_BUILD_TABULATE)

@@ -44,8 +44,9 @@
 #endif
 
 /* For the versioning. */
-#define PUMAS_VERSION 0
-#define PUMAS_SUBVERSION 13
+#ifndef PUMAS_VERSION
+#define PUMAS_VERSION 0.14
+#endif
 
 /* Some tuning factors as macros. */
 /**
@@ -901,7 +902,7 @@ static inline float * table_get_dcs_value(
 static enum pumas_return step_transport(struct pumas_context * context,
     struct pumas_state * state, int straight, struct pumas_medium * medium,
     struct medium_locals * locals, double grammage_max,
-    double * step_max_medium, double * step_max_locals,
+    double step_max_medium, double * step_max_locals,
     struct pumas_medium ** out_medium);
 static void step_fluctuate(struct pumas_context * context,
     struct pumas_state * state, int material, double Xtot, double dX,
@@ -1767,7 +1768,7 @@ error:
             PUMAS_RETURN_IO_ERROR, "could not write to stream");
 }
 
-int pumas_tag() { return 1000 * PUMAS_VERSION + PUMAS_SUBVERSION; }
+int pumas_tag() { return 100 * PUMAS_VERSION; }
 
 /* Public library functions: recorder handling. */
 enum pumas_return pumas_recorder_create(
@@ -2024,7 +2025,8 @@ enum pumas_return pumas_transport(struct pumas_context * context,
 
         /* Get the start medium. */
         struct pumas_medium * medium;
-        double step_max_medium = context->medium(context, state, &medium);
+        double step_max_medium;
+        context->medium(context, state, &medium, &step_max_medium);
         if (media != NULL) {
                 media[0] = medium;
                 media[1] = NULL;
@@ -3613,9 +3615,16 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
         int step_index = 1;
         for (;;) {
                 /* Do a transportation step. */
+                if (step_index > 1) {
+                        /* Update the geometric step length */
+                        context->medium(context, state, NULL, &step_max_medium);
+                        if (step_max_medium > 0.)
+                            step_max_medium += 0.5 * STEP_MIN;
+                }
+
                 struct pumas_medium * new_medium = NULL;
                 if (step_transport(context, state, straight, medium, locals,
-                        grammage_max, &step_max_medium, &step_max_locals,
+                        grammage_max, step_max_medium, &step_max_locals,
                         &new_medium) != PUMAS_RETURN_SUCCESS)
                         return context_->step_event;
                 step_index++;
@@ -3730,21 +3739,10 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
                                                 break;
                                 }
 
-                                /* Recompute the geometric step if the
-                                 * direction has changed.
-                                 */
-                                if (!context->longitudinal &&
-                                    (step_max_medium > 0.)) {
-                                        struct pumas_medium * tmp_medium;
-                                        step_max_medium = context->medium(
-                                            context, state, &tmp_medium);
-                                        if (step_max_medium > 0.)
-                                                step_max_medium +=
-                                                    0.5 * STEP_MIN;
-                                }
-
                                 /* Update the locals if needed. */
                                 if (step_max_locals > 0.) {
+                                        context->medium(
+                                            context, state, NULL, NULL);
                                         step_max_locals = transport_set_locals(
                                             medium, state, locals);
                                         if (locals->api.density <= 0.) {
@@ -3763,6 +3761,7 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
                                     (context->event & PUMAS_EVENT_MEDIUM))
                                         break;
                                 material = medium->material;
+                                context->medium(context, state, NULL, NULL);
                                 memset(locals, 0x0, sizeof(*locals));
                                 step_max_locals =
                                     transport_set_locals(medium, state, locals);
@@ -4639,7 +4638,7 @@ target_found:
 enum pumas_return step_transport(struct pumas_context * context,
     struct pumas_state * state, int straight, struct pumas_medium * medium,
     struct medium_locals * locals, double grammage_max,
-    double * step_max_medium, double * step_max_locals,
+    double step_max_medium, double * step_max_locals,
     struct pumas_medium ** out_medium)
 {
         /* Unpack the data. */
@@ -4741,9 +4740,9 @@ enum pumas_return step_transport(struct pumas_context * context,
 
         /* Check the spatial resolution and the geometry step length. */
         if (step_loc < STEP_MIN) step_loc = STEP_MIN;
-        double step = (*step_max_medium <= 0) ?
+        double step = (step_max_medium <= 0) ?
             step_loc :
-            (*step_max_medium < step_loc ? *step_max_medium : step_loc);
+            (step_max_medium < step_loc ? step_max_medium : step_loc);
         if ((*step_max_locals > 0.) && (step > *step_max_locals))
                 step = *step_max_locals;
 
@@ -4765,9 +4764,8 @@ enum pumas_return step_transport(struct pumas_context * context,
         position[2] += step * sgn * direction[2];
 
         /* Check for a change of medium. */
-        struct pumas_medium * end_medium;
-        *step_max_medium = context->medium(context, state, &end_medium);
-        if (*step_max_medium > 0.) *step_max_medium += 0.5 * STEP_MIN;
+        struct pumas_medium * end_medium = NULL;
+        context->medium(context, state, &end_medium, NULL);
         double end_position[3] = { position[0], position[1], position[2] };
         if (end_medium != medium) {
                 /* Check for an exact boundary. */
@@ -4778,8 +4776,8 @@ enum pumas_return step_transport(struct pumas_context * context,
                 position[0] = pi[0] + s2 * sgn * direction[0];
                 position[1] = pi[1] + s2 * sgn * direction[1];
                 position[2] = pi[2] + s2 * sgn * direction[2];
-                struct pumas_medium * tmp_medium;
-                context->medium(context, state, &tmp_medium);
+                struct pumas_medium * tmp_medium = NULL;
+                context->medium(context, state, &tmp_medium, NULL);
                 if (tmp_medium != medium) {
                         /* Locate the medium change by dichotomy. */
                         if (tmp_medium != end_medium) end_medium = tmp_medium;
@@ -4790,7 +4788,9 @@ enum pumas_return step_transport(struct pumas_context * context,
                                 position[0] = pi[0] + s3 * sgn * direction[0];
                                 position[1] = pi[1] + s3 * sgn * direction[1];
                                 position[2] = pi[2] + s3 * sgn * direction[2];
-                                context->medium(context, state, &tmp_medium);
+                                tmp_medium = NULL;
+                                context->medium(
+                                    context, state, &tmp_medium, NULL);
                                 if (tmp_medium == medium) {
                                         s2 = s3;
                                 } else {
@@ -4810,10 +4810,8 @@ enum pumas_return step_transport(struct pumas_context * context,
 
                         /* Force the last medium call to occur at the final
                          * position. */
-                        *step_max_medium =
-                            context->medium(context, state, &tmp_medium);
-                        if (*step_max_medium > 0.)
-                                *step_max_medium += 0.5 * STEP_MIN;
+                        tmp_medium = NULL;
+                        context->medium(context, state, &tmp_medium, NULL);
                 }
                 event = PUMAS_EVENT_MEDIUM;
                 *out_medium = end_medium;
@@ -5139,8 +5137,7 @@ enum pumas_return step_transport(struct pumas_context * context,
                         B[1] = Bi[1] + h_int * (B[1] - Bi[1]);
                         B[2] = Bi[2] + h_int * (B[2] - Bi[2]);
                         magnetized =
-                            ((B[0] != 0.) || (B[1] != 0.) || (B[2] != 0.)) ?
-                            1 : 0;
+                            (B[0] * B[0] + B[1] * B[1] + B[2] * B[2] == 0.);
                 }
 
                 /* Compute the Larmor radius and the magnetic deflection
@@ -5177,7 +5174,6 @@ enum pumas_return step_transport(struct pumas_context * context,
         }
 
         /* Apply the magnetic deflection. */
-        int rotated = 0;
         if ((rLarmor > 0.) || (context_->step_rLarmor > 0.)) {
                 const double u[3] = { direction[0], direction[1],
                         direction[2] };
@@ -5207,7 +5203,6 @@ enum pumas_return step_transport(struct pumas_context * context,
                 direction[0] *= norm;
                 direction[1] *= norm;
                 direction[2] *= norm;
-                rotated = 1;
         }
 
         /* Apply the multiple scattering. */
@@ -5219,19 +5214,6 @@ enum pumas_return step_transport(struct pumas_context * context,
                         ct = 1. + ilb1 * log(context->random(context));
                 while (ct < -1.);
                 step_rotate_direction(context, state, ct);
-                rotated = 1;
-        }
-
-        if (event & PUMAS_EVENT_MEDIUM) {
-                /* Get the geometric step length in the new medium. */
-                *step_max_medium = context->medium(context, state, &end_medium);
-                if (*step_max_medium > 0.) *step_max_medium += 0.5 * STEP_MIN;
-        } else if (!event && rotated && (*step_max_medium > 0.)) {
-                /* Update the geometric step length if the particle was
-                 * rotated.
-                 */
-                *step_max_medium = context->medium(context, state, NULL);
-                if (*step_max_medium > 0.) *step_max_medium += 0.5 * STEP_MIN;
         }
 
         return PUMAS_RETURN_SUCCESS;
@@ -10231,8 +10213,8 @@ enum pumas_return _pumas_tabulate(struct tabulation_data * data)
             "                %7.4lf %7.4lf %7.4lf %7.4lf %6.1lf "
             "%7.4lf %.2lf\n",
             m->a, m->k, m->x_0, m->x_1, m->I * 1E+09, m->Cbar, m->delta0);
-        fprintf(stream, "\n *** Table generated with PUMAS v%d.%d ***\n\n",
-            PUMAS_VERSION, PUMAS_SUBVERSION);
+        fprintf(stream, "\n *** Table generated with PUMAS v%.2f ***\n\n",
+            PUMAS_VERSION);
         fprintf(stream,
             "      T         p     Ionization  brems     pair     "
             "photonuc  Radloss    dE/dx   CSDA Range  delta   beta\n");

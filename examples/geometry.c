@@ -116,8 +116,9 @@ static struct pumas_medium media[2] = { { 0, &locals_rock },
 /* A simple medium with a flat rock layer and a flat atmosphere */
 static double rock_thickness = 0.;
 
-static double medium2(struct pumas_context * context,
-    struct pumas_state * state, struct pumas_medium ** medium_ptr)
+static void medium2(struct pumas_context * context,
+    struct pumas_state * state, struct pumas_medium ** medium_ptr,
+    double * step_ptr)
 {
         /* Check the muon position and direction */
         const double z = state->position[2];
@@ -154,7 +155,7 @@ static double medium2(struct pumas_context * context,
                 step = -1.;
         }
 
-        return step;
+        if (step_ptr != NULL) *step_ptr = step;
 }
 
 /* A basic Pseudo Random Number Generator (PRNG) providing a uniform

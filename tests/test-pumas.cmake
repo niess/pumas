@@ -7,6 +7,7 @@ include ("tests/libcheck.cmake")
 include ("tests/materials.cmake")
 
 add_executable (test-pumas EXCLUDE_FROM_ALL "tests/test-pumas.c")
+target_compile_definitions (test-pumas PRIVATE -DPUMAS_VERSION=${PUMAS_VERSION})
 add_dependencies (test-pumas LibCheck)
 target_link_libraries (test-pumas check pumas)
 
