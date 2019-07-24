@@ -1084,7 +1084,9 @@ static struct {
         int uniform;
         double magnet[3];
         double last_position[3];
-} geometry = {1, {0., 0., 0.}, {-1., 1., -1.}};
+        double position_rt[3];
+        double direction_rt[3];
+} geometry = {1, {0., 0., 0.}, {-1., 1., -1.}, {0., 0., 0.}, {0., 0., 0.}};
 
 static double rock_locals(struct pumas_medium * medium,
     struct pumas_state * state, struct pumas_locals * locals)
@@ -1118,8 +1120,40 @@ static void geometry_medium(struct pumas_context * context,
     struct pumas_state * state, struct pumas_medium ** medium_ptr,
     double * step_ptr)
 {
+        /* Cache the position for checking the locals API */
         memcpy(geometry.last_position, state->position,
             sizeof geometry.last_position);
+
+        if ((medium_ptr == NULL) && (step_ptr == NULL))
+                return;
+
+        if (step_ptr == NULL) {
+                /* This is a pure location call. Let us check that the
+                 * point is along the last ray tracing call
+                 */
+                const double r[3] = {
+                    state->position[0] - geometry.position_rt[0],
+                    state->position[1] - geometry.position_rt[1],
+                    state->position[2] - geometry.position_rt[2] };
+                const double * const u = geometry.direction_rt;
+                double det, tmp;
+                det = fabs(r[1] * u[2] - r[2] * u[1]);
+                tmp = fabs(r[2] * u[0] - r[0] * u[2]);
+                if (tmp > det) det  = tmp;
+                tmp = fabs(r[0] * u[1] - r[1] * u[0]);
+                if (tmp > det) det  = tmp;
+                if (det > FLT_EPSILON) {
+                        ck_assert_double_le(det, FLT_EPSILON);
+                }
+        } else {
+                /* Cache the current point for validation of subsequent
+                 * location calls.
+                 */
+                memcpy(geometry.position_rt, state->position,
+                    sizeof geometry.position_rt);
+                memcpy(geometry.direction_rt, state->direction,
+                    sizeof geometry.direction_rt);
+        }
 
         static struct pumas_medium media[2] = {
                 {0, &rock_locals}, {1, &air_locals}};
@@ -1209,7 +1243,8 @@ START_TEST (test_lossless_straight)
         enum pumas_event event_data, * event;
         struct pumas_medium * media_data[2], ** media;
         struct pumas_medium * rock;
-        geometry_medium(context, state, &rock, NULL);
+        double tmp;
+        geometry_medium(context, state, &rock, &tmp);
 
         double ctau, mu;
         pumas_particle(NULL, &ctau, &mu);
@@ -1443,9 +1478,10 @@ START_TEST (test_lossless_geometry)
 
         geometry.uniform = 0;
         initialise_state();
-        geometry_medium(context, state, &rock, NULL);
+        double tmp;
+        geometry_medium(context, state, &rock, &tmp);
         state->position[2] = 0.5 * (0.5 * TEST_ROCK_DEPTH + TEST_MAX_ALTITUDE);
-        geometry_medium(context, state, &air, NULL);
+        geometry_medium(context, state, &air, &tmp);
 
         /* Test the initially out of world case */
         state->position[2] = 2 * TEST_MAX_ALTITUDE;
@@ -1571,7 +1607,8 @@ START_TEST (test_csda_straight)
         enum pumas_event event_data, * event;
         struct pumas_medium * media_data[2], ** media;
         struct pumas_medium * rock;
-        geometry_medium(context, state, &rock, NULL);
+        double tmp;
+        geometry_medium(context, state, &rock, &tmp);
 
         double ctau;
         pumas_particle(NULL, &ctau, NULL);
@@ -2368,7 +2405,8 @@ START_TEST (test_csda_record)
         pumas_particle(NULL, &ctau, NULL);
 
         struct pumas_medium * rock;
-        geometry_medium(context, state, &rock, NULL);
+        double tmp;
+        geometry_medium(context, state, &rock, &tmp);
 
         pumas_recorder_create(&recorder, 0);
         context->recorder = recorder;
@@ -2478,9 +2516,10 @@ START_TEST (test_csda_geometry)
 
         geometry.uniform = 0;
         initialise_state();
-        geometry_medium(context, state, &rock, NULL);
+        double tmp;
+        geometry_medium(context, state, &rock, &tmp);
         state->position[2] = 0.5 * (0.5 * TEST_ROCK_DEPTH + TEST_MAX_ALTITUDE);
-        geometry_medium(context, state, &air, NULL);
+        geometry_medium(context, state, &air, &tmp);
 
         /* Test the initially out of world case */
         state->position[2] = 2 * TEST_MAX_ALTITUDE;
@@ -2606,7 +2645,8 @@ START_TEST (test_hybrid_straight)
         enum pumas_event event_data, * event;
         struct pumas_medium * media_data[2], ** media;
         struct pumas_medium * rock;
-        geometry_medium(context, state, &rock, NULL);
+        double tmp;
+        geometry_medium(context, state, &rock, &tmp);
 
         double ctau;
         pumas_particle(NULL, &ctau, NULL);
@@ -3403,7 +3443,8 @@ START_TEST (test_hybrid_record)
         pumas_particle(NULL, &ctau, NULL);
 
         struct pumas_medium * rock;
-        geometry_medium(context, state, &rock, NULL);
+        double tmp;
+        geometry_medium(context, state, &rock, &tmp);
 
         pumas_recorder_create(&recorder, 0);
         context->recorder = recorder;
@@ -3554,7 +3595,8 @@ START_TEST (test_detailed_straight)
         enum pumas_event event_data, * event;
         struct pumas_medium * media_data[2], ** media;
         struct pumas_medium * rock;
-        geometry_medium(context, state, &rock, NULL);
+        double tmp;
+        geometry_medium(context, state, &rock, &tmp);
 
         double ctau;
         pumas_particle(NULL, &ctau, NULL);
