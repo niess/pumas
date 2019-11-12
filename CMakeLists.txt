@@ -1,7 +1,7 @@
 cmake_minimum_required (VERSION 3.6.3)
 project (PUMAS
     LANGUAGES C
-    VERSION 0.14
+    VERSION 0.15
 )
 
 
@@ -15,8 +15,6 @@ endif ()
 if (NOT BUILD_SHARED_LIBS)
     set (BUILD_SHARED_LIBS TRUE CACHE BOOL "Build the library as shared")
 endif ()
-
-option (PUMAS_BUILD_TABULATE "Build the pumas-tabulate utility" OFF)
 
 option (PUMAS_BUILD_EXAMPLES "Build the pumas example binaries" OFF)
 
@@ -41,10 +39,6 @@ target_include_directories (pumas PUBLIC "${PROJECT_SOURCE_DIR}/include")
 target_compile_definitions (pumas PRIVATE ${PUMAS_API} -DPUMAS_VERSION=${PUMAS_VERSION})
 target_link_libraries (pumas m)
 
-if (PUMAS_BUILD_TABULATE)
-    target_compile_definitions (pumas PRIVATE "-D_BUILD_TABULATE")
-endif ()
-
 if (PUMAS_USE_GDB)
         target_compile_definitions (pumas PRIVATE "-DGDB_MODE")
 endif ()
@@ -56,15 +50,6 @@ if (WIN32)
 else ()
     install (TARGETS pumas DESTINATION lib)
     install (FILES include/pumas.h DESTINATION include)
-endif ()
-
-
-# Build and install rules for the tabulate utility, if enabled
-if (PUMAS_BUILD_TABULATE)
-    add_executable (pumas-tabulate src/pumas-tabulate.c src/pumas-tabulate.h)
-    target_compile_definitions (pumas-tabulate PRIVATE ${PUMAS_API})
-    target_link_libraries (pumas-tabulate pumas)
-    install (TARGETS pumas-tabulate DESTINATION ${PUMAS_BIN})
 endif ()
 
 

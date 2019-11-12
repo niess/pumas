@@ -45,7 +45,7 @@
 
 /* For the versioning. */
 #ifndef PUMAS_VERSION
-#define PUMAS_VERSION 0.14
+#define PUMAS_VERSION 0.15
 #endif
 
 /* Some tuning factors as macros. */
@@ -9929,14 +9929,12 @@ void math_svdsol(int m, int n, double * b, double * u, double * w, double * v,
         }
 }
 
-#ifdef _BUILD_TABULATE
-/*
- * Low level routines for computing energy loss tabulations.
+/**
+ * Routines for computing energy loss tabulations.
  */
-#include "pumas-tabulate.h"
 
-/* Dry mode initialisation, without loading the energy loss tables. */
-enum pumas_return _pumas_initialise_dry(
+/** Tabulation mode initialisation, without loading the energy loss tables. */
+enum pumas_return pumas_tabulation_initialise(
     enum pumas_particle particle, const char * mdf_path)
 {
         return _initialise(particle, mdf_path, NULL, 1);
@@ -9944,24 +9942,24 @@ enum pumas_return _pumas_initialise_dry(
 
 /* The density effect for the electronic energy loss. */
 static void electronic_density_effect(
-    struct tabulation_material * m, double kinetic)
+    struct pumas_tabulation_material * m, double kinetic)
 {
         const double c = 2. * log(10.);
         const double r = kinetic / s_shared->mass;
         const double x = 0.5 * log10(r * (r + 2.));
-        if (x < m->x_0)
+        if (x < m->x0)
                 m->delta = m->delta0 > 0. ?
-                    m->delta0 * pow(10., 2. * (x - m->x_0)) :
+                    m->delta0 * pow(10., 2. * (x - m->x0)) :
                     0.;
-        else if (x < m->x_1)
-                m->delta = c * x - m->Cbar + m->a * pow(m->x_1 - x, m->k);
+        else if (x < m->x1)
+                m->delta = c * x - m->Cbar + m->a * pow(m->x1 - x, m->k);
         else
                 m->delta = c * x - m->Cbar;
 }
 
 /* The average energy loss from atomic electrons. */
 static double electronic_energy_loss(
-    struct tabulation_material * m, double kinetic)
+    struct pumas_tabulation_material * m, double kinetic)
 {
         /* Kinematic factors. */
         const double E = kinetic + s_shared->mass;
@@ -9988,10 +9986,19 @@ static double electronic_energy_loss(
                 1. + 0.125 * Qmax * Qmax / P2 + Delta);
 }
 
+/* Container for atomic element tabulation data */
+struct tabulation_element {
+        /* The API proxy */
+        struct pumas_tabulation_element api;
+        /* Placeholder for tabulation data */
+        double data[];
+};
+
 static void tabulate_element(
     struct tabulation_element * data, int n_kinetics, double * kinetic)
 {
-        const struct atomic_element * element = s_shared->element[data->index];
+        const struct atomic_element * element =
+            s_shared->element[data->api.index];
 
         /* Loop over the kinetic energy values. */
         double * v;
@@ -10012,21 +10019,22 @@ static void tabulate_element(
  * Create a new energy loss table for an element and add it to the stack of
  * temporary data.
  */
-static struct tabulation_element * tabulation_element_create(
-    struct tabulation_data * data, int element)
+static struct pumas_tabulation_element * tabulation_element_create(
+    struct pumas_tabulation_data * data, int element)
 {
         /* Allocate memory for the new element. */
-        struct tabulation_element * e =
-            allocate(sizeof(*e) + 3 * data->n_kinetics * sizeof(*e->data));
+        struct pumas_tabulation_element * e = allocate(
+            sizeof(struct tabulation_element) +
+            3 * data->n_kinetics * sizeof(double));
         if (e == NULL) return NULL;
         e->index = element;
         e->fraction = 0.;
 
         /* Add the element's data on top of the stack. */
-        if (data->e_stack != NULL) data->e_stack->next = e;
-        e->prev = data->e_stack;
+        if (data->elements != NULL) data->elements->next = e;
+        e->prev = data->elements;
         e->next = NULL;
-        data->e_stack = e;
+        data->elements = e;
 
         return e;
 }
@@ -10035,22 +10043,23 @@ static struct tabulation_element * tabulation_element_create(
  * Get the energy loss table for an element from the temporary data and
  * put it on top of the stack.
  */
-static struct tabulation_element * tabulation_element_get(
-    struct tabulation_data * data, int element)
+static struct pumas_tabulation_element * tabulation_element_get(
+    struct pumas_tabulation_data * data, int element)
 {
-        struct tabulation_element * e;
-        for (e = data->e_stack; e != NULL; e = e->prev) {
+        struct pumas_tabulation_element * e;
+        for (e = data->elements; e != NULL; e = e->prev) {
                 if (e->index == element) {
-                        struct tabulation_element * next = e->next;
+                        struct pumas_tabulation_element * next = e->next;
                         if (next != NULL) {
                                 /* Put the element on top of the stack. */
-                                struct tabulation_element * prev = e->prev;
+                                struct pumas_tabulation_element * prev =
+                                    e->prev;
                                 if (prev != NULL) prev->next = next;
                                 next->prev = prev;
-                                data->e_stack->next = e;
-                                e->prev = data->e_stack;
+                                data->elements->next = e;
+                                e->prev = data->elements;
                                 e->next = NULL;
-                                data->e_stack = e;
+                                data->elements = e;
                         }
                         return e;
                 }
@@ -10061,31 +10070,11 @@ static struct tabulation_element * tabulation_element_get(
 }
 
 /**
- * Tabulate the energy loss for the material on top of the temporary
- * material's stack.
- *
- * @param data    Handle for the temporary data.
- * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
- * code is returned as detailed below.
- *
- * On success the corresponding material data are dropped and the stack is
- * updated.
- *
- * __Warnings__
- *
- * This function is **not** thread safe.
- *
- * __Error codes__
- *
- *     PUMAS_RETURN_IO_ERROR        The output file already exists.
- *
- *     PUMAS_RETURN_MEMORY_ERROR    Some memory couldn't be allocated.
- *
- *     PUMAS_RETURN_PATH_ERROR      The output file could not be created.
+ * Tabulate the energy loss for the given material and kinetic energies.
  */
-enum pumas_return _pumas_tabulate(struct tabulation_data * data)
+enum pumas_return pumas_tabulation_tabulate(struct pumas_tabulation_data * data)
 {
-        struct tabulation_material * m = data->m_stack;
+        struct pumas_tabulation_material * m = &data->material;
 
         /* Compute the mean excitation energy, if not provided. */
         if (m->I <= 0.) {
@@ -10113,38 +10102,38 @@ enum pumas_return _pumas_tabulate(struct tabulation_data * data)
                 m->Cbar = 2. * log(m->I / hwp);
                 if (m->state == TABULATION_STATE_GAZ) {
                         if (m->Cbar < 10.) {
-                                m->x_0 = 1.6, m->x_1 = 4.;
+                                m->x0 = 1.6, m->x1 = 4.;
                         } else if (m->Cbar < 10.5) {
-                                m->x_0 = 1.7, m->x_1 = 4.;
+                                m->x0 = 1.7, m->x1 = 4.;
                         } else if (m->Cbar < 11.) {
-                                m->x_0 = 1.8, m->x_1 = 4.;
+                                m->x0 = 1.8, m->x1 = 4.;
                         } else if (m->Cbar < 11.5) {
-                                m->x_0 = 1.9, m->x_1 = 4.;
+                                m->x0 = 1.9, m->x1 = 4.;
                         } else if (m->Cbar < 12.25) {
-                                m->x_0 = 2.0, m->x_1 = 4.;
+                                m->x0 = 2.0, m->x1 = 4.;
                         } else if (m->Cbar < 13.804) {
-                                m->x_0 = 2.0, m->x_1 = 5.;
+                                m->x0 = 2.0, m->x1 = 5.;
                         } else {
-                                m->x_0 = 0.326 * m->Cbar - 1.5;
-                                m->x_1 = 5.0;
+                                m->x0 = 0.326 * m->Cbar - 1.5;
+                                m->x1 = 5.0;
                         }
                 } else {
                         if (m->I < 100.E-09) {
-                                m->x_1 = 2.;
+                                m->x1 = 2.;
                                 if (m->Cbar < 3.681)
-                                        m->x_0 = 0.2;
+                                        m->x0 = 0.2;
                                 else
-                                        m->x_0 = 0.326 * m->Cbar - 1.;
+                                        m->x0 = 0.326 * m->Cbar - 1.;
                         } else {
-                                m->x_1 = 3.;
+                                m->x1 = 3.;
                                 if (m->Cbar < 5.215)
-                                        m->x_0 = 0.2;
+                                        m->x0 = 0.2;
                                 else
-                                        m->x_0 = 0.326 * m->Cbar - 1.5;
+                                        m->x0 = 0.326 * m->Cbar - 1.5;
                         }
                 }
-                const double dx = m->x_1 - m->x_0;
-                m->a = (m->Cbar - 2. * log(10.) * m->x_0) / (dx * dx * dx);
+                const double dx = m->x1 - m->x0;
+                m->a = (m->Cbar - 2. * log(10.) * m->x0) / (dx * dx * dx);
         }
 
         /*
@@ -10160,14 +10149,15 @@ enum pumas_return _pumas_tabulate(struct tabulation_data * data)
                  * Get the requested element's data and put them on top of
                  * the stack for further usage.
                  */
-                struct tabulation_element * e =
+                struct pumas_tabulation_element * e =
                     tabulation_element_get(data, component->element);
 
                 if (e == NULL) {
                         /* Create and tabulate the new element. */
                         e = tabulation_element_create(data, component->element);
                         if (e == NULL) return PUMAS_RETURN_MEMORY_ERROR;
-                        tabulate_element(e, data->n_kinetics, data->kinetic);
+                        tabulate_element((struct tabulation_element *)e,
+                            data->n_kinetics, data->kinetic);
                 }
 
                 /* Set the fraction in the current material. */
@@ -10213,7 +10203,7 @@ enum pumas_return _pumas_tabulate(struct tabulation_data * data)
         fprintf(stream,
             "                %7.4lf %7.4lf %7.4lf %7.4lf %6.1lf "
             "%7.4lf %.2lf\n",
-            m->a, m->k, m->x_0, m->x_1, m->I * 1E+09, m->Cbar, m->delta0);
+            m->a, m->k, m->x0, m->x1, m->I * 1E+09, m->Cbar, m->delta0);
         fprintf(stream, "\n *** Table generated with PUMAS v%.2f ***\n\n",
             PUMAS_VERSION);
         fprintf(stream,
@@ -10234,12 +10224,12 @@ enum pumas_return _pumas_tabulate(struct tabulation_data * data)
                 memset(brad, 0x0, sizeof(brad));
                 struct tabulation_element * e;
                 int iel;
-                for (iel = 0, e = data->e_stack;
+                for (iel = 0, e = (struct tabulation_element *)data->elements;
                      iel < s_shared->elements_in[m->index];
-                     iel++, e = e->prev) {
+                     iel++, e = (struct tabulation_element *)e->api.prev) {
                         int j;
                         for (j = 0; j < N_DEL_PROCESSES - 1; j++)
-                                brad[j] += e->fraction *
+                                brad[j] += e->api.fraction *
                                     e->data[(N_DEL_PROCESSES - 1) * i + j];
                 }
 
@@ -10271,4 +10261,17 @@ enum pumas_return _pumas_tabulate(struct tabulation_data * data)
         fclose(stream);
         return PUMAS_RETURN_SUCCESS;
 }
-#endif
+
+/**
+ * Clear the temporary memory used for the tabulation of materials.
+ */
+void pumas_tabulation_clear(struct pumas_tabulation_data * data)
+{
+        struct pumas_tabulation_element * e;
+        for (e = data->elements; e != NULL;) {
+                struct pumas_tabulation_element * prev = e->prev;
+                deallocate(e);
+                e = prev;
+        }
+        data->elements = NULL;
+}

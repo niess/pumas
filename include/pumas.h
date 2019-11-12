@@ -521,7 +521,8 @@ struct pumas_context {
  *
  *     PUMAS_RETURN_UNDEFINED_MDF           No MDF was provided.
  *
- *     PUMAS_RETURN_UNKNOWN_ELEMENT         An elemnt in the MDF wasn't defined.
+ *     PUMAS_RETURN_UNKNOWN_ELEMENT         An element in the MDF wasn't
+ * defined.
  *
  *     PUMAS_RETURN_UNKNOWN_MATERIAL        An material in the MDF wasn't
  * defined.
@@ -1249,6 +1250,200 @@ typedef void pumas_deallocate_cb(void * ptr);
  * This function is **not** thread safe.
  */
 PUMAS_API void pumas_memory_deallocator(pumas_deallocate_cb * deallocator);
+
+/** Physical states of materials. */
+enum pumas_tabulation_state {
+        /** Undefined physical state. */
+        TABULATION_STATE_UNKNOWN = 0,
+        /** Solid physical state. */
+        TABULATION_STATE_SOLID,
+        /** Liquid physical state. */
+        TABULATION_STATE_LIQUID,
+        /** Gaz physical state. */
+        TABULATION_STATE_GAZ,
+        /** The number of physical states. */
+        TABULATION_N_STATES
+};
+
+/**
+ * Handle for an atomic element within a material.
+ *
+ * This structure is a proxy exposing some data of an atomic element within
+ * the material last processed by `pumas_tabulation_tabulate`.
+ */
+struct pumas_tabulation_element {
+        /** Linked list pointer to the previous element. */
+        struct pumas_tabulation_element * prev;
+        /** Linked list pointer to the next element. */
+        struct pumas_tabulation_element * next;
+        /** The element index. */
+        int index;
+        /** The mass fraction of the element in the current material. */
+        double fraction;
+};
+
+/**
+ * Description of a base material to tabulate.
+ *
+ * This structure allows to specify the physical properties of a base material
+ * in order to tabulate its energy loss using the `pumas_tabulation_tabulate`
+ * function.
+ *
+ * **Note** that the material index *must* be set, e.g. using the
+ * `pumas_material_index` function. If the Sternheimer coefficients are not
+ * explicitly provided there are computed from the density using the
+ * Sternheimer and Peierls recipe.
+ *
+ * The density effect parameter *delta* is obtained by calling the
+ * `pumas_tabulation_tabulate` function.
+ */
+struct pumas_tabulation_material {
+        /** The material index. */
+        int index;
+        /** The material density. */
+        double density;
+        /** The mean excitation energy. */
+        double I;
+        /** The material state. */
+        enum pumas_tabulation_state state;
+        /** Sternheimer *a* Coefficient. */
+        double a;
+        /** Sternheimer *k* Coefficient. */
+        double k;
+        /** Sternheimer *x0* Coefficient. */
+        double x0;
+        /** Sternheimer *x1* Coefficient. */
+        double x1;
+        /** Sternheimer *Cbar* Coefficient. */
+        double Cbar;
+        /** Sternheimer *delta0* Coefficient. */
+        double delta0;
+        /** The resulting density effect. */
+        double delta;
+};
+
+/**
+ * Handle for tabulation data.
+ *
+ * This structure gathers data required for tabulating the energy loss of
+ * materials with the `pumas_tabulation_tabulate` function.
+ */
+struct pumas_tabulation_data {
+        /** The number of kinetic energy values to tabulate. */
+        int n_kinetics;
+        /** Array of kinetic energy values to tabulate. */
+        double * kinetic;
+        /** Flag to enable overwriting an existing energy loss file. */
+        int overwrite;
+        /** Path to a directory where the tabulation should be written. */
+        char * outdir;
+        /** Properties of the material to tabulate */
+        struct pumas_tabulation_material material;
+        /** Path to energy loss file of the last tabulated material. */
+        char * path;
+        /** List of atomic elements contained in the tabulated material(s). */
+        struct pumas_tabulation_element * elements;
+};
+
+/**
+ * Tabulate the energy loss for the given material and set of energies.
+ *
+ * @param data    The tabulation settings.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
+ *
+ * This function allows to generate an energy loss file for a given material and
+ * a set of kinetic energy values. **Note** that the library must have been
+ * initialised with the `pumas_tabulation_initialise` function. The material
+ * atomic composition is specified by the MDF loaded at initialisation.
+ * Additional Physical properties can be specified by filling the input *data*
+ * structure.
+ *
+ * __Warnings__
+ *
+ * This function is **not** thread safe.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_IO_ERROR        The output file already exists.
+ *
+ *     PUMAS_RETURN_MEMORY_ERROR    Some memory couldn't be allocated.
+ *
+ *     PUMAS_RETURN_PATH_ERROR      The output file could not be created.
+ *
+ */
+PUMAS_API enum pumas_return pumas_tabulation_tabulate(
+    struct pumas_tabulation_data * data);
+
+/**
+ * Clear the temporary memory used for the tabulation of materials.
+ *
+ * @param data    The tabulation data.
+ *
+ * This function allows to clear any temporary memory allocated by the
+ * `pumas_tabulation_tabulate` function.
+ *
+ * __Warnings__
+ *
+ * This function is **not** thread safe.
+ */
+PUMAS_API void pumas_tabulation_clear(struct pumas_tabulation_data * data);
+
+/**
+ * Initialise the PUMAS library in tabulation mode.
+ *
+ * @param particle     The type of the particle to transport.
+ * @param mdf_path     The path to a Material Description File (MDF) or `NULL`.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
+ *
+ * Initialise the PUMAS library in reduced mode using a MDF. The materials data
+ * are not loaded. This mode is not suitable for particle's transport. It is
+ * meant for pre-computation of the material tables using the
+ * `pumas_tabulation_tabulate` function. **Note** that *mdf_path* can be `NULL`
+ * Then it is read from the `PUMAS_MDF` environment variable.
+ *
+ * Call `pumas_finalise` in order to unload the library and release allocated
+ * memory. **Note** that in addition any temporary memory allocated by
+ * `pumas_tabulation_tabulate` must be explictly freed by calling the
+ * `pumas_tabulation_clear` function.
+ *
+ * **Warnings** : this function is not thread safe. Trying to (re-)initialise an
+ * already initialised library will generate an error. `pumas_finalise` must
+ * be called first.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_END_OF_FILE             And unexpected EOF occured.
+ *
+ *     PUMAS_RETURN_FORMAT_ERROR            A file has a wrong format.
+ *
+ *     PUMAS_RETURN_INCOMPLETE_FILE         There are missing entries in
+ * the MDF.
+ *
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The library is already initialised.
+ *
+ *     PUMAS_RETURN_IO_ERROR                A file couldn't be read.
+ *
+ *     PUMAS_RETURN_MEMORY_ERROR            Couldn't allocate memory.
+ *
+ *     PUMAS_RETURN_PATH_ERROR              A file couldn't be opened.
+ *
+ *     PUMAS_RETURN_TOO_LONG                Some XML node in the MDF is
+ * too long.
+ *
+ *     PUMAS_RETURN_UNDEFINED_MDF           No MDF was provided.
+ *
+ *     PUMAS_RETURN_UNKNOWN_ELEMENT         An element in the MDF wasn't
+ * defined.
+ *
+ *     PUMAS_RETURN_UNKNOWN_MATERIAL        An material in the MDF wasn't
+ * defined.
+ *
+ *     PUMAS_RETURN_UNKNOWN_PARTICLE        The given type is not supported.
+ */
+PUMAS_API enum pumas_return pumas_tabulation_initialise(
+    enum pumas_particle particle, const char * mdf_path);
 
 #ifdef __cplusplus
 }
