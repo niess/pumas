@@ -10039,7 +10039,7 @@ static struct tabulation_element * tabulation_element_get(
     struct tabulation_data * data, int element)
 {
         struct tabulation_element * e;
-        for (e = data->e_stack; e != NULL; e = e->next) {
+        for (e = data->e_stack; e != NULL; e = e->prev) {
                 if (e->index == element) {
                         struct tabulation_element * next = e->next;
                         if (next != NULL) {
@@ -10049,6 +10049,7 @@ static struct tabulation_element * tabulation_element_get(
                                 next->prev = prev;
                                 data->e_stack->next = e;
                                 e->prev = data->e_stack;
+                                e->next = NULL;
                                 data->e_stack = e;
                         }
                         return e;
