@@ -4504,6 +4504,79 @@ START_TEST (test_tau_csda)
 END_TEST
 
 
+START_TEST (test_tabulation)
+{
+        pumas_tabulation_initialise(
+            PUMAS_PARTICLE_MUON, "materials/mdf/standard.xml");
+
+        double kinetic[2] = { 1E-01, 1E+01 };
+        struct pumas_tabulation_data data = {
+                .n_kinetics = 2,
+                .kinetic = kinetic,
+                .overwrite = 1,
+                .outdir = ".",
+                .material = {
+                        .index = 0,
+                        .density = 2.65E+03,
+                        .state = PUMAS_TABULATION_STATE_SOLID
+                }
+        };
+
+        pumas_tabulation_tabulate(&data);
+
+        ck_assert_str_eq(data.path, "./standard-rock.txt");
+
+        void * rock_element = data.elements;
+        ck_assert_ptr_nonnull(rock_element);
+        ck_assert_ptr_null(data.elements->prev);
+        ck_assert_ptr_null(data.elements->next);
+        ck_assert_int_eq(data.elements->index, 4);
+        ck_assert_double_eq(data.elements->fraction, 1);
+
+        ck_assert_double_eq_tol(data.material.I, 136.4E-09, 10);
+        ck_assert_double_eq(data.material.x0, 0.2);
+        ck_assert_double_eq(data.material.x1, 3);
+
+        data.material.index = 1;
+        data.material.density = 1E+03;
+        data.material.state = PUMAS_TABULATION_STATE_LIQUID;
+        data.material.a = 0;
+        pumas_tabulation_tabulate(&data);
+
+        ck_assert_ptr_nonnull(data.elements);
+        ck_assert_ptr_nonnull(data.elements->prev);
+        ck_assert_ptr_null(data.elements->next);
+        ck_assert_int_eq(data.elements->index, 3);
+        ck_assert_double_eq_tol(data.elements->fraction, 0.888106, 6);
+        ck_assert_ptr_eq(data.elements->prev->next, data.elements);
+        ck_assert_ptr_eq(data.elements->prev->prev, rock_element);
+        ck_assert_int_eq(data.elements->prev->index, 0);
+        ck_assert_double_eq_tol(data.elements->fraction, 0.111894, 6);
+
+        data.material.index = 0;
+        data.material.density = 1.;
+        data.material.state = PUMAS_TABULATION_STATE_GAZ;
+        data.material.a = 0;
+        pumas_tabulation_tabulate(&data);
+
+        ck_assert_ptr_eq(data.elements, rock_element);
+        ck_assert_ptr_nonnull(data.elements->prev);
+        ck_assert_ptr_null(data.elements->next);
+        ck_assert_int_eq(data.elements->index, 4);
+        ck_assert_double_eq(data.elements->fraction, 1);
+
+        ck_assert_double_eq_tol(data.material.I, 136.4E-09, 10);
+        ck_assert_double_eq(data.material.x0, 1.8);
+        ck_assert_double_eq(data.material.x1, 4);
+
+        pumas_tabulation_clear(&data);
+        ck_assert_ptr_null(data.elements);
+
+        pumas_finalise();
+}
+END_TEST
+
+
 Suite * create_suite(void)
 {
         const int timeout = 60;
@@ -4573,6 +4646,12 @@ Suite * create_suite(void)
         tcase_set_timeout(tc_tau, timeout);
         tcase_add_unchecked_fixture(tc_tau, tau_setup, tau_teardown);
         tcase_add_test(tc_tau, test_tau_csda);
+
+        /* The tabulation test case */
+        TCase * tc_tabulation = tcase_create("Tabulation");
+        suite_add_tcase(suite, tc_tabulation);
+        tcase_set_timeout(tc_tabulation, timeout);
+        tcase_add_test(tc_tabulation, test_tabulation);
 
         return suite;
 }

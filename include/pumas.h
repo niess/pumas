@@ -1254,15 +1254,15 @@ PUMAS_API void pumas_memory_deallocator(pumas_deallocate_cb * deallocator);
 /** Physical states of materials. */
 enum pumas_tabulation_state {
         /** Undefined physical state. */
-        TABULATION_STATE_UNKNOWN = 0,
+        PUMAS_TABULATION_STATE_UNKNOWN = 0,
         /** Solid physical state. */
-        TABULATION_STATE_SOLID,
+        PUMAS_TABULATION_STATE_SOLID,
         /** Liquid physical state. */
-        TABULATION_STATE_LIQUID,
+        PUMAS_TABULATION_STATE_LIQUID,
         /** Gaz physical state. */
-        TABULATION_STATE_GAZ,
+        PUMAS_TABULATION_STATE_GAZ,
         /** The number of physical states. */
-        TABULATION_N_STATES
+        PUMAS_TABULATION_N_STATES
 };
 
 /**
@@ -1293,9 +1293,6 @@ struct pumas_tabulation_element {
  * `pumas_material_index` function. If the Sternheimer coefficients are not
  * explicitly provided there are computed from the density using the
  * Sternheimer and Peierls recipe.
- *
- * The density effect parameter *delta* is obtained by calling the
- * `pumas_tabulation_tabulate` function.
  */
 struct pumas_tabulation_material {
         /** The material index. */
@@ -1318,8 +1315,6 @@ struct pumas_tabulation_material {
         double Cbar;
         /** Sternheimer *delta0* Coefficient. */
         double delta0;
-        /** The resulting density effect. */
-        double delta;
 };
 
 /**
@@ -1339,7 +1334,7 @@ struct pumas_tabulation_data {
         char * outdir;
         /** Properties of the material to tabulate */
         struct pumas_tabulation_material material;
-        /** Path to energy loss file of the last tabulated material. */
+        /** Path to the energy loss file of the last tabulated material. */
         char * path;
         /** List of atomic elements contained in the tabulated material(s). */
         struct pumas_tabulation_element * elements;

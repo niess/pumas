@@ -9942,24 +9942,24 @@ enum pumas_return pumas_tabulation_initialise(
 
 /* The density effect for the electronic energy loss. */
 static void electronic_density_effect(
-    struct pumas_tabulation_material * m, double kinetic)
+    const struct pumas_tabulation_material * m, double kinetic, double * delta)
 {
         const double c = 2. * log(10.);
         const double r = kinetic / s_shared->mass;
         const double x = 0.5 * log10(r * (r + 2.));
         if (x < m->x0)
-                m->delta = m->delta0 > 0. ?
+                *delta = m->delta0 > 0. ?
                     m->delta0 * pow(10., 2. * (x - m->x0)) :
                     0.;
         else if (x < m->x1)
-                m->delta = c * x - m->Cbar + m->a * pow(m->x1 - x, m->k);
+                *delta = c * x - m->Cbar + m->a * pow(m->x1 - x, m->k);
         else
-                m->delta = c * x - m->Cbar;
+                *delta = c * x - m->Cbar;
 }
 
 /* The average energy loss from atomic electrons. */
 static double electronic_energy_loss(
-    struct pumas_tabulation_material * m, double kinetic)
+    const struct pumas_tabulation_material * m, double kinetic, double * delta)
 {
         /* Kinematic factors. */
         const double E = kinetic + s_shared->mass;
@@ -9975,14 +9975,14 @@ static double electronic_energy_loss(
             5.8070487E-04 * (log(2. * E / s_shared->mass) - lQ / 3.) * lQ * lQ;
 
         /* Density effect. */
-        electronic_density_effect(m, kinetic);
+        electronic_density_effect(m, kinetic, delta);
 
         /* Bethe-Bloch equation. */
         return 0.307075E-04 * s_shared->material_ZoA[m->index] *
             (0.5 / beta2 *
                     (log(2. * ELECTRON_MASS * P2 * Qmax /
                          (s_shared->mass * s_shared->mass * m->I * m->I)) -
-                        m->delta) -
+                        *delta) -
                 1. + 0.125 * Qmax * Qmax / P2 + Delta);
 }
 
@@ -10100,7 +10100,7 @@ enum pumas_return pumas_tabulation_tabulate(struct pumas_tabulation_data * data)
                 const double hwp = 28.816E-09 *
                     sqrt(m->density * 1E-03 * s_shared->material_ZoA[m->index]);
                 m->Cbar = 2. * log(m->I / hwp);
-                if (m->state == TABULATION_STATE_GAZ) {
+                if (m->state == PUMAS_TABULATION_STATE_GAZ) {
                         if (m->Cbar < 10.) {
                                 m->x0 = 1.6, m->x1 = 4.;
                         } else if (m->Cbar < 10.5) {
@@ -10218,7 +10218,9 @@ enum pumas_return pumas_tabulation_tabulate(struct pumas_tabulation_data * data)
         int i;
         for (i = 0; i < data->n_kinetics; i++) {
                 /* Compute the electronic energy loss. */
-                double elec = electronic_energy_loss(m, data->kinetic[i]);
+                double delta;
+                double elec = electronic_energy_loss(
+                    m, data->kinetic[i], &delta);
 
                 double brad[N_DEL_PROCESSES - 1];
                 memset(brad, 0x0, sizeof(brad));
@@ -10253,7 +10255,7 @@ enum pumas_return pumas_tabulation_tabulate(struct pumas_tabulation_data * data)
                     "%.3lE %.3lE %.3lE %7.4lf %7.5lf\n",
                     data->kinetic[i] * MeV, p * MeV, elec * cmgs,
                     brad[0] * cmgs, brad[1] * cmgs, brad[2] * cmgs,
-                    radloss * cmgs, dedx * cmgs, X * MeV / cmgs, m->delta,
+                    radloss * cmgs, dedx * cmgs, X * MeV / cmgs, delta,
                     beta);
         }
 
