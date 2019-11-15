@@ -1,8 +1,7 @@
-cmake_minimum_required (VERSION 3.6.3)
-project (PUMAS
-    LANGUAGES C
-    VERSION 0.15
-)
+cmake_minimum_required (VERSION 2.8)
+project (PUMAS C)
+
+set (PUMAS_VERSION "0.15")
 
 
 # Build options

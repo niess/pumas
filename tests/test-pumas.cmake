@@ -17,7 +17,10 @@ else ()
         set (__args "")
 endif ()
 
-cmake_policy (SET CMP0037 OLD)
+if (${CMAKE_VERSION} VERSION_GREATER "3.0.0")
+    cmake_policy (SET CMP0037 OLD)
+endif ()
+
 if (${CMAKE_BUILD_TYPE} MATCHES "Test")
     # Add a target for test(s)
     add_custom_target (test DEPENDS test-pumas
