@@ -1,7 +1,10 @@
 cmake_minimum_required (VERSION 2.8)
 project (PUMAS C)
 
-set (PUMAS_VERSION "0.15")
+set (PUMAS_VERSION_MAJOR 0)
+set (PUMAS_VERSION_MINOR 15)
+set (PUMAS_VERSION_PATCH 0)
+set (PUMAS_VERSION_STRING ${PUMAS_VERSION_MAJOR}.${PUMAS_VERSION_MINOR}.${PUMAS_VERSION_PATCH})
 
 
 # Build options
@@ -33,9 +36,12 @@ endif ()
 
 # Build and install rules for the PUMAS library
 add_library (pumas src/pumas.c include/pumas.h)
-set_target_properties (pumas PROPERTIES VERSION ${PUMAS_VERSION})
+set_target_properties (pumas PROPERTIES
+    VERSION ${PUMAS_VERSION_STRING}
+    SOVERSION ${PUMAS_VERSION_MAJOR}
+)
 target_include_directories (pumas PUBLIC "${PROJECT_SOURCE_DIR}/include")
-target_compile_definitions (pumas PRIVATE ${PUMAS_API} -DPUMAS_VERSION=${PUMAS_VERSION})
+target_compile_definitions (pumas PRIVATE ${PUMAS_API} -DPUMAS_VERSION=${PUMAS_VERSION_MAJOR}.${PUMAS_VERSION_MINOR})
 target_link_libraries (pumas m)
 
 if (PUMAS_USE_GDB)
