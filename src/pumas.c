@@ -1378,7 +1378,7 @@ enum pumas_return pumas_load(FILE * stream)
         if (fread(&tag, sizeof(tag), 1, stream) != 1) goto error;
         if (tag != BINARY_DUMP_TAG) {
                 ERROR_REGISTER(PUMAS_RETURN_FORMAT_ERROR,
-                    "incomptible version of binary dump");
+                    "incompatible version of binary dump");
                 goto error;
         }
 
