@@ -3603,8 +3603,8 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
         context_->step_event = PUMAS_EVENT_NONE;
         context_->step_first = 1;
         context_->step_X_limit = (context->event & PUMAS_EVENT_LIMIT_KINETIC) ?
-            cel_grammage(context, scheme, material, context->kinetic_limit) :
-            0.;
+            cel_grammage(context, (scheme > PUMAS_SCHEME_NO_LOSS) ? scheme :
+            PUMAS_SCHEME_CSDA, material, context->kinetic_limit) : 0.;
         context_->step_invlb1 = 0;
         context_->step_rLarmor = 0.;
         memset(context_->step_uT, 0x0, 3 * sizeof(*(context_->step_uT)));
@@ -3782,10 +3782,13 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
                                 /* Update the kinetic limit converted
                                  * to grammage for this material.
                                  */
+                                enum pumas_scheme tmp_scheme =
+                                    scheme > PUMAS_SCHEME_NO_LOSS ?
+                                    scheme : PUMAS_SCHEME_CSDA;
                                 context_->step_X_limit =
                                     (context->event &
                                         PUMAS_EVENT_LIMIT_KINETIC) ?
-                                    cel_grammage(context, scheme, material,
+                                    cel_grammage(context, tmp_scheme, material,
                                         context->kinetic_limit) :
                                     0.;
 
