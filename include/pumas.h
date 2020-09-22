@@ -121,10 +121,8 @@ enum pumas_return {
         PUMAS_RETURN_INCOMPLETE_FILE,
         /** Some index is out of validity range. */
         PUMAS_RETURN_INDEX_ERROR,
-        /** The Physics is not/already initialised or a NULL pointer was
-         *  provided.
-         */
-        PUMAS_RETURN_INITIALISATION_ERROR,
+        /** The Physics is not initialised or a NULL pointer was provided. */
+        PUMAS_RETURN_PHYSICS_ERROR,
         /** An internal library error occured. */
         PUMAS_RETURN_INTERNAL_ERROR,
         /** Some read /write error occured. */
@@ -501,9 +499,7 @@ struct pumas_physics;
  * Call `pumas_physics_destroy` in order to unload the Physics and release the
  * corresponding alocated memory.
  *
- * **Warnings** : this function is not thread safe. Trying to (re-)initialise an
- * already initialised Physics will generate an error. `pumas_physics_destroy`
- * must be called first.
+ * **Warnings** : this function is not thread safe.
  *
  * __Error codes__
  *
@@ -514,13 +510,14 @@ struct pumas_physics;
  *     PUMAS_RETURN_INCOMPLETE_FILE         There are missing entries in
  * the MDF.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is already initialised.
- *
  *     PUMAS_RETURN_IO_ERROR                A file couldn't be read.
  *
  *     PUMAS_RETURN_MEMORY_ERROR            Couldn't allocate memory.
  *
  *     PUMAS_RETURN_PATH_ERROR              A file couldn't be opened.
+ *
+ *     PUMAS_RETURN_PHYSICS_ERROR           A `NULL` physics pointer was
+ * provided.
  *
  *     PUMAS_RETURN_TOO_LONG                Some XML node in the MDF is
  * too long.
@@ -542,7 +539,7 @@ PUMAS_API enum pumas_return pumas_physics_create(
     const char * mdf_path, const char * dedx_path);
 
 /**
- * Finalise the Physics.
+ * Destroy a Physics instance.
  *
  * @param physics      Handle for the Physics tables.
  *
@@ -573,7 +570,7 @@ PUMAS_API void pumas_physics_destroy(struct pumas_physics ** physics);
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics isn't initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  *
  *     PUMAS_RETURN_PATH_ERROR              The output stream in invalid (null).
  *
@@ -601,7 +598,7 @@ PUMAS_API enum pumas_return pumas_physics_dump(
  *     PUMAS_RETURN_FORMAT_ERROR            The binary dump is not compatible
  * with the current version.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  *
  *     PUMAS_RETURN_PATH_ERROR              The input stream in invalid (null).
  *
@@ -632,7 +629,7 @@ PUMAS_API enum pumas_return pumas_physics_load(
  *     PUMAS_RETURN_DENSITY_ERROR           A null or negative density was
  * encountered.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is not initalised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initalised.
  *
  *     PUMAS_RETURN_MEDIUM_ERROR            No propagation medium.
  *
@@ -668,7 +665,7 @@ PUMAS_API enum pumas_return pumas_context_transport(
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is not initalised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initalised.
  *
  *     PUMAS_RETURN_IO_ERROR                Couldn't write to *stream*.
  */
@@ -701,7 +698,7 @@ PUMAS_API int pumas_tag();
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is not initalised.
+ *     PUMAS_RETURN_PHYSICS_ERROR    The Physics is not initalised.
  */
 PUMAS_API enum pumas_return pumas_physics_particle(
     const struct pumas_physics * physics, enum pumas_particle * particle,
@@ -799,7 +796,7 @@ PUMAS_API enum pumas_return pumas_error_raise(void);
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics isn't initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  *
  *     PUMAS_RETURN_MEMORY_ERROR            Couldn't allocate memory.
  */
@@ -851,7 +848,7 @@ PUMAS_API const struct pumas_physics * pumas_context_physics_get(
  *     PUMAS_RETURN_INDEX_ERROR             The scheme of material index is
  * not valid.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_grammage(
     const struct pumas_physics * physics, enum pumas_scheme scheme,
@@ -877,7 +874,7 @@ PUMAS_API enum pumas_return pumas_physics_property_grammage(
  *     PUMAS_RETURN_INDEX_ERROR             The scheme of material index is
  * not valid.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_proper_time(
     const struct pumas_physics * physics, enum pumas_scheme scheme,
@@ -901,7 +898,7 @@ PUMAS_API enum pumas_return pumas_physics_property_proper_time(
  *
  *     PUMAS_RETURN_INDEX_ERROR             The material index is not valid.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_magnetic_rotation(
     const struct pumas_physics * physics, int material, double kinetic,
@@ -927,7 +924,7 @@ PUMAS_API enum pumas_return pumas_physics_property_magnetic_rotation(
  *     PUMAS_RETURN_INDEX_ERROR             The scheme of material index is
  * not valid.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_kinetic_energy(
     const struct pumas_physics * physics, enum pumas_scheme scheme,
@@ -952,7 +949,7 @@ PUMAS_API enum pumas_return pumas_physics_property_kinetic_energy(
  *     PUMAS_RETURN_INDEX_ERROR             The scheme of material index is
  * not valid.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_energy_loss(
     const struct pumas_physics * physics, enum pumas_scheme scheme,
@@ -977,7 +974,7 @@ PUMAS_API enum pumas_return pumas_physics_property_energy_loss(
  *
  *     PUMAS_RETURN_INDEX_ERROR             The material index is not valid.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  *
  *     PUMAS_RETURN_VALUE_ERROR             The MSC path length is infinite.
  */
@@ -1003,7 +1000,7 @@ PUMAS_API enum pumas_return pumas_physics_property_scattering_length(
  *
  *     PUMAS_RETURN_INDEX_ERROR             The material index is not valid.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_cross_section(
     const struct pumas_physics * physics, int material, double kinetic,
@@ -1022,9 +1019,9 @@ PUMAS_API enum pumas_return pumas_physics_property_cross_section(
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_INDEX_ERROR               The provided index isn't valid.
+ *     PUMAS_RETURN_INDEX_ERROR               The provided index is not valid.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR      The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR             The Physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_material_name(
     const struct pumas_physics * physics, int index, const char ** material);
@@ -1043,9 +1040,9 @@ PUMAS_API enum pumas_return pumas_physics_material_name(
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR      The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR             The Physics is not initialised.
  *
- *     PUMAS_RETURN_UNKNOWN_MATERIAL          The material isn't defined.
+ *     PUMAS_RETURN_UNKNOWN_MATERIAL          The material is not defined.
  */
 PUMAS_API enum pumas_return pumas_physics_material_index(
     const struct pumas_physics * physics, const char * material, int * index);
@@ -1088,9 +1085,9 @@ PUMAS_API int pumas_physics_composite_length(
  *     PUMAS_RETURN_DENSITY_ERROR             Some density value is null
  * or less.
  *
- *     PUMAS_RETURN_INDEX_ERROR               The provided index isn't valid.
+ *     PUMAS_RETURN_INDEX_ERROR               The provided index is not valid.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR      The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR             The Physics is not initialised.
  *
  *     PUMAS_RETURN_MEMORY_ERROR              Couldn't allocate memory.
  */
@@ -1117,9 +1114,9 @@ PUMAS_API enum pumas_return pumas_physics_composite_update(
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_INDEX_ERROR               The provided index isn't valid.
+ *     PUMAS_RETURN_INDEX_ERROR               The provided index is not valid.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR      The Physics isn't initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR             The Physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_composite_properties(
     const struct pumas_physics * physics, int index, double * density,
@@ -1149,7 +1146,7 @@ PUMAS_API enum pumas_return pumas_physics_composite_properties(
  *     PUMAS_RETURN_INDEX_ERROR             Some input index is not valid
  * (property, material or scheme).
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics isn't initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_table_value(
     const struct pumas_physics * physics, enum pumas_property property,
@@ -1188,7 +1185,7 @@ PUMAS_API int pumas_physics_table_length(const struct pumas_physics * physics);
  *     PUMAS_RETURN_INDEX_ERROR             Some input index is not valid
  * (property, material or scheme).
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics isn't initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  *
  *     PUMAS_RETURN_VALUE_ERROR             The provided value is out of the
  * table.
@@ -1470,9 +1467,7 @@ PUMAS_API void pumas_physics_tabulation_clear(
  * `pumas_physics_tabulate` must be explictly freed by calling the
  * `pumas_physics_tabulation_clear` function.
  *
- * **Warnings** : this function is not thread safe. Trying to (re-)initialise an
- * already initialised Physics will generate an error. `pumas_physics_destroy`
- * must be called first.
+ * **Warnings** : this function is not thread safe.
  *
  * __Error codes__
  *
@@ -1483,13 +1478,14 @@ PUMAS_API void pumas_physics_tabulation_clear(
  *     PUMAS_RETURN_INCOMPLETE_FILE         There are missing entries in
  * the MDF.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is already initialised.
- *
  *     PUMAS_RETURN_IO_ERROR                A file couldn't be read.
  *
  *     PUMAS_RETURN_MEMORY_ERROR            Couldn't allocate memory.
  *
  *     PUMAS_RETURN_PATH_ERROR              A file couldn't be opened.
+ *
+ *     PUMAS_RETURN_PHYSICS_ERROR           A `NULL` physics pointer was
+ * provided.
  *
  *     PUMAS_RETURN_TOO_LONG                Some XML node in the MDF is
  * too long.

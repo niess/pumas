@@ -99,7 +99,7 @@ int main(int narg, char * argv[])
         pumas_error_handler_set(&print_error);
 
         /* Load and pre-compute the given material data */
-        struct pumas_physics * physics = NULL;
+        struct pumas_physics * physics;
         enum pumas_return rc = load_pumas_materials(
             &physics, argv[1], argv[2], argv[3]);
 

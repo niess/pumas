@@ -91,14 +91,14 @@ START_TEST(test_api_error)
         ck_assert_ptr_null(error_data.caller);
 
         enum pumas_return rc = pumas_error_raise();
-        ck_assert_int_eq(rc, PUMAS_RETURN_INITIALISATION_ERROR);
+        ck_assert_int_eq(rc, PUMAS_RETURN_PHYSICS_ERROR);
         ck_assert_int_eq(error_data.rc, rc);
         ck_assert_ptr_eq(error_data.caller, &pumas_physics_material_index);
 
         /* Check that errors are enabled again */
         reset_error();
         pumas_physics_material_index(physics, NULL, NULL);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         /* Check that error catching can be disabled */
         reset_error();
@@ -107,7 +107,7 @@ START_TEST(test_api_error)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         pumas_error_catch(0);
         pumas_physics_material_index(physics, NULL, NULL);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
 /* Check the stringification of API functions */
 #define CHECK_STRING(function)                                                 \
@@ -243,17 +243,6 @@ START_TEST(test_api_init)
         dump_tau();
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
 
-        /* Check the re-initialisation error  */
-        reset_error();
-        pumas_physics_create(&physics, PUMAS_PARTICLE_MUON,
-            "materials/mdf/standard.xml", "materials/dedx/muon");
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
-
-        reset_error();
-        load_tau();
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
-        pumas_physics_destroy(&physics);
-
         /* Check the load */
         reset_error();
         load_tau();
@@ -274,7 +263,7 @@ START_TEST(test_api_init)
 
         pumas_physics_destroy(&physics);
         pumas_physics_particle(physics, NULL, NULL, NULL);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         reset_error();
         load_muon();
@@ -295,7 +284,7 @@ START_TEST(test_api_init)
 
         reset_error();
         pumas_physics_dump(physics, NULL);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         /* Check the transport error */
         reset_error();
@@ -357,11 +346,11 @@ START_TEST(test_api_material)
         /* Check the initialisation error */
         reset_error();
         pumas_physics_material_index(physics, "Strawberry", &index);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         reset_error();
         pumas_physics_material_name(physics, 0, &name);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         index = pumas_physics_material_length(physics);
         ck_assert_int_eq(index, 0);
@@ -413,11 +402,11 @@ START_TEST(test_api_composite)
         /* Check the initialisation error */
         reset_error();
         pumas_physics_composite_properties(physics, 0, NULL, NULL, NULL, NULL);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         reset_error();
         pumas_physics_composite_update(physics, 0, NULL, NULL);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         index = pumas_physics_composite_length(physics);
         ck_assert_int_eq(index, 0);
@@ -516,31 +505,31 @@ START_TEST(test_api_property)
         /* Check the initialisation error */
         reset_error();
         pumas_physics_property_cross_section(physics, 0, 0., &value);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         reset_error();
         pumas_physics_property_energy_loss(physics, 0, 0, 0., &value);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         reset_error();
         pumas_physics_property_grammage(physics, 0, 0, 0., &value);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         reset_error();
         pumas_physics_property_kinetic_energy(physics, 0, 0, 0., &value);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         reset_error();
         pumas_physics_property_magnetic_rotation(physics, 0, 0., &value);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         reset_error();
         pumas_physics_property_proper_time(physics, 0, 0, 0., &value);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         reset_error();
         pumas_physics_property_scattering_length(physics, 0, 0., &value);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         /* Load the muon data */
         load_muon();
@@ -718,11 +707,11 @@ START_TEST(test_api_table)
         /* Check the initialisation error */
         reset_error();
         pumas_physics_table_index(physics, 0, 0, 0, 0., &index);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         reset_error();
         pumas_physics_table_value(physics, 0, 0, 0, 0, &value);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         reset_error();
         index = pumas_physics_table_length(physics);
@@ -913,7 +902,7 @@ START_TEST(test_api_context)
         reset_error();
         context = (void *)0x1;
         pumas_context_create(&context, physics, 0);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
         ck_assert_ptr_null(context);
 
         /* Load the muon data */
@@ -1063,7 +1052,7 @@ START_TEST(test_api_print)
         /* Test the initialisation_error */
         reset_error();
         pumas_physics_print(physics, NULL, NULL, NULL);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INITIALISATION_ERROR);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         /* Load the tau data */
         load_tau();

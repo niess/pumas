@@ -180,13 +180,13 @@
 
 #define ERROR_RAISE() error_raise(error_)
 
-#define ERROR_ALREADY_INITIALISED()                                            \
-        ERROR_MESSAGE(PUMAS_RETURN_INITIALISATION_ERROR,                       \
-            "the PUMAS library is already initialised")
+#define ERROR_NULL_PHYSICS()                                                   \
+        ERROR_MESSAGE(PUMAS_RETURN_PHYSICS_ERROR,                              \
+            "a NULL physics pointer was provided")
 
 #define ERROR_NOT_INITIALISED()                                                \
-        ERROR_MESSAGE(PUMAS_RETURN_INITIALISATION_ERROR,                       \
-            "the PUMAS library has not been initialised")
+        ERROR_MESSAGE(PUMAS_RETURN_PHYSICS_ERROR,                              \
+            "the Physics has not been initialised")
 
 #define ERROR_INVALID_SCHEME(scheme)                                           \
         ERROR_FORMAT(PUMAS_RETURN_INDEX_ERROR,                                 \
@@ -1106,9 +1106,9 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
 {
         ERROR_INITIALISE(pumas_physics_create);
 
-        /* Check if the library is already initialised. */
-        if ((physics_ptr == NULL) || (*physics_ptr != NULL)) {
-                return ERROR_ALREADY_INITIALISED();
+        /* Check if the Physics pointer is NULL. */
+        if (physics_ptr == NULL) {
+                return ERROR_NULL_PHYSICS();
         }
 #if (GDB_MODE)
         /* Save the floating points exceptions status and enable them. */
@@ -1424,9 +1424,9 @@ enum pumas_return pumas_physics_load(
 {
         ERROR_INITIALISE(pumas_physics_load);
 
-        /* Check if the library is already initialised. */
-        if ((physics_ptr == NULL) || (*physics_ptr != NULL)) {
-                return ERROR_ALREADY_INITIALISED();
+        /* Check the physics pointer. */
+        if (physics_ptr == NULL) {
+                return ERROR_NULL_PHYSICS();
         }
 
         /* Check the input stream */
@@ -1507,10 +1507,10 @@ enum pumas_return pumas_physics_dump(
 {
         ERROR_INITIALISE(pumas_physics_dump);
 
-        /* Check if the library is initialised. */
-        if (physics == NULL)
-                return ERROR_MESSAGE(PUMAS_RETURN_INITIALISATION_ERROR,
-                    "the library hasn't been initialised");
+        /* Check if the Physics is initialised. */
+        if (physics == NULL) {
+                return ERROR_NOT_INITIALISED();
+        }
 
         /* Check the output stream */
         if (stream == NULL)
@@ -1639,7 +1639,7 @@ enum pumas_return pumas_context_create(struct pumas_context ** context_,
         ERROR_INITIALISE(pumas_context_create);
         *context_ = NULL;
 
-        /* Check the library initialisation. */
+        /* Check the Physics initialisation. */
         if (physics == NULL) {
                 return ERROR_NOT_INITIALISED();
         }
@@ -1730,7 +1730,7 @@ enum pumas_return pumas_physics_print(const struct pumas_physics * physics,
         const char * tab = (tabulation == NULL) ? "" : tabulation;
         const char * cr = (newline == NULL) ? "" : newline;
 
-        /* Check the library initialisation */
+        /* Check the Physics initialisation */
         if (physics == NULL) {
                 return ERROR_NOT_INITIALISED();
         }
@@ -2089,7 +2089,7 @@ enum pumas_return pumas_context_transport(struct pumas_context * context,
                 return ERROR_MESSAGE(
                     PUMAS_RETURN_VALUE_ERROR, "no state (null)");
 
-        /* Check the library initialisation */
+        /* Check the Physics initialisation */
         struct simulation_context * context_ =
             (struct simulation_context *)context;
         const struct pumas_physics * physics = context_->physics;
