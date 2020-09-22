@@ -919,6 +919,9 @@ START_TEST(test_api_context)
         /* Load the muon data */
         load_muon();
 
+        /* Test the Physics getter in the NULL case */
+        ck_assert_ptr_eq(pumas_context_physics_get(context), NULL);
+
         /* Test a memory error */
         pumas_memory_allocator(&fail_malloc);
         reset_error();
@@ -950,6 +953,7 @@ START_TEST(test_api_context)
         for (i = 0; i < n; i++) data[i] = i;
 
         /* Test the initialisation of a muon context */
+        ck_assert_ptr_eq(pumas_context_physics_get(context), physics);
         ck_assert_ptr_null(context->medium);
         ck_assert_ptr_null(context->random);
         ck_assert_ptr_null(context->recorder);
@@ -978,6 +982,7 @@ START_TEST(test_api_context)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_ptr_null(context->user_data);
 
+        ck_assert_ptr_eq(pumas_context_physics_get(context), physics);
         ck_assert_ptr_null(context->medium);
         ck_assert_ptr_null(context->random);
         ck_assert_ptr_null(context->recorder);
