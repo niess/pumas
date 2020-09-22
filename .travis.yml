@@ -14,7 +14,7 @@ language: c
 install:
   - mkdir build && cd build
   - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then cmake -DCMAKE_BUILD_TYPE=Test -DPUMAS_BUILD_TEST=true .. ; fi
-  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then cmake -DPUMAS_BUILD_TABULATE=true -DPUMAS_BUILD_EXAMPLES=true .. ; fi
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then cmake -DPUMAS_BUILD_EXAMPLES=true .. ; fi
 
 script:
   - make

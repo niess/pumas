@@ -1105,7 +1105,6 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
     int dry_mode)
 {
         ERROR_INITIALISE(pumas_physics_create);
-        if (physics_ptr != NULL) *physics_ptr = NULL;
 
         /* Check if the library is already initialised. */
         if ((physics_ptr == NULL) || (*physics_ptr != NULL)) {
@@ -1424,7 +1423,6 @@ enum pumas_return pumas_physics_load(
     struct pumas_physics ** physics_ptr, FILE * stream)
 {
         ERROR_INITIALISE(pumas_physics_load);
-        if (physics_ptr != NULL) *physics_ptr = NULL;
 
         /* Check if the library is already initialised. */
         if ((physics_ptr == NULL) || (*physics_ptr != NULL)) {
@@ -2083,12 +2081,6 @@ enum pumas_return pumas_context_transport(struct pumas_context * context,
 {
         ERROR_INITIALISE(pumas_context_transport);
 
-        /* Check the library initialisation */
-        struct simulation_context * context_ =
-            (struct simulation_context *)context;
-        const struct pumas_physics * physics = context_->physics;
-        if (physics == NULL) return ERROR_NOT_INITIALISED();
-
         /* Check the context and state */
         if (context == NULL)
                 return ERROR_MESSAGE(
@@ -2096,6 +2088,12 @@ enum pumas_return pumas_context_transport(struct pumas_context * context,
         if (state == NULL)
                 return ERROR_MESSAGE(
                     PUMAS_RETURN_VALUE_ERROR, "no state (null)");
+
+        /* Check the library initialisation */
+        struct simulation_context * context_ =
+            (struct simulation_context *)context;
+        const struct pumas_physics * physics = context_->physics;
+        if (physics == NULL) return ERROR_NOT_INITIALISED();
 
         /* Check the initial state. */
         if (state->decayed) {
