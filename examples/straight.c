@@ -49,14 +49,15 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-/* A handle for the PUMAS simulation context */
+/* Handles for PUMAS Physics & simulation context */
+static struct pumas_physics * physics = NULL;
 static struct pumas_context * context = NULL;
 
 /* Gracefully exit to the OS */
 static int exit_gracefully(int rc)
 {
         pumas_context_destroy(&context);
-        pumas_finalise();
+        pumas_physics_finalise(&physics);
         exit(rc);
 }
 
@@ -171,14 +172,14 @@ int main(int narg, char * argv[])
         /* Initialise PUMAS from a Material Description File (MDF). This can
          * a few seconds, depending on the number of materials in the MDF.
          */
-        pumas_initialise(PUMAS_PARTICLE_MUON, "materials/mdf/standard.xml",
-            "materials/dedx/muon");
+        pumas_physics_initialise(&physics, PUMAS_PARTICLE_MUON,
+            "materials/mdf/standard.xml", "materials/dedx/muon");
 
         /* Map the PUMAS material index */
-        pumas_material_index(MATERIAL_NAME, &medium.material);
+        pumas_physics_material_index(physics, MATERIAL_NAME, &medium.material);
 
         /* Create a new PUMAS simulation context */
-        pumas_context_create(&context, 0);
+        pumas_context_create(&context, physics, 0);
 
         /* Configure the context for simulating the detailed energy loss, à
          * la Geant4
@@ -232,7 +233,7 @@ int main(int narg, char * argv[])
                         .direction = { -sin_theta, 0., -cos_theta } };
 
                 /* Transport the muon backwards */
-                pumas_transport(context, &state, NULL, NULL);
+                pumas_context_transport(context, &state, NULL, NULL);
 
                 /* Update the integrated flux */
                 const double wi = state.weight *

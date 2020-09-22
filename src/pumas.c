@@ -229,12 +229,12 @@
  * Handle for a DCS computation function.
  */
 struct atomic_element;
-typedef double(dcs_function_t)(
+typedef double(dcs_function_t)(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double q);
 /**
  * Handle for a polar angle sampling function.
  */
-typedef double(polar_function_t)(
+typedef double(polar_function_t)(const struct pumas_physics * physics,
     struct pumas_context * context, double ki, double kf);
 
 /* A collection of low level flags. */
@@ -350,6 +350,8 @@ struct medium_locals {
 struct simulation_context {
         /** The public API settings exposed to the end user. */
         struct pumas_context api;
+        /** Handle for Physics tables. */
+        const struct pumas_physics * physics;
         /** Lifetime limit for the decay process. */
         double lifetime;
         /**
@@ -592,7 +594,7 @@ struct del_info {
 /**
  * Global data shared by all simulation contexts.
  */
-struct shared_data {
+struct pumas_physics {
 /*
  * Version tag for the shared data format. Increment whenever the
  * structure changes.
@@ -692,10 +694,6 @@ struct shared_data {
          */
         double data[];
 };
-/**
- * Handle for the shared data, allocated on the heap.
- */
-static struct shared_data * s_shared = NULL;
 
 struct error_context {
         enum pumas_return code;
@@ -717,27 +715,27 @@ static struct {
 /**
  * Encapsulations of the tabulated CEL and DEL properties.
  */
-static double cel_grammage(struct pumas_context * context,
+static double cel_grammage(const struct pumas_physics * physics, struct pumas_context * context,
     enum pumas_scheme scheme, int material, double kinetic);
-static double cel_grammage_as_time(struct pumas_context * context,
+static double cel_grammage_as_time(const struct pumas_physics * physics, struct pumas_context * context,
     enum pumas_scheme scheme, int material, double time);
-static double cel_proper_time(struct pumas_context * context,
+static double cel_proper_time(const struct pumas_physics * physics, struct pumas_context * context,
     enum pumas_scheme scheme, int material, double kinetic);
-static double cel_kinetic_energy(struct pumas_context * context,
+static double cel_kinetic_energy(const struct pumas_physics * physics, struct pumas_context * context,
     enum pumas_scheme scheme, int material, double grammage);
-static double cel_energy_loss(struct pumas_context * context,
+static double cel_energy_loss(const struct pumas_physics * physics, struct pumas_context * context,
     enum pumas_scheme scheme, int material, double kinetic);
-static double cel_magnetic_rotation(
+static double cel_magnetic_rotation(const struct pumas_physics * physics, 
     struct pumas_context * context, int material, double kinetic);
-static double del_cross_section(
+static double del_cross_section(const struct pumas_physics * physics, 
     struct pumas_context * context, int material, double kinetic);
-static double del_interaction_length(
+static double del_interaction_length(const struct pumas_physics * physics, 
     struct pumas_context * context, int material, double kinetic);
-static double del_kinetic_from_interaction_length(
+static double del_kinetic_from_interaction_length(const struct pumas_physics * physics, 
     struct pumas_context * context, int material, double nI);
-static double ehs_interaction_length(struct pumas_context * context,
+static double ehs_interaction_length(const struct pumas_physics * physics, struct pumas_context * context,
     enum pumas_scheme scheme, int material, double kinetic);
-static double ehs_kinetic_from_interaction_length(
+static double ehs_kinetic_from_interaction_length(const struct pumas_physics * physics, 
     struct pumas_context * context, enum pumas_scheme scheme, int material,
     double nI);
 /**
@@ -745,25 +743,25 @@ static double ehs_kinetic_from_interaction_length(
  */
 static inline dcs_function_t * dcs_get(int process);
 static inline int dcs_get_index(dcs_function_t * dcs_func);
-static double dcs_bremsstrahlung(
+static double dcs_bremsstrahlung(const struct pumas_physics * physics, 
     const struct atomic_element * element, double K, double q);
-static double dcs_pair_production(
+static double dcs_pair_production(const struct pumas_physics * physics, 
     const struct atomic_element * element, double K, double q);
-static double dcs_photonuclear(
+static double dcs_photonuclear(const struct pumas_physics * physics, 
     const struct atomic_element * element, double K, double q);
-static inline double dcs_photonuclear_d2(
+static inline double dcs_photonuclear_d2(const struct pumas_physics * physics, 
     double A, double K, double q, double Q2);
 static inline double dcs_photonuclear_f2_allm(double x, double Q2);
 static inline double dcs_photonuclear_f2a_drss(double x, double F2p, double A);
 static inline double dcs_photonuclear_r_whitlow(double x, double Q2);
 static inline int dcs_photonuclear_check(double K, double q);
-static double dcs_ionisation(
+static double dcs_ionisation(const struct pumas_physics * physics, 
     const struct atomic_element * element, double K, double q);
-static double dcs_ionisation_integrate(
+static double dcs_ionisation_integrate(const struct pumas_physics * physics, 
     int mode, const struct atomic_element * element, double K, double xlow);
-static double dcs_ionisation_randomise(struct pumas_context * context,
+static double dcs_ionisation_randomise(const struct pumas_physics * physics, struct pumas_context * context,
     const struct atomic_element * element, double K, double xlow);
-static double dcs_evaluate(struct pumas_context * context,
+static double dcs_evaluate(const struct pumas_physics * physics, struct pumas_context * context,
     dcs_function_t * dcs_func, const struct atomic_element * element, double K,
     double q);
 static void dcs_model_fit(int m, int n, const double * x, const double * y,
@@ -772,55 +770,55 @@ static void dcs_model_fit(int m, int n, const double * x, const double * y,
  * Implementations of polar angle distributions and accessor.
  */
 static inline polar_function_t * polar_get(int process);
-static double polar_bremsstrahlung(
+static double polar_bremsstrahlung(const struct pumas_physics * physics, 
     struct pumas_context * context, double ki, double kf);
-static double polar_pair_production(
+static double polar_pair_production(const struct pumas_physics * physics, 
     struct pumas_context * context, double ki, double kf);
-static double polar_photonuclear(
+static double polar_photonuclear(const struct pumas_physics * physics, 
     struct pumas_context * context, double ki, double kf);
-static double polar_ionisation(
+static double polar_ionisation(const struct pumas_physics * physics, 
     struct pumas_context * context, double ki, double kf);
 /**
  * Low level routines for the propagation in matter.
  */
-static enum pumas_event transport_with_csda(struct pumas_context * context,
+static enum pumas_event transport_with_csda(const struct pumas_physics * physics, struct pumas_context * context,
     struct pumas_state * state, struct pumas_medium * medium,
     struct medium_locals * locals, struct error_context * error_);
-static enum pumas_return transport_csda_deflect(struct pumas_context * context,
+static enum pumas_return transport_csda_deflect(const struct pumas_physics * physics, struct pumas_context * context,
     struct pumas_state * state, struct pumas_medium * medium,
     struct medium_locals * locals, double ki, double distance,
     struct error_context * error_);
-static enum pumas_return csda_magnetic_transport(struct pumas_context * context,
+static enum pumas_return csda_magnetic_transport(const struct pumas_physics * physics, struct pumas_context * context,
     int material, double density, double magnet, double charge, double kinetic,
     double phase, double * x, double * y, double * z,
     struct error_context * error_);
-static enum pumas_event transport_with_stepping(struct pumas_context * context,
+static enum pumas_event transport_with_stepping(const struct pumas_physics * physics, struct pumas_context * context,
     struct pumas_state * state, struct pumas_medium ** medium_ptr,
     struct medium_locals * locals, double step_max_medium,
     double step_max_locals, struct error_context * error_);
 static double transport_set_locals(struct pumas_medium * medium,
     struct pumas_state * state, struct medium_locals * locals);
-static void transport_limit(struct pumas_context * context,
+static void transport_limit(const struct pumas_physics * physics, struct pumas_context * context,
     const struct pumas_state * state, int material, double di, double Xi,
     double * distance_max);
-static void transport_do_del(
+static void transport_do_del(const struct pumas_physics * physics,
     struct pumas_context * context, struct pumas_state * state, int material);
-static void transport_do_ehs(
+static void transport_do_ehs(const struct pumas_physics * physics, 
     struct pumas_context * context, struct pumas_state * state, int material);
 /**
  * Low level routines for randomising DELs.
  */
-static polar_function_t * del_randomise_forward(struct pumas_context * context,
+static polar_function_t * del_randomise_forward(const struct pumas_physics * physics, struct pumas_context * context,
     struct pumas_state * state, int material, int * process);
-static polar_function_t * del_randomise_reverse(struct pumas_context * context,
+static polar_function_t * del_randomise_reverse(const struct pumas_physics * physics, struct pumas_context * context,
     struct pumas_state * state, int material, int * process);
 static void del_randomise_power_law(struct pumas_context * context,
     double alpha, double xmin, double xmax, double * p_r, double * p_w);
-static void del_randomise_ziggurat(struct pumas_context * context,
+static void del_randomise_ziggurat(const struct pumas_physics * physics, struct pumas_context * context,
     struct pumas_state * state, dcs_function_t * dcs_func,
     const struct atomic_element * element, double xmin, double xmax,
     float * cdf_sampling);
-static void del_randomise_target(struct pumas_context * context,
+static void del_randomise_target(const struct pumas_physics * physics, struct pumas_context * context,
     struct pumas_state * state, int material, struct del_info * info);
 /**
  * Helper routine for recording a state.
@@ -842,14 +840,14 @@ static enum pumas_return error_format(struct error_context * context,
 /**
  * Routines for the Coulomb scattering and Transverse Transport (TT).
  */
-static void coulomb_screening_parameters(struct pumas_context * context,
+static void coulomb_screening_parameters(const struct pumas_physics * physics, struct pumas_context * context,
     double kinetic, int element, double * screening);
-static double coulomb_wentzel_path(
+static double coulomb_wentzel_path(const struct pumas_physics * physics, 
     double kinetic, double Z, double A, double screening);
-static double coulomb_ehs_length(
+static double coulomb_ehs_length(const struct pumas_physics * physics, 
     struct pumas_context * context, int material, double kinetic);
-static double coulomb_spin_factor(double kinetic);
-static void coulomb_frame_parameters(
+static double coulomb_spin_factor(const struct pumas_physics * physics, double kinetic);
+static void coulomb_frame_parameters(const struct pumas_physics * physics, 
     double kinetic, double Ma, double * kinetic0, double * parameters);
 static void coulomb_pole_decomposition(
     double * screening, double * a, double * b);
@@ -857,74 +855,74 @@ static double coulomb_restricted_cs(
     double mu0, double fspin, double * screening, double * a, double * b);
 static void coulomb_transport_coefficients(double mu, double fspin,
     double * screening, double * a, double * b, double * coefficient);
-static double transverse_transport_ionisation(
+static double transverse_transport_ionisation(const struct pumas_physics * physics, 
     const struct atomic_element * element, double kinetic);
-static double transverse_transport_photonuclear(
+static double transverse_transport_photonuclear(const struct pumas_physics * physics, 
     const struct atomic_element * element, double kinetic);
 /**
  * Routines for handling tables: interpolation and utility accessors.
  */
 static void table_bracket(
     const double * table, double value, int * p1, int * p2);
-static int table_index(
+static int table_index(const struct pumas_physics * physics, 
     struct pumas_context * context, const double * table, double value);
-static double table_interpolate(struct pumas_context * context,
+static double table_interpolate(const struct pumas_physics * physics, struct pumas_context * context,
     const double * table_X, const double * table_Y, double x);
-static void table_get_msc(struct pumas_context * context, int material,
+static void table_get_msc(const struct pumas_physics * physics, struct pumas_context * context, int material,
     double kinetic, double * mu0, double * invlb1);
-static inline double * table_get_K(int row);
-static inline double * table_get_X(int scheme, int material, int row);
-static inline double * table_get_T(int scheme, int material, int row);
-static inline double * table_get_dE(int scheme, int material, int row);
-static inline double * table_get_NI_el(int scheme, int material, int row);
-static inline double * table_get_NI_in(int material, int row);
-static inline double * table_get_CS(int material, int row);
-static inline double * table_get_CSf(int process, int component, int row);
-static inline double * table_get_CSn(int process, int element, int row);
-static inline double * table_get_Xt(int process, int element, int row);
-static inline double * table_get_Kt(int material);
-static inline double * table_get_cel(
+static inline double * table_get_K(const struct pumas_physics * physics, int row);
+static inline double * table_get_X(const struct pumas_physics * physics, int scheme, int material, int row);
+static inline double * table_get_T(const struct pumas_physics * physics, int scheme, int material, int row);
+static inline double * table_get_dE(const struct pumas_physics * physics, int scheme, int material, int row);
+static inline double * table_get_NI_el(const struct pumas_physics * physics, int scheme, int material, int row);
+static inline double * table_get_NI_in(const struct pumas_physics * physics, int material, int row);
+static inline double * table_get_CS(const struct pumas_physics * physics, int material, int row);
+static inline double * table_get_CSf(const struct pumas_physics * physics, int process, int component, int row);
+static inline double * table_get_CSn(const struct pumas_physics * physics, int process, int element, int row);
+static inline double * table_get_Xt(const struct pumas_physics * physics, int process, int element, int row);
+static inline double * table_get_Kt(const struct pumas_physics * physics, int material);
+static inline double * table_get_cel(const struct pumas_physics * physics,
     int process, int element, int row, double * table);
-static inline double * table_get_Li(int material, int order, int row);
-static inline double * table_get_a_max(int material);
-static inline double * table_get_b_max(int scheme, int material);
-static inline double * table_get_Mu0(int material, int row);
-static inline double * table_get_Lb(int material, int row);
-static inline double * table_get_Ms1(int material, int row);
-static inline double * table_get_ms1(int element, int row, double * table);
-static inline float * table_get_dcs_coeff(
+static inline double * table_get_Li(const struct pumas_physics * physics, int material, int order, int row);
+static inline double * table_get_a_max(const struct pumas_physics * physics, int material);
+static inline double * table_get_b_max(const struct pumas_physics * physics, int scheme, int material);
+static inline double * table_get_Mu0(const struct pumas_physics * physics, int material, int row);
+static inline double * table_get_Lb(const struct pumas_physics * physics, int material, int row);
+static inline double * table_get_Ms1(const struct pumas_physics * physics, int material, int row);
+static inline double * table_get_ms1(const struct pumas_physics * physics, int element, int row, double * table);
+static inline float * table_get_dcs_coeff(const struct pumas_physics * physics,
     const struct atomic_element * element, int process, int kinetic);
-static inline float * table_get_dcs_value(
+static inline float * table_get_dcs_value(const struct pumas_physics * physics,
     const struct atomic_element * element, int process, int kinetic);
 /**
  * Low level routines for the stepping.
  */
-static enum pumas_return step_transport(struct pumas_context * context,
+static enum pumas_return step_transport(const struct pumas_physics * physics, struct pumas_context * context,
     struct pumas_state * state, int straight, struct pumas_medium * medium,
     struct medium_locals * locals, double grammage_max,
     double step_max_medium, double * step_max_locals,
     struct pumas_medium ** out_medium);
-static void step_fluctuate(struct pumas_context * context,
+static void step_fluctuate(const struct pumas_physics * physics, struct pumas_context * context,
     struct pumas_state * state, int material, double Xtot, double dX,
     double * kf, double * dE);
-static double step_fluctuations2(int material, double kinetic);
+static double step_fluctuations2(const struct pumas_physics * physics, int material, double kinetic);
 static double step_randn(struct pumas_context * context);
-static double transport_hard_coulomb_objective(double mu, void * parameters);
+static double transport_hard_coulomb_objective(const struct pumas_physics * physics, double mu, void * parameters);
 static void step_rotate_direction(struct pumas_context * context,
     struct pumas_state * state, double cos_theta);
 /**
  * I/O utility routines.
  */
-static enum pumas_return io_parse_dedx_file(FILE * fid, int material,
+static enum pumas_return io_parse_dedx_file(struct pumas_physics * physics, FILE * fid, int material,
     const char * filename, struct error_context * error_);
-static enum pumas_return io_parse_dedx_row(char * buffer, int material,
+static enum pumas_return io_parse_dedx_row(struct pumas_physics * physics, char * buffer, int material,
     int * row, const char * filename, int line, struct error_context * error_);
 static enum pumas_return io_read_line(FILE * fid, char ** buffer,
     const char * filename, int line, struct error_context * error_);
 /**
  * Routines for the parsing of MDFs.
  */
-static enum pumas_return mdf_parse_settings(struct mdf_buffer * mdf,
+static enum pumas_return mdf_parse_settings(const struct pumas_physics * physics, struct mdf_buffer * mdf,
     const char * dedx_path, struct error_context * error_);
 static int mdf_settings_index(
     int operation, int value, struct error_context * error_);
@@ -932,11 +930,11 @@ static int mdf_settings_name(
     int size, char prefix, const char * name, struct error_context * error_);
 static enum pumas_return mdf_parse_kinetic(
     struct mdf_buffer * mdf, const char * path, struct error_context * error_);
-static enum pumas_return mdf_parse_elements(
+static enum pumas_return mdf_parse_elements(const struct pumas_physics * physics, 
     struct mdf_buffer * mdf, struct error_context * error_);
-static enum pumas_return mdf_parse_materials(
+static enum pumas_return mdf_parse_materials(struct pumas_physics * physics, 
     struct mdf_buffer * mdf, struct error_context * error_);
-static enum pumas_return mdf_parse_composites(
+static enum pumas_return mdf_parse_composites(struct pumas_physics * physics, 
     struct mdf_buffer * mdf, struct error_context * error_);
 static enum pumas_return mdf_get_node(struct mdf_buffer * mdf,
     struct mdf_node * node, struct error_context * error_);
@@ -948,43 +946,43 @@ static enum pumas_return mdf_format_path(const char * directory,
 /**
  * Routines for the pre-computation of various properties: CEL, DCS, ...
  */
-static enum pumas_return compute_composite(
+static enum pumas_return compute_composite(struct pumas_physics * physics, 
     int material, struct error_context * error_);
-static enum pumas_return compute_composite_density(
+static enum pumas_return compute_composite_density(struct pumas_physics * physics, 
     int material, struct error_context * error_);
-static void compute_composite_weights(int material);
-static void compute_composite_tables(int material);
-static void compute_cel_integrals(int imed);
-static void compute_kinetic_integral(double * table);
-static void compute_time_integrals(int material);
-static void compute_cel_grammage_integral(int scheme, int material);
-static void compute_csda_magnetic_transport(int imed);
-static enum pumas_return compute_coulomb_parameters(
+static void compute_composite_weights(struct pumas_physics * physics, int material);
+static void compute_composite_tables(struct pumas_physics * physics, int material);
+static void compute_cel_integrals(struct pumas_physics * physics, int imed);
+static void compute_kinetic_integral(struct pumas_physics * physics, double * table);
+static void compute_time_integrals(struct pumas_physics * physics, int material);
+static void compute_cel_grammage_integral(struct pumas_physics * physics, int scheme, int material);
+static void compute_csda_magnetic_transport(struct pumas_physics * physics, int imed);
+static enum pumas_return compute_coulomb_parameters(struct pumas_physics * physics, 
     int medium_index, int row, struct error_context * error_);
-static enum pumas_return compute_coulomb_soft(
+static enum pumas_return compute_coulomb_soft(struct pumas_physics * physics, 
     int row, double ** data, struct error_context * error_);
-static double compute_cutoff_objective(double mu, void * workspace);
-static double * compute_cel_and_del(int row);
-static void compute_regularise_del(int material);
-static double compute_dcs_integral(int mode,
+static double compute_cutoff_objective(const struct pumas_physics * physics, double mu, void * workspace);
+static double * compute_cel_and_del(struct pumas_physics * physics, int row);
+static void compute_regularise_del(struct pumas_physics * physics, int material);
+static double compute_dcs_integral(struct pumas_physics * physics, int mode,
     const struct atomic_element * element, double kinetic, dcs_function_t * dcs,
     double xlow, int nint);
-static void compute_ZoA(int material);
-static enum pumas_return compute_dcs_model(dcs_function_t * dcs_func,
+static void compute_ZoA(struct pumas_physics * physics, int material);
+static enum pumas_return compute_dcs_model(struct pumas_physics * physics, dcs_function_t * dcs_func,
     struct atomic_element * element, struct error_context * error_);
 /**
  * Helper function for mapping an atomic element from its name.
  */
-static int element_index(const char * name);
+static int element_index(const struct pumas_physics * physics, const char * name);
 /**
  * Helper function for mapping a material from its name.
  */
-static enum pumas_return material_index(
+static enum pumas_return material_index(const struct pumas_physics * physics, 
     const char * material, int * index, struct error_context * error_);
 /**
  * Various math utilities, for integration, root finding and SVD.
  */
-static int math_find_root(double (*f)(double x, void * params), double xa,
+static int math_find_root(double (*f)(const struct pumas_physics * physics, double x, void * params), const struct pumas_physics * physics, double xa,
     double xb, const double * fa_p, const double * fb_p, double xtol,
     double rtol, int iter, void * params, double * x0);
 static int math_gauss_quad(int n, double * p1, double * p2);
@@ -1043,13 +1041,17 @@ void pumas_memory_deallocator(pumas_deallocate_cb * deallocator)
  * Low level initialisation. If *dry_mode* is not null the energy loss tables
  * are not loaded and processed.
  */
-static enum pumas_return _initialise(enum pumas_particle particle,
+static enum pumas_return _initialise(struct pumas_physics ** physics_ptr, enum pumas_particle particle,
     const char * mdf_path, const char * dedx_path, int dry_mode)
 {
-        ERROR_INITIALISE(pumas_initialise);
+        ERROR_INITIALISE(pumas_physics_initialise);
+        if (physics_ptr != NULL)
+                *physics_ptr = NULL;
 
         /* Check if the library is already initialised. */
-        if (s_shared != NULL) { return ERROR_ALREADY_INITIALISED(); }
+        if ((physics_ptr == NULL) || (*physics_ptr != NULL)) {
+                return ERROR_ALREADY_INITIALISED();
+        }
 #if (GDB_MODE)
         /* Save the floating points exceptions status and enable them. */
         fe_status = fegetexcept();
@@ -1058,7 +1060,7 @@ static enum pumas_return _initialise(enum pumas_particle particle,
 #endif
         FILE * fid_mdf = NULL;
         struct mdf_buffer * mdf = NULL;
-        const int pad_size = sizeof(*(s_shared->data));
+        const int pad_size = sizeof(*((*physics_ptr)->data));
 #define N_DATA_POINTERS 26
         int size_data[N_DATA_POINTERS];
 
@@ -1070,6 +1072,7 @@ static enum pumas_return _initialise(enum pumas_particle particle,
         }
 
         /* Check the path to energy loss tables. */
+        struct pumas_physics * physics = NULL;
         if (!dry_mode) {
                 if (dedx_path == NULL) dedx_path = getenv("PUMAS_DEDX");
                 if (dedx_path == NULL) {
@@ -1104,7 +1107,7 @@ static enum pumas_return _initialise(enum pumas_particle particle,
         mdf->mdf_path = file_mdf;
         mdf->fid = fid_mdf;
         mdf->size = size_mdf - sizeof(*mdf);
-        if ((mdf_parse_settings(mdf, dedx_path, error_)) !=
+        if ((mdf_parse_settings(*physics_ptr, mdf, dedx_path, error_)) !=
             PUMAS_RETURN_SUCCESS)
                 goto clean_and_exit;
 
@@ -1230,20 +1233,21 @@ static enum pumas_return _initialise(enum pumas_particle particle,
         int size_total = 0;
         for (imem = 0; imem < N_DATA_POINTERS; imem++)
                 size_total += size_data[imem];
-        const int size_shared = sizeof(*s_shared) + size_total;
+        const int size_shared = sizeof(**physics_ptr) + size_total;
         void * tmp_ptr = reallocate(mdf, size_shared);
         if (tmp_ptr == NULL) {
                 ERROR_REGISTER_MEMORY();
                 goto clean_and_exit;
         }
-        s_shared = tmp_ptr;
-        memset(s_shared, 0x0, size_shared);
-        s_shared->size = size_shared;
+        physics = tmp_ptr;
+        *physics_ptr = physics;
+        memset(physics, 0x0, size_shared);
+        physics->size = size_shared;
         mdf = NULL;
 
         /* Map the data pointers. */
-        double * p = s_shared->data;
-        void ** ptr = (void **)(&(s_shared->mdf_path));
+        double * p = physics->data;
+        void ** ptr = (void **)(&(physics->mdf_path));
         for (imem = 0; imem < N_DATA_POINTERS; imem++) {
                 *ptr = p;
                 ptr++;
@@ -1251,23 +1255,23 @@ static enum pumas_return _initialise(enum pumas_particle particle,
         }
 
         /* Copy the global settings. */
-        s_shared->particle = particle;
+        physics->particle = particle;
         if (particle == PUMAS_PARTICLE_MUON) {
-                s_shared->ctau = MUON_C_TAU;
-                s_shared->mass = MUON_MASS;
+                physics->ctau = MUON_C_TAU;
+                physics->mass = MUON_MASS;
         } else {
-                s_shared->ctau = TAU_C_TAU;
-                s_shared->mass = TAU_MASS;
+                physics->ctau = TAU_C_TAU;
+                physics->mass = TAU_MASS;
         }
-        s_shared->n_kinetics = settings.n_kinetics;
-        s_shared->n_materials = settings.n_materials;
-        s_shared->n_composites = settings.n_composites;
-        s_shared->n_elements = settings.n_elements;
-        s_shared->n_components = settings.n_components;
-        s_shared->max_components = settings.max_components;
-        s_shared->n_energy_loss_header = settings.n_energy_loss_header;
-        s_shared->dcs_model_offset = settings.dcs_model_offset;
-        strcpy(s_shared->mdf_path, file_mdf);
+        physics->n_kinetics = settings.n_kinetics;
+        physics->n_materials = settings.n_materials;
+        physics->n_composites = settings.n_composites;
+        physics->n_elements = settings.n_elements;
+        physics->n_components = settings.n_components;
+        physics->max_components = settings.max_components;
+        physics->n_energy_loss_header = settings.n_energy_loss_header;
+        physics->dcs_model_offset = settings.dcs_model_offset;
+        strcpy(physics->mdf_path, file_mdf);
 
         /* Allocate a new MDF buffer. */
         if ((mdf = allocate(sizeof(struct mdf_buffer) + size_mdf)) == NULL) {
@@ -1278,20 +1282,20 @@ static enum pumas_return _initialise(enum pumas_particle particle,
 
         /* Set the path to the dE/dX files. */
         if (!dry_mode)
-                strcpy(s_shared->dedx_path, dedx_path);
+                strcpy(physics->dedx_path, dedx_path);
         else
-                s_shared->dedx_path = NULL;
+                physics->dedx_path = NULL;
 
         /* Parse the elements. */
-        if ((mdf_parse_elements(mdf, error_)) != PUMAS_RETURN_SUCCESS)
+        if ((mdf_parse_elements(physics, mdf, error_)) != PUMAS_RETURN_SUCCESS)
                 goto clean_and_exit;
 
         /* Parse the base materials. */
-        if ((mdf_parse_materials(mdf, error_)) != PUMAS_RETURN_SUCCESS)
+        if ((mdf_parse_materials(physics, mdf, error_)) != PUMAS_RETURN_SUCCESS)
                 goto clean_and_exit;
 
         /* Parse the composite materials. */
-        if ((mdf_parse_composites(mdf, error_)) != PUMAS_RETURN_SUCCESS)
+        if ((mdf_parse_composites(physics, mdf, error_)) != PUMAS_RETURN_SUCCESS)
                 goto clean_and_exit;
 
         /* All done if in dry mode. */
@@ -1299,35 +1303,35 @@ static enum pumas_return _initialise(enum pumas_particle particle,
 
         /* Precompute the CEL integrals and the TT parameters. */
         int imat;
-        for (imat = 0; imat < s_shared->n_materials - s_shared->n_composites;
+        for (imat = 0; imat < physics->n_materials - physics->n_composites;
              imat++) {
                 int ikin;
-                for (ikin = 0; ikin < s_shared->n_kinetics; ikin++) {
-                        if (compute_coulomb_parameters(imat, ikin, error_) !=
+                for (ikin = 0; ikin < physics->n_kinetics; ikin++) {
+                        if (compute_coulomb_parameters(physics, imat, ikin, error_) !=
                             PUMAS_RETURN_SUCCESS)
                                 goto clean_and_exit;
                 }
-                compute_cel_integrals(imat);
-                compute_csda_magnetic_transport(imat);
+                compute_cel_integrals(physics, imat);
+                compute_csda_magnetic_transport(physics, imat);
         }
 
         /* Precompute the same properties for composite materials. */
-        for (imat = s_shared->n_materials - s_shared->n_composites;
-             imat < s_shared->n_materials; imat++) {
-                if (((compute_composite(imat, error_)) !=
+        for (imat = physics->n_materials - physics->n_composites;
+             imat < physics->n_materials; imat++) {
+                if (((compute_composite(physics, imat, error_)) !=
                         PUMAS_RETURN_SUCCESS) ||
-                    ((compute_composite_density(imat, error_)) !=
+                    ((compute_composite_density(physics, imat, error_)) !=
                         PUMAS_RETURN_SUCCESS))
                         goto clean_and_exit;
         }
 
         /* Tabulate and fit the DCS for atomic elements. */
         int iel;
-        for (iel = 0; iel < s_shared->n_elements; iel++) {
+        for (iel = 0; iel < physics->n_elements; iel++) {
                 int ip;
                 for (ip = 0; ip < N_DEL_PROCESSES - 1; ip++) {
-                        if (compute_dcs_model(dcs_get(ip),
-                                s_shared->element[iel],
+                        if (compute_dcs_model(physics, dcs_get(ip),
+                                physics->element[iel],
                                 error_) != PUMAS_RETURN_SUCCESS)
                                 goto clean_and_exit;
                 }
@@ -1337,31 +1341,37 @@ clean_and_exit:
         if (fid_mdf != NULL) fclose(fid_mdf);
         deallocate(mdf);
         io_read_line(NULL, NULL, NULL, 0, error_);
-        compute_coulomb_parameters(-1, -1, error_);
-        compute_coulomb_soft(-1, NULL, error_);
-        compute_cel_and_del(-1);
-        compute_dcs_model(NULL, NULL, error_);
-        if ((error_->code != PUMAS_RETURN_SUCCESS) && (s_shared != NULL)) {
-                deallocate(s_shared);
-                s_shared = NULL;
+        compute_coulomb_parameters(physics, -1, -1, error_);
+        compute_coulomb_soft(physics, -1, NULL, error_);
+        compute_cel_and_del(physics, -1);
+        compute_dcs_model(physics, NULL, NULL, error_);
+        if ((error_->code != PUMAS_RETURN_SUCCESS) && (physics != NULL)) {
+                deallocate(physics);
+                *physics_ptr = NULL;
         }
 
         return ERROR_RAISE();
 }
 
 /* The standard API initialisation. */
-enum pumas_return pumas_initialise(
-    enum pumas_particle particle, const char * mdf_path, const char * dedx_path)
+enum pumas_return pumas_physics_initialise(
+    struct pumas_physics ** physics, enum pumas_particle particle,
+    const char * mdf_path, const char * dedx_path)
 {
-        return _initialise(particle, mdf_path, dedx_path, 0);
+        return _initialise(physics, particle, mdf_path, dedx_path, 0);
 }
 
-enum pumas_return pumas_load(FILE * stream)
+enum pumas_return pumas_physics_load(
+    struct pumas_physics ** physics_ptr, FILE * stream)
 {
-        ERROR_INITIALISE(pumas_load);
+        ERROR_INITIALISE(pumas_physics_load);
+        if (physics_ptr != NULL)
+                *physics_ptr = NULL;
 
         /* Check if the library is already initialised. */
-        if (s_shared != NULL) { return ERROR_ALREADY_INITIALISED(); }
+        if ((physics_ptr == NULL) || (*physics_ptr != NULL)) {
+                return ERROR_ALREADY_INITIALISED();
+        }
 
         /* Check the input stream */
         if (stream == NULL)
@@ -1374,6 +1384,7 @@ enum pumas_return pumas_load(FILE * stream)
         feenableexcept(FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW | FE_UNDERFLOW);
 #endif
         /* Check the binary dump tag. */
+        struct pumas_physics * physics = NULL;
         int tag;
         if (fread(&tag, sizeof(tag), 1, stream) != 1) goto error;
         if (tag != BINARY_DUMP_TAG) {
@@ -1385,23 +1396,24 @@ enum pumas_return pumas_load(FILE * stream)
         /* Allocate the container. */
         int size;
         if (fread(&size, sizeof(size), 1, stream) != 1) goto error;
-        s_shared = allocate(size);
-        if (s_shared == NULL) {
+        physics = allocate(size);
+        *physics_ptr = physics;
+        if (physics == NULL) {
                 ERROR_REGISTER_MEMORY();
                 goto error;
         }
 
         /* Load the data and remap the addresses. */
-        if (fread(s_shared, size, 1, stream) != 1) goto error;
+        if (fread(physics, size, 1, stream) != 1) goto error;
 
-        void ** ptr = (void **)(&(s_shared->mdf_path));
-        ptrdiff_t delta = (char *)(s_shared->data) - (char *)(*ptr);
+        void ** ptr = (void **)(&(physics->mdf_path));
+        ptrdiff_t delta = (char *)(physics->data) - (char *)(*ptr);
         int i;
         for (i = 0; i < N_DATA_POINTERS; i++, ptr++)
                 *ptr = ((char *)(*ptr)) + delta;
 
-        struct atomic_element ** element = s_shared->element;
-        for (i = 0; i < s_shared->n_elements; i++) {
+        struct atomic_element ** element = physics->element;
+        for (i = 0; i < physics->n_elements; i++) {
                 element[i] =
                     (struct atomic_element *)(((char *)element[i]) + delta);
                 element[i]->name += delta;
@@ -1409,37 +1421,38 @@ enum pumas_return pumas_load(FILE * stream)
                     (float *)(((char *)(element[i]->dcs_data)) + delta);
         }
 
-        struct material_component ** composition = s_shared->composition;
-        for (i = 0; i < s_shared->n_materials; i++)
+        struct material_component ** composition = physics->composition;
+        for (i = 0; i < physics->n_materials; i++)
                 composition[i] =
                     (struct material_component *)(((char *)composition[i]) +
                         delta);
 
-        struct composite_material ** composite = s_shared->composite;
-        for (i = 0; i < s_shared->n_composites; i++)
+        struct composite_material ** composite = physics->composite;
+        for (i = 0; i < physics->n_composites; i++)
                 composite[i] =
                     (struct composite_material *)(((char *)composite[i]) +
                         delta);
 
-        char ** material_name = s_shared->material_name;
-        for (i = 0; i < s_shared->n_materials; i++) material_name[i] += delta;
+        char ** material_name = physics->material_name;
+        for (i = 0; i < physics->n_materials; i++) material_name[i] += delta;
 
         return PUMAS_RETURN_SUCCESS;
 
 error:
-        deallocate(s_shared);
-        s_shared = NULL;
+        deallocate(physics);
+        *physics_ptr = NULL;
         return ERROR_RAISE();
 
 #undef N_DATA_POINTERS
 }
 
-enum pumas_return pumas_dump(FILE * stream)
+enum pumas_return pumas_physics_dump(
+    const struct pumas_physics * physics, FILE * stream)
 {
-        ERROR_INITIALISE(pumas_dump);
+        ERROR_INITIALISE(pumas_physics_dump);
 
         /* Check if the library is initialised. */
-        if (s_shared == NULL)
+        if (physics == NULL)
                 return ERROR_MESSAGE(PUMAS_RETURN_INITIALISATION_ERROR,
                     "the library hasn't been initialised");
 
@@ -1451,9 +1464,9 @@ enum pumas_return pumas_dump(FILE * stream)
         /* Dump the configuration. */
         int tag = BINARY_DUMP_TAG;
         if (fwrite(&tag, sizeof(tag), 1, stream) != 1) goto error;
-        if (fwrite(&s_shared->size, sizeof(s_shared->size), 1, stream) != 1)
+        if (fwrite(&physics->size, sizeof(physics->size), 1, stream) != 1)
                 goto error;
-        if (fwrite(s_shared, s_shared->size, 1, stream) != 1) goto error;
+        if (fwrite(physics, physics->size, 1, stream) != 1) goto error;
 
         return PUMAS_RETURN_SUCCESS;
 
@@ -1464,24 +1477,19 @@ error:
 #undef BINARY_DUMP_TAG
 }
 
-void pumas_finalise()
+void pumas_physics_finalise(struct pumas_physics ** physics_ptr)
 {
-#if (GDB_MODE)
-        /* Restore the floating points exceptions status. */
-        feclearexcept(FE_ALL_EXCEPT);
-        feenableexcept(fe_status);
-#endif
-
-        if (s_shared == NULL) return;
+        if ((physics_ptr == NULL) || (*physics_ptr == NULL)) return;
 
         /* Free the shared data. */
+        struct pumas_physics * physics = *physics_ptr;
         int i;
-        for (i = 0; i < s_shared->n_materials - s_shared->n_composites; i++) {
-                deallocate(s_shared->dedx_filename[i]);
-                s_shared->dedx_filename[i] = NULL;
+        for (i = 0; i < physics->n_materials - physics->n_composites; i++) {
+                deallocate(physics->dedx_filename[i]);
+                physics->dedx_filename[i] = NULL;
         }
-        deallocate(s_shared);
-        s_shared = NULL;
+        deallocate(physics);
+        *physics_ptr = NULL;
 }
 
 const char * pumas_error_function(pumas_function_t * caller)
@@ -1490,32 +1498,36 @@ const char * pumas_error_function(pumas_function_t * caller)
         if (caller == (pumas_function_t *)function) return #function;
 
         /* Library functions with an error code. */
-        TOSTRING(pumas_initialise)
-        TOSTRING(pumas_dump)
-        TOSTRING(pumas_load)
-        TOSTRING(pumas_transport)
-        TOSTRING(pumas_particle)
+        TOSTRING(pumas_physics_initialise)
+        TOSTRING(pumas_physics_initialise_tabulation)
+        TOSTRING(pumas_physics_dump)
+        TOSTRING(pumas_physics_load)
+        TOSTRING(pumas_physics_tabulate)
+        TOSTRING(pumas_context_transport)
+        TOSTRING(pumas_physics_particle)
         TOSTRING(pumas_context_create)
         TOSTRING(pumas_recorder_create)
-        TOSTRING(pumas_material_name)
-        TOSTRING(pumas_material_index)
-        TOSTRING(pumas_composite_update)
-        TOSTRING(pumas_composite_properties)
-        TOSTRING(pumas_print)
+        TOSTRING(pumas_physics_material_name)
+        TOSTRING(pumas_physics_material_index)
+        TOSTRING(pumas_physics_composite_update)
+        TOSTRING(pumas_physics_composite_properties)
+        TOSTRING(pumas_physics_print)
         TOSTRING(pumas_error_raise)
-        TOSTRING(pumas_property_grammage)
-        TOSTRING(pumas_property_proper_time)
-        TOSTRING(pumas_property_magnetic_rotation)
-        TOSTRING(pumas_property_kinetic_energy)
-        TOSTRING(pumas_property_energy_loss)
-        TOSTRING(pumas_property_scattering_length)
-        TOSTRING(pumas_property_cross_section)
-        TOSTRING(pumas_table_value)
-        TOSTRING(pumas_table_index)
+        TOSTRING(pumas_physics_property_grammage)
+        TOSTRING(pumas_physics_property_proper_time)
+        TOSTRING(pumas_physics_property_magnetic_rotation)
+        TOSTRING(pumas_physics_property_kinetic_energy)
+        TOSTRING(pumas_physics_property_energy_loss)
+        TOSTRING(pumas_physics_property_scattering_length)
+        TOSTRING(pumas_physics_property_cross_section)
+        TOSTRING(pumas_physics_table_value)
+        TOSTRING(pumas_physics_table_index)
 
         /* Other library functions. */
-        TOSTRING(pumas_finalise)
+        TOSTRING(pumas_physics_finalise)
+        TOSTRING(pumas_physics_tabulation_clear)
         TOSTRING(pumas_context_destroy)
+        TOSTRING(pumas_context_physics_get)
         TOSTRING(pumas_recorder_clear)
         TOSTRING(pumas_recorder_destroy)
         TOSTRING(pumas_tag)
@@ -1523,9 +1535,9 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_error_handler_set)
         TOSTRING(pumas_error_handler_get)
         TOSTRING(pumas_error_catch)
-        TOSTRING(pumas_material_length)
-        TOSTRING(pumas_composite_length)
-        TOSTRING(pumas_table_length)
+        TOSTRING(pumas_physics_material_length)
+        TOSTRING(pumas_physics_composite_length)
+        TOSTRING(pumas_physics_table_length)
         TOSTRING(pumas_memory_allocator)
         TOSTRING(pumas_memory_reallocator)
         TOSTRING(pumas_memory_deallocator)
@@ -1565,21 +1577,21 @@ enum pumas_return pumas_error_raise(void)
 }
 
 /* Public library functions: simulation context management. */
-enum pumas_return pumas_context_create(
-    struct pumas_context ** context_, int extra_memory)
+enum pumas_return pumas_context_create(struct pumas_context ** context_,
+    const struct pumas_physics * physics, int extra_memory)
 {
         ERROR_INITIALISE(pumas_context_create);
         *context_ = NULL;
 
         /* Check the library initialisation. */
-        if (s_shared == NULL) { return ERROR_NOT_INITIALISED(); }
+        if (physics == NULL) { return ERROR_NOT_INITIALISED(); }
 
         /* Allocate the new context. */
         struct simulation_context * context;
         const int pad_size = sizeof(*(context->data));
         const int work_size =
             memory_padded_size(sizeof(struct coulomb_workspace) +
-                    s_shared->max_components * sizeof(struct coulomb_data),
+                    physics->max_components * sizeof(struct coulomb_data),
                 pad_size);
         if (extra_memory < 0)
                 extra_memory = 0;
@@ -1593,13 +1605,14 @@ enum pumas_return pumas_context_create(
 
         /* Set the default configuration. */
         *context_ = (struct pumas_context *)context;
+        context->physics = physics;
         context->extra_memory = extra_memory;
         if (extra_memory > 0)
                 (*context_)->user_data = context->data + work_size / pad_size;
         else
                 (*context_)->user_data = NULL;
 
-        int imax = s_shared->n_kinetics - 2;
+        int imax = physics->n_kinetics - 2;
         context->index_K_last[0] = context->index_K_last[1] = imax;
         context->index_X_last[0] = context->index_X_last[1] = imax;
 
@@ -1610,7 +1623,7 @@ enum pumas_return pumas_context_create(
         (*context_)->longitudinal = 0;
         (*context_)->forward = 1;
         (*context_)->scheme = PUMAS_SCHEME_DETAILED;
-        (*context_)->decay = (s_shared->particle == PUMAS_PARTICLE_MUON) ?
+        (*context_)->decay = (physics->particle == PUMAS_PARTICLE_MUON) ?
             PUMAS_DECAY_WEIGHT :
             PUMAS_DECAY_PROCESS;
         (*context_)->event = PUMAS_EVENT_NONE;
@@ -1641,17 +1654,28 @@ void pumas_context_destroy(struct pumas_context ** context)
         *context = NULL;
 }
 
-/* Public library functions: global print routines */
-enum pumas_return pumas_print(
-    FILE * stream, const char * tabulation, const char * newline)
+const struct pumas_physics * pumas_context_physics_get(
+    const struct pumas_context * context)
 {
-        ERROR_INITIALISE(pumas_print);
+        if (context == NULL) return NULL;
+
+        const struct simulation_context * context_ =
+            (const struct simulation_context *)context;
+        return context_->physics;
+}
+
+/* Public library functions: global print routines */
+enum pumas_return pumas_physics_print(
+    const struct pumas_physics * physics, FILE * stream,
+    const char * tabulation, const char * newline)
+{
+        ERROR_INITIALISE(pumas_physics_print);
 
         const char * tab = (tabulation == NULL) ? "" : tabulation;
         const char * cr = (newline == NULL) ? "" : newline;
 
         /* Check the library initialisation */
-        if (s_shared == NULL) { return ERROR_NOT_INITIALISED(); }
+        if (physics == NULL) { return ERROR_NOT_INITIALISED(); }
 
         /* Check the output stream */
         if (stream == NULL) goto error;
@@ -1660,18 +1684,18 @@ enum pumas_return pumas_print(
         if (fprintf(stream,
                 "{%s%s\"particle\" : {%s%s%s\"mass (GeV/c^2)\""
                 " : %.6lf",
-                cr, tab, cr, tab, tab, s_shared->mass) < 0)
+                cr, tab, cr, tab, tab, physics->mass) < 0)
                 goto error;
         if (fprintf(stream, ",%s%s%s\"lifetime (m/c)\" : %.3lf%s%s}", cr, tab,
-                tab, s_shared->ctau, cr, tab) < 0)
+                tab, physics->ctau, cr, tab) < 0)
                 goto error;
 
         /* Print the atomic elements */
         if (fprintf(stream, ",%s%s\"elements\" : {", cr, tab) < 0) goto error;
         int iel = 0;
-        for (; iel < s_shared->n_elements; iel++) {
+        for (; iel < physics->n_elements; iel++) {
                 const char * head = (iel == 0) ? "" : ",";
-                const struct atomic_element * element = s_shared->element[iel];
+                const struct atomic_element * element = physics->element[iel];
                 if (fprintf(stream, "%s%s%s%s\"%s\" : {", head, cr, tab, tab,
                         element->name) < 0)
                         goto error;
@@ -1689,40 +1713,40 @@ enum pumas_return pumas_print(
         /* Print the materials */
         if (fprintf(stream, ",%s%s\"materials\" : {", cr, tab) < 0) goto error;
         int material = 0;
-        for (; material < s_shared->n_materials - s_shared->n_composites;
+        for (; material < physics->n_materials - physics->n_composites;
              material++) {
                 const char * head = (material == 0) ? "" : ",";
                 if (fprintf(stream, "%s%s%s%s\"%s\" : {", head, cr, tab, tab,
-                        s_shared->material_name[material]) < 0)
+                        physics->material_name[material]) < 0)
                         goto error;
                 int iel = 0;
-                for (; iel < s_shared->elements_in[material]; iel++) {
+                for (; iel < physics->elements_in[material]; iel++) {
                         const char * head2 = (iel == 0) ? "" : ",";
                         int element =
-                            s_shared->composition[material][iel].element;
+                            physics->composition[material][iel].element;
                         if (fprintf(stream, "%s%s%s%s%s\"%s (%%)\" : %.5lg",
                                 head2, cr, tab, tab, tab,
-                                s_shared->element[element]->name,
+                                physics->element[element]->name,
                                 100. *
-                                    s_shared->composition[material][iel]
+                                    physics->composition[material][iel]
                                         .fraction) < 0)
                                 goto error;
                 }
                 if (fprintf(stream, "%s%s%s}", cr, tab, tab) < 0) goto error;
         }
         if (fprintf(stream, "%s%s}", cr, tab) < 0) goto error;
-        if (s_shared->n_composites <= 0) goto closure;
+        if (physics->n_composites <= 0) goto closure;
 
         /* Print the composites */
         if (fprintf(stream, ",%s%s\"composites\" : {", cr, tab) < 0) goto error;
-        const int material0 = s_shared->n_materials - s_shared->n_composites;
+        const int material0 = physics->n_materials - physics->n_composites;
         material = material0;
-        for (; material < s_shared->n_materials; material++) {
+        for (; material < physics->n_materials; material++) {
                 const char * head = (material == material0) ? "" : ",";
                 struct composite_material * composite =
-                    s_shared->composite[material - material0];
+                    physics->composite[material - material0];
                 if (fprintf(stream, "%s%s%s%s\"%s\" : {", head, cr, tab, tab,
-                        s_shared->material_name[material]) < 0)
+                        physics->material_name[material]) < 0)
                         goto error;
                 if (fprintf(stream, "%s%s%s%s\"density\" : %.5lg", cr, tab, tab,
                         tab, composite->density * 1E-03) < 0)
@@ -1738,7 +1762,7 @@ enum pumas_return pumas_print(
                             composite->component + imat;
                         if (fprintf(stream, "%s%s%s%s%s%s\"%s\" : {", head2, cr,
                                 tab, tab, tab, tab,
-                                s_shared->material_name[c->material]) < 0)
+                                physics->material_name[c->material]) < 0)
                                 goto error;
                         if (fprintf(stream,
                                 "%s%s%s%s%s%s\"density (g/cm^3)\" "
@@ -1828,123 +1852,129 @@ void pumas_recorder_clear(struct pumas_recorder * recorder)
 }
 
 /* Public library functions: properties accessors. */
-enum pumas_return pumas_property_grammage(
-    enum pumas_scheme scheme, int material, double kinetic, double * grammage)
+enum pumas_return pumas_physics_property_grammage(
+    const struct pumas_physics * physics, enum pumas_scheme scheme,
+    int material, double kinetic, double * grammage)
 {
-        ERROR_INITIALISE(pumas_property_grammage);
+        ERROR_INITIALISE(pumas_physics_property_grammage);
         *grammage = 0.;
 
-        if (s_shared == NULL) {
+        if (physics == NULL) {
                 return ERROR_NOT_INITIALISED();
         } else if ((scheme <= PUMAS_SCHEME_NO_LOSS) ||
             (scheme >= PUMAS_SCHEME_DETAILED)) {
                 return ERROR_INVALID_SCHEME(scheme);
-        } else if ((material < 0) || (material >= s_shared->n_materials)) {
+        } else if ((material < 0) || (material >= physics->n_materials)) {
                 return ERROR_INVALID_MATERIAL(material);
         }
 
-        *grammage = cel_grammage(NULL, scheme, material, kinetic);
+        *grammage = cel_grammage(physics, NULL, scheme, material, kinetic);
         return PUMAS_RETURN_SUCCESS;
 }
 
-enum pumas_return pumas_property_proper_time(
-    enum pumas_scheme scheme, int material, double kinetic, double * time)
+enum pumas_return pumas_physics_property_proper_time(
+    const struct pumas_physics * physics, enum pumas_scheme scheme,
+    int material, double kinetic, double * time)
 {
-        ERROR_INITIALISE(pumas_property_proper_time);
+        ERROR_INITIALISE(pumas_physics_property_proper_time);
         *time = 0.;
 
-        if (s_shared == NULL) {
+        if (physics == NULL) {
                 return ERROR_NOT_INITIALISED();
         } else if ((scheme <= PUMAS_SCHEME_NO_LOSS) ||
             (scheme >= PUMAS_SCHEME_DETAILED)) {
                 return ERROR_INVALID_SCHEME(scheme);
-        } else if ((material < 0) || (material >= s_shared->n_materials)) {
+        } else if ((material < 0) || (material >= physics->n_materials)) {
                 return ERROR_INVALID_MATERIAL(material);
         }
 
-        *time = cel_proper_time(NULL, scheme, material, kinetic);
+        *time = cel_proper_time(physics, NULL, scheme, material, kinetic);
         return PUMAS_RETURN_SUCCESS;
 }
 
-enum pumas_return pumas_property_magnetic_rotation(
-    int material, double kinetic, double * angle)
+enum pumas_return pumas_physics_property_magnetic_rotation(
+    const struct pumas_physics * physics, int material, double kinetic,
+    double * angle)
 {
-        ERROR_INITIALISE(pumas_property_magnetic_rotation);
+        ERROR_INITIALISE(pumas_physics_property_magnetic_rotation);
         *angle = 0.;
 
-        if (s_shared == NULL) {
+        if (physics == NULL) {
                 return ERROR_NOT_INITIALISED();
-        } else if ((material < 0) || (material >= s_shared->n_materials)) {
+        } else if ((material < 0) || (material >= physics->n_materials)) {
                 return ERROR_INVALID_MATERIAL(material);
         }
 
-        *angle = cel_magnetic_rotation(NULL, material, kinetic);
+        *angle = cel_magnetic_rotation(physics, NULL, material, kinetic);
         return PUMAS_RETURN_SUCCESS;
 }
 
-enum pumas_return pumas_property_kinetic_energy(
-    enum pumas_scheme scheme, int material, double grammage, double * kinetic)
+enum pumas_return pumas_physics_property_kinetic_energy(
+    const struct pumas_physics * physics, enum pumas_scheme scheme,
+    int material, double grammage, double * kinetic)
 {
-        ERROR_INITIALISE(pumas_property_kinetic_energy);
+        ERROR_INITIALISE(pumas_physics_property_kinetic_energy);
         *kinetic = 0.;
 
-        if (s_shared == NULL) {
+        if (physics == NULL) {
                 return ERROR_NOT_INITIALISED();
         } else if ((scheme <= PUMAS_SCHEME_NO_LOSS) ||
             (scheme >= PUMAS_SCHEME_DETAILED)) {
                 return ERROR_INVALID_SCHEME(scheme);
-        } else if ((material < 0) || (material >= s_shared->n_materials)) {
+        } else if ((material < 0) || (material >= physics->n_materials)) {
                 return ERROR_INVALID_MATERIAL(material);
         }
 
-        *kinetic = cel_kinetic_energy(NULL, scheme, material, grammage);
+        *kinetic = cel_kinetic_energy(physics, NULL, scheme, material, grammage);
         return PUMAS_RETURN_SUCCESS;
 }
 
-enum pumas_return pumas_property_energy_loss(
-    enum pumas_scheme scheme, int material, double kinetic, double * dedx)
+enum pumas_return pumas_physics_property_energy_loss(
+    const struct pumas_physics * physics, enum pumas_scheme scheme,
+    int material, double kinetic, double * dedx)
 {
-        ERROR_INITIALISE(pumas_property_energy_loss);
+        ERROR_INITIALISE(pumas_physics_property_energy_loss);
         *dedx = 0.;
 
-        if (s_shared == NULL) {
+        if (physics == NULL) {
                 return ERROR_NOT_INITIALISED();
         } else if ((scheme <= PUMAS_SCHEME_NO_LOSS) ||
             (scheme >= PUMAS_SCHEME_DETAILED)) {
                 return ERROR_INVALID_SCHEME(scheme);
-        } else if ((material < 0) || (material >= s_shared->n_materials)) {
+        } else if ((material < 0) || (material >= physics->n_materials)) {
                 return ERROR_INVALID_MATERIAL(material);
         }
 
-        *dedx = cel_energy_loss(NULL, scheme, material, kinetic);
+        *dedx = cel_energy_loss(physics, NULL, scheme, material, kinetic);
         return PUMAS_RETURN_SUCCESS;
 }
 
 /* Public library function: elastic scattering 1st transport path length. */
-enum pumas_return pumas_property_scattering_length(
-    int material, double kinetic, double * length)
+enum pumas_return pumas_physics_property_scattering_length(
+    const struct pumas_physics * physics, int material, double kinetic,
+    double * length)
 {
-        ERROR_INITIALISE(pumas_property_scattering_length);
+        ERROR_INITIALISE(pumas_physics_property_scattering_length);
         *length = 0.;
 
-        if (s_shared == NULL) {
+        if (physics == NULL) {
                 return ERROR_NOT_INITIALISED();
-        } else if ((material < 0) || (material >= s_shared->n_materials)) {
+        } else if ((material < 0) || (material >= physics->n_materials)) {
                 return ERROR_INVALID_MATERIAL(material);
         }
 
         double path = 0.;
         int i = 0;
-        for (; i < s_shared->elements_in[material]; i++) {
+        for (; i < physics->elements_in[material]; i++) {
                 const struct material_component * component =
-                    &s_shared->composition[material][i];
+                    &physics->composition[material][i];
                 const struct atomic_element * element =
-                    s_shared->element[component->element];
+                    physics->element[component->element];
                 double kinetic0, screening[3], coefficient[2], fCM[2];
-                coulomb_frame_parameters(kinetic, element->A, &kinetic0, fCM);
-                coulomb_screening_parameters(
+                coulomb_frame_parameters(physics, kinetic, element->A, &kinetic0, fCM);
+                coulomb_screening_parameters(physics, 
                     NULL, kinetic0, component->element, screening);
-                const double fspin = coulomb_spin_factor(kinetic0);
+                const double fspin = coulomb_spin_factor(physics, kinetic0);
                 double a[3], b[3];
                 coulomb_pole_decomposition(screening, a, b);
                 coulomb_transport_coefficients(
@@ -1953,7 +1983,7 @@ enum pumas_return pumas_property_scattering_length(
                 d *= d;
                 coefficient[1] *= d;
                 path += component->fraction /
-                    coulomb_wentzel_path(
+                    coulomb_wentzel_path(physics, 
                         kinetic, element->Z, element->A, screening[0]) *
                     coefficient[1];
         }
@@ -1969,33 +1999,37 @@ enum pumas_return pumas_property_scattering_length(
 }
 
 /* Public library function: total inelastic cross section. */
-enum pumas_return pumas_property_cross_section(
-    int material, double kinetic, double * cross_section)
+enum pumas_return pumas_physics_property_cross_section(
+    const struct pumas_physics * physics, int material, double kinetic,
+    double * cross_section)
 {
-        ERROR_INITIALISE(pumas_property_cross_section);
+        ERROR_INITIALISE(pumas_physics_property_cross_section);
         *cross_section = 0.;
 
-        if (s_shared == NULL) {
+        if (physics == NULL) {
                 return ERROR_NOT_INITIALISED();
-        } else if ((material < 0) || (material >= s_shared->n_materials)) {
+        } else if ((material < 0) || (material >= physics->n_materials)) {
                 return ERROR_INVALID_MATERIAL(material);
         }
 
-        *cross_section = (kinetic < *table_get_Kt(material)) ?
+        *cross_section = (kinetic < *table_get_Kt(physics, material)) ?
             0. :
-            del_cross_section(NULL, material, kinetic);
+            del_cross_section(physics, NULL, material, kinetic);
         return PUMAS_RETURN_SUCCESS;
 }
 
 /* Public library function: the main transport routine. */
-enum pumas_return pumas_transport(struct pumas_context * context,
+enum pumas_return pumas_context_transport(struct pumas_context * context,
     struct pumas_state * state, enum pumas_event * event,
     struct pumas_medium * media[2])
 {
-        ERROR_INITIALISE(pumas_transport);
+        ERROR_INITIALISE(pumas_context_transport);
 
         /* Check the library initialisation */
-        if (s_shared == NULL)
+        struct simulation_context * context_ =
+            (struct simulation_context *)context;
+        const struct pumas_physics * physics = context_->physics;
+        if (physics == NULL)
                 return ERROR_NOT_INITIALISED();
 
         /* Check the context and state */
@@ -2017,7 +2051,7 @@ enum pumas_return pumas_transport(struct pumas_context * context,
         if (context->medium == NULL) {
                 return ERROR_MESSAGE(
                     PUMAS_RETURN_MEDIUM_ERROR, "no medium specified");
-        } else if ((s_shared->particle == PUMAS_PARTICLE_TAU) &&
+        } else if ((physics->particle == PUMAS_PARTICLE_TAU) &&
             context->forward && (context->decay == PUMAS_DECAY_WEIGHT)) {
                 return ERROR_MESSAGE(PUMAS_RETURN_DECAY_ERROR,
                     "`PUMAS_DECAY_WEIGHT' mode is not valid for forward taus");
@@ -2048,7 +2082,7 @@ enum pumas_return pumas_transport(struct pumas_context * context,
                 step_max_medium = step_max_locals;
         if (locals.api.density <= 0.) {
                 ERROR_REGISTER_NEGATIVE_DENSITY(
-                    s_shared->material_name[medium->material]);
+                    physics->material_name[medium->material]);
                 return ERROR_RAISE();
         }
 
@@ -2059,9 +2093,7 @@ enum pumas_return pumas_transport(struct pumas_context * context,
                             "no random engine specified");
                 }
                 const double u = context->random(context);
-                struct simulation_context * context_ =
-                    (struct simulation_context *)context;
-                context_->lifetime = state->time - s_shared->ctau * log(u);
+                context_->lifetime = state->time - physics->ctau * log(u);
         }
 
         /* Call the relevant transport engine. */
@@ -2082,11 +2114,11 @@ enum pumas_return pumas_transport(struct pumas_context * context,
 
         if (do_stepping) {
                 /* Transport with a detailed stepping. */
-                e = transport_with_stepping(context, state, &medium, &locals,
+                e = transport_with_stepping(physics, context, state, &medium, &locals,
                     step_max_medium, step_max_locals, error_);
         } else {
                 /* This is a purely deterministic case. */
-                e = transport_with_csda(
+                e = transport_with_csda(physics, 
                     context, state, medium, &locals, error_);
         }
 
@@ -2096,112 +2128,119 @@ enum pumas_return pumas_transport(struct pumas_context * context,
 }
 
 /* Public library function: transported particle info. */
-enum pumas_return pumas_particle(
-    enum pumas_particle * particle, double * lifetime, double * mass)
+enum pumas_return pumas_physics_particle(
+    const struct pumas_physics * physics, enum pumas_particle * particle,
+    double * lifetime, double * mass)
 {
-        ERROR_INITIALISE(pumas_particle);
+        ERROR_INITIALISE(pumas_physics_particle);
 
-        if (s_shared == NULL) { return ERROR_NOT_INITIALISED(); }
-        if (particle != NULL) *particle = s_shared->particle;
-        if (lifetime != NULL) *lifetime = s_shared->ctau;
-        if (mass != NULL) *mass = s_shared->mass;
+        if (physics == NULL) { return ERROR_NOT_INITIALISED(); }
+        if (particle != NULL) *particle = physics->particle;
+        if (lifetime != NULL) *lifetime = physics->ctau;
+        if (mass != NULL) *mass = physics->mass;
 
         return PUMAS_RETURN_SUCCESS;
 }
 
 /* Public library functions: materials handling. */
-enum pumas_return pumas_material_name(int index, const char ** material)
+enum pumas_return pumas_physics_material_name(
+    const struct pumas_physics * physics, int index, const char ** material)
 {
-        ERROR_INITIALISE(pumas_material_name);
+        ERROR_INITIALISE(pumas_physics_material_name);
 
-        if (s_shared == NULL) { return ERROR_NOT_INITIALISED(); }
-        if ((index < 0) || (index >= s_shared->n_materials)) {
+        if (physics == NULL) { return ERROR_NOT_INITIALISED(); }
+        if ((index < 0) || (index >= physics->n_materials)) {
                 return ERROR_INVALID_MATERIAL(index);
         }
-        *material = s_shared->material_name[index];
+        *material = physics->material_name[index];
 
         return PUMAS_RETURN_SUCCESS;
 }
 
-enum pumas_return pumas_material_index(const char * material, int * index)
+enum pumas_return pumas_physics_material_index(
+    const struct pumas_physics * physics, const char * material, int * index)
 {
-        ERROR_INITIALISE(pumas_material_index);
+        ERROR_INITIALISE(pumas_physics_material_index);
 
-        if (s_shared == NULL) { return ERROR_NOT_INITIALISED(); }
-        material_index(material, index, error_);
+        if (physics == NULL) { return ERROR_NOT_INITIALISED(); }
+        material_index(physics, material, index, error_);
 
         return ERROR_RAISE();
 }
 
-int pumas_material_length(void)
+int pumas_physics_material_length(
+    const struct pumas_physics * physics)
 {
-        if (s_shared == NULL) return 0;
-        return s_shared->n_materials;
+        if (physics == NULL) return 0;
+        return physics->n_materials;
 }
 
 /* Public library functions: accessing and modifying composite materials. */
-int pumas_composite_length(void)
+int pumas_physics_composite_length(
+    const struct pumas_physics * physics)
 {
-        if (s_shared == NULL) return 0;
-        return s_shared->n_composites;
+        if (physics == NULL) return 0;
+        return physics->n_composites;
 }
 
-enum pumas_return pumas_composite_update(
-    int material, const double * fractions, const double * densities)
+enum pumas_return pumas_physics_composite_update(
+    struct pumas_physics * physics, int material, const double * fractions,
+    const double * densities)
 {
-        ERROR_INITIALISE(pumas_composite_update);
+        ERROR_INITIALISE(pumas_physics_composite_update);
 
-        if (s_shared == NULL) { return ERROR_NOT_INITIALISED(); }
+        if (physics == NULL) { return ERROR_NOT_INITIALISED(); }
 
-        const int i0 = s_shared->n_materials - s_shared->n_composites;
-        if ((material < i0) || (material > s_shared->n_materials - 1)) {
+        const int i0 = physics->n_materials - physics->n_composites;
+        if ((material < i0) || (material > physics->n_materials - 1)) {
                 return ERROR_FORMAT(PUMAS_RETURN_INDEX_ERROR,
                     "invalid index for composite material [%d]", material);
         }
 
         const int icomp =
-            material - s_shared->n_materials + s_shared->n_composites;
+            material - physics->n_materials + physics->n_composites;
         int i;
-        for (i = 0; i < s_shared->composite[icomp]->n_components; i++) {
+        for (i = 0; i < physics->composite[icomp]->n_components; i++) {
                 struct composite_component * component =
-                    s_shared->composite[icomp]->component + i;
+                    physics->composite[icomp]->component + i;
                 if (fractions != NULL) component->fraction = fractions[i];
                 if (densities != NULL) component->density = densities[i];
         }
 
         const enum pumas_return rc =
-            compute_composite_density(material, error_);
+            compute_composite_density(physics, material, error_);
         if ((rc != PUMAS_RETURN_SUCCESS) || (fractions == NULL))
                 goto clean_and_exit;
-        compute_composite(material, error_);
+        compute_composite(physics, material, error_);
 
 clean_and_exit:
         /* Free temporary workspace and return. */
-        compute_coulomb_parameters(-1, -1, error_);
+        compute_coulomb_parameters(physics, -1, -1, error_);
         return ERROR_RAISE();
 }
 
-enum pumas_return pumas_composite_properties(int material, double * density,
+enum pumas_return pumas_physics_composite_properties(
+    const struct pumas_physics * physics, int material, double * density,
     int * components, double * fractions, double * densities)
 {
-        ERROR_INITIALISE(pumas_composite_properties);
+        ERROR_INITIALISE(pumas_physics_composite_properties);
 
-        if (s_shared == NULL) { return ERROR_NOT_INITIALISED(); }
+        if (physics == NULL) { return ERROR_NOT_INITIALISED(); }
 
-        const int i0 = s_shared->n_materials - s_shared->n_composites;
-        if ((material < i0) || (material > s_shared->n_materials - 1)) {
+        const int i0 = physics->n_materials - physics->n_composites;
+        if ((material < i0) || (material > physics->n_materials - 1)) {
                 return ERROR_INVALID_MATERIAL(material);
         }
 
         const int icomp =
-            material - s_shared->n_materials + s_shared->n_composites;
-        if (density != NULL) *density = s_shared->composite[icomp]->density;
+            material - physics->n_materials + physics->n_composites;
+        if (density != NULL) *density = physics->composite[icomp]->density;
         if (components != NULL)
-                *components = s_shared->composite[icomp]->n_components;
+                *components = physics->composite[icomp]->n_components;
         int i;
-        for (i = 0; i < s_shared->composite[icomp]->n_components; i++) {
+        for (i = 0; i < physics->composite[icomp]->n_components; i++) {
                 struct composite_component * component =
-                    s_shared->composite[icomp]->component + i;
+                    physics->composite[icomp]->component + i;
                 if (fractions != NULL) fractions[i] = component->fraction;
                 if (densities != NULL) densities[i] = component->density;
         }
@@ -2210,53 +2249,54 @@ enum pumas_return pumas_composite_properties(int material, double * density,
 }
 
 /* Public library functions: info on tabulations. */
-enum pumas_return pumas_table_value(enum pumas_property property,
+enum pumas_return pumas_physics_table_value(
+    const struct pumas_physics * physics, enum pumas_property property,
     enum pumas_scheme scheme, int material, int row, double * value)
 {
-        ERROR_INITIALISE(pumas_table_value);
+        ERROR_INITIALISE(pumas_physics_table_value);
 
         /* Check the input parameters. */
         *value = 0.;
-        if (s_shared == NULL) { return ERROR_NOT_INITIALISED(); }
+        if (physics == NULL) { return ERROR_NOT_INITIALISED(); }
 
-        if ((material < 0) || (material >= s_shared->n_materials)) {
+        if ((material < 0) || (material >= physics->n_materials)) {
                 return ERROR_INVALID_MATERIAL(material);
-        } else if ((row < 0) || (row >= s_shared->n_kinetics)) {
+        } else if ((row < 0) || (row >= physics->n_kinetics)) {
                 return ERROR_FORMAT(
                     PUMAS_RETURN_INDEX_ERROR, "invalid `row' index [%d]", row);
         }
 
         if (property == PUMAS_PROPERTY_KINETIC_ENERGY) {
-                *value = *table_get_K(row);
+                *value = *table_get_K(physics, row);
                 return PUMAS_RETURN_SUCCESS;
         } else if (property == PUMAS_PROPERTY_GRAMMAGE) {
                 if ((scheme <= PUMAS_SCHEME_NO_LOSS) ||
                     (scheme >= PUMAS_SCHEME_DETAILED)) {
                         return ERROR_INVALID_SCHEME(scheme);
                 }
-                *value = *table_get_X(scheme, material, row);
+                *value = *table_get_X(physics, scheme, material, row);
                 return PUMAS_RETURN_SUCCESS;
         } else if (property == PUMAS_PROPERTY_PROPER_TIME) {
                 if ((scheme <= PUMAS_SCHEME_NO_LOSS) ||
                     (scheme >= PUMAS_SCHEME_DETAILED)) {
                         return ERROR_INVALID_SCHEME(scheme);
                 }
-                *value = *table_get_T(scheme, material, row);
+                *value = *table_get_T(physics, scheme, material, row);
                 return PUMAS_RETURN_SUCCESS;
         } else if (property == PUMAS_PROPERTY_ENERGY_LOSS) {
                 if ((scheme <= PUMAS_SCHEME_NO_LOSS) ||
                     (scheme >= PUMAS_SCHEME_DETAILED)) {
                         return ERROR_INVALID_SCHEME(scheme);
                 }
-                *value = *table_get_dE(scheme, material, row);
+                *value = *table_get_dE(physics, scheme, material, row);
                 return PUMAS_RETURN_SUCCESS;
         } else if (property == PUMAS_PROPERTY_MAGNETIC_ROTATION) {
-                const double factor = LARMOR_FACTOR / s_shared->mass;
+                const double factor = LARMOR_FACTOR / physics->mass;
                 *value =
-                    *table_get_T(PUMAS_SCHEME_CSDA, material, row) * factor;
+                    *table_get_T(physics, PUMAS_SCHEME_CSDA, material, row) * factor;
                 return PUMAS_RETURN_SUCCESS;
         } else if (property == PUMAS_PROPERTY_CROSS_SECTION) {
-                *value = *table_get_CS(material, row);
+                *value = *table_get_CS(physics, material, row);
                 return PUMAS_RETURN_SUCCESS;
         } else {
                 return ERROR_FORMAT(PUMAS_RETURN_INDEX_ERROR,
@@ -2264,49 +2304,50 @@ enum pumas_return pumas_table_value(enum pumas_property property,
         }
 }
 
-int pumas_table_length(void)
+int pumas_physics_table_length(const struct pumas_physics * physics)
 {
-        if (s_shared == NULL) return 0;
-        return s_shared->n_kinetics;
+        if (physics == NULL) return 0;
+        return physics->n_kinetics;
 }
 
-enum pumas_return pumas_table_index(enum pumas_property property,
+enum pumas_return pumas_physics_table_index(
+    const struct pumas_physics * physics, enum pumas_property property,
     enum pumas_scheme scheme, int material, double value, int * index)
 {
-        ERROR_INITIALISE(pumas_table_index);
+        ERROR_INITIALISE(pumas_physics_table_index);
 
         /* Check some input parameters. */
         *index = 0;
-        if (s_shared == NULL) { return ERROR_NOT_INITIALISED(); }
-        if ((material < 0) || (material >= s_shared->n_materials)) {
+        if (physics == NULL) { return ERROR_NOT_INITIALISED(); }
+        if ((material < 0) || (material >= physics->n_materials)) {
                 return ERROR_INVALID_MATERIAL(material);
         }
 
         /* Get the tabulated value's index. */
         const double * table;
         if (property == PUMAS_PROPERTY_KINETIC_ENERGY)
-                table = table_get_K(0);
+                table = table_get_K(physics, 0);
         else if (property == PUMAS_PROPERTY_GRAMMAGE) {
                 if ((scheme <= PUMAS_SCHEME_NO_LOSS) ||
                     (scheme >= PUMAS_SCHEME_DETAILED)) {
                         return ERROR_INVALID_SCHEME(scheme);
                 }
-                table = table_get_X(scheme, material, 0);
+                table = table_get_X(physics, scheme, material, 0);
         } else if (property == PUMAS_PROPERTY_PROPER_TIME) {
                 if ((scheme <= PUMAS_SCHEME_NO_LOSS) ||
                     (scheme >= PUMAS_SCHEME_DETAILED)) {
                         return ERROR_INVALID_SCHEME(scheme);
                 }
-                table = table_get_T(scheme, material, 0);
+                table = table_get_T(physics, scheme, material, 0);
         } else if (property == PUMAS_PROPERTY_MAGNETIC_ROTATION) {
-                value *= s_shared->mass / LARMOR_FACTOR;
-                table = table_get_T(PUMAS_SCHEME_CSDA, material, 0);
+                value *= physics->mass / LARMOR_FACTOR;
+                table = table_get_T(physics, PUMAS_SCHEME_CSDA, material, 0);
         } else {
                 return ERROR_FORMAT(PUMAS_RETURN_INDEX_ERROR,
                     "invalid `property' index [%d]", property);
         }
 
-        const int imax = s_shared->n_kinetics - 1;
+        const int imax = physics->n_kinetics - 1;
         if (value < table[0]) {
                 return ERROR_FORMAT(PUMAS_RETURN_VALUE_ERROR,
                     "out of range `value' [%.5lE < %.5lE]", value, table[0]);
@@ -2342,26 +2383,26 @@ enum pumas_return pumas_table_index(enum pumas_property property,
  * @param kinetic  The initial kinetic energy.
  * @return On success, the total grammage in kg/m^2 otherwise `0`.
  */
-double cel_grammage(struct pumas_context * context, enum pumas_scheme scheme,
+double cel_grammage(const struct pumas_physics * physics, struct pumas_context * context, enum pumas_scheme scheme,
     int material, double kinetic)
 {
-        const int imax = s_shared->n_kinetics - 1;
-        if (kinetic < *table_get_K(0)) return 0.;
+        const int imax = physics->n_kinetics - 1;
+        if (kinetic < *table_get_K(physics, 0)) return 0.;
 
-        if (kinetic >= *table_get_K(imax)) {
+        if (kinetic >= *table_get_K(physics, imax)) {
                 /* Constant energy loss model. */
-                const double a = *table_get_a_max(material);
-                const double b = *table_get_b_max(scheme, material);
-                const double K0 = *table_get_K(imax);
-                const double K1 = a / b + s_shared->mass;
+                const double a = *table_get_a_max(physics, material);
+                const double b = *table_get_b_max(physics, scheme, material);
+                const double K0 = *table_get_K(physics, imax);
+                const double K1 = a / b + physics->mass;
 
-                return *table_get_X(scheme, material, imax) +
+                return *table_get_X(physics, scheme, material, imax) +
                     1. / b * log((kinetic + K1) / (K0 + K1));
         }
 
         /* Interpolation. */
-        return table_interpolate(
-            context, table_get_K(0), table_get_X(scheme, material, 0), kinetic);
+        return table_interpolate(physics, 
+            context, table_get_K(physics, 0), table_get_X(physics, scheme, material, 0), kinetic);
 }
 
 /**
@@ -2373,29 +2414,29 @@ double cel_grammage(struct pumas_context * context, enum pumas_scheme scheme,
  * @param time     The total proper time variation.
  * @return On success, the total grammage in kg/m^2 otherwise `0`.
  */
-double cel_grammage_as_time(struct pumas_context * context,
+double cel_grammage_as_time(const struct pumas_physics * physics, struct pumas_context * context,
     enum pumas_scheme scheme, int material, double time)
 {
-        const int imax = s_shared->n_kinetics - 1;
-        if (time < *table_get_T(scheme, material, 0)) return 0.;
+        const int imax = physics->n_kinetics - 1;
+        if (time < *table_get_T(physics, scheme, material, 0)) return 0.;
 
-        if (time >= *table_get_T(scheme, material, imax)) {
+        if (time >= *table_get_T(physics, scheme, material, imax)) {
                 /* Constant energy loss model. */
-                const double a = *table_get_a_max(material);
-                const double b = *table_get_b_max(scheme, material);
-                const double E0 = *table_get_K(imax) + s_shared->mass;
-                const double tmax = *table_get_T(scheme, material, imax);
+                const double a = *table_get_a_max(physics, material);
+                const double b = *table_get_b_max(physics, scheme, material);
+                const double E0 = *table_get_K(physics, imax) + physics->mass;
+                const double tmax = *table_get_T(physics, scheme, material, imax);
                 const double r =
-                    E0 / (a + b * E0) * exp(a * (time - tmax) / s_shared->mass);
-                const double kinetic = a * r / (1. - b * r) - s_shared->mass;
-                const double K1 = a / b + s_shared->mass;
-                return *table_get_X(scheme, material, imax) +
-                    1. / b * log((kinetic + K1) / (E0 - s_shared->mass + K1));
+                    E0 / (a + b * E0) * exp(a * (time - tmax) / physics->mass);
+                const double kinetic = a * r / (1. - b * r) - physics->mass;
+                const double K1 = a / b + physics->mass;
+                return *table_get_X(physics, scheme, material, imax) +
+                    1. / b * log((kinetic + K1) / (E0 - physics->mass + K1));
         }
 
         /* Interpolation. */
-        return table_interpolate(context, table_get_T(scheme, material, 0),
-            table_get_X(scheme, material, 0), time);
+        return table_interpolate(physics, context, table_get_T(physics, scheme, material, 0),
+            table_get_X(physics, scheme, material, 0), time);
 }
 
 /**
@@ -2407,27 +2448,27 @@ double cel_grammage_as_time(struct pumas_context * context,
  * @param kinetic  The initial kinetic energy.
  * @return On success, the normalised proper time in kg/m^2 otherwise `0`.
  */
-double cel_proper_time(struct pumas_context * context, enum pumas_scheme scheme,
+double cel_proper_time(const struct pumas_physics * physics, struct pumas_context * context, enum pumas_scheme scheme,
     int material, double kinetic)
 {
-        const int imax = s_shared->n_kinetics - 1;
-        if (kinetic < *table_get_K(0)) return 0.;
+        const int imax = physics->n_kinetics - 1;
+        if (kinetic < *table_get_K(physics, 0)) return 0.;
 
-        if (kinetic >= *table_get_K(imax)) {
+        if (kinetic >= *table_get_K(physics, imax)) {
                 /* Constant energy loss model. */
-                const double a = *table_get_a_max(material);
-                const double b = *table_get_b_max(scheme, material);
-                const double E0 = *table_get_K(imax) + s_shared->mass;
-                const double E1 = kinetic + s_shared->mass;
+                const double a = *table_get_a_max(physics, material);
+                const double b = *table_get_b_max(physics, scheme, material);
+                const double E0 = *table_get_K(physics, imax) + physics->mass;
+                const double E1 = kinetic + physics->mass;
 
-                return *table_get_T(scheme, material, imax) +
-                    s_shared->mass / a *
+                return *table_get_T(physics, scheme, material, imax) +
+                    physics->mass / a *
                     log((E1 / E0) * (a + b * E0) / (a + b * E1));
         }
 
         /* Interpolation. */
-        return table_interpolate(
-            context, table_get_K(0), table_get_T(scheme, material, 0), kinetic);
+        return table_interpolate(physics, 
+            context, table_get_K(physics, 0), table_get_T(physics, scheme, material, 0), kinetic);
 }
 
 /**
@@ -2440,27 +2481,27 @@ double cel_proper_time(struct pumas_context * context, enum pumas_scheme scheme,
  * @param grammage The total grammage depth.
  * @return On success, the initial kinetic energy in GeV otherwise `0`.
  */
-double cel_kinetic_energy(struct pumas_context * context,
+double cel_kinetic_energy(const struct pumas_physics * physics, struct pumas_context * context,
     enum pumas_scheme scheme, int material, double grammage)
 {
-        const int imax = s_shared->n_kinetics - 1;
-        if (grammage < *table_get_X(scheme, material, 0)) return 0.;
+        const int imax = physics->n_kinetics - 1;
+        if (grammage < *table_get_X(physics, scheme, material, 0)) return 0.;
 
-        if (grammage >= *table_get_X(scheme, material, imax)) {
+        if (grammage >= *table_get_X(physics, scheme, material, imax)) {
                 /* Constant energy loss model. */
-                const double a = *table_get_a_max(material);
-                const double b = *table_get_b_max(scheme, material);
-                const double K0 = *table_get_K(imax);
-                const double K1 = a / b + s_shared->mass;
+                const double a = *table_get_a_max(physics, material);
+                const double b = *table_get_b_max(physics, scheme, material);
+                const double K0 = *table_get_K(physics, imax);
+                const double K1 = a / b + physics->mass;
 
                 return (K0 + K1) *
-                    exp(b * (grammage - *table_get_X(scheme, material, imax))) -
+                    exp(b * (grammage - *table_get_X(physics, scheme, material, imax))) -
                     K1;
         }
 
         /* Interpolation. */
-        return table_interpolate(context, table_get_X(scheme, material, 0),
-            table_get_K(0), grammage);
+        return table_interpolate(physics, context, table_get_X(physics, scheme, material, 0),
+            table_get_K(physics, 0), grammage);
 }
 
 /**
@@ -2472,22 +2513,22 @@ double cel_kinetic_energy(struct pumas_context * context,
  * @param kinetic  The initial kinetic energy.
  * @return On success, the CEL in GeV/(kg/m^2) otherwise `0`.
  */
-double cel_energy_loss(struct pumas_context * context, enum pumas_scheme scheme,
+double cel_energy_loss(const struct pumas_physics * physics, struct pumas_context * context, enum pumas_scheme scheme,
     int material, double kinetic)
 {
-        const int imax = s_shared->n_kinetics - 1;
-        if (kinetic < *table_get_K(0)) return 0.;
+        const int imax = physics->n_kinetics - 1;
+        if (kinetic < *table_get_K(physics, 0)) return 0.;
 
-        if (kinetic >= *table_get_K(imax)) {
+        if (kinetic >= *table_get_K(physics, imax)) {
                 /* Constants energy loss model. */
-                return *table_get_a_max(material) +
-                    *table_get_b_max(scheme, material) *
-                    (kinetic + s_shared->mass);
+                return *table_get_a_max(physics, material) +
+                    *table_get_b_max(physics, scheme, material) *
+                    (kinetic + physics->mass);
         }
 
         /* Interpolation. */
-        return table_interpolate(context, table_get_K(0),
-            table_get_dE(scheme, material, 0), kinetic);
+        return table_interpolate(physics, context, table_get_K(physics, 0),
+            table_get_dE(physics, scheme, material, 0), kinetic);
 }
 
 /**
@@ -2502,15 +2543,15 @@ double cel_energy_loss(struct pumas_context * context, enum pumas_scheme scheme,
  * The magnetic rotation angle is proportional to the proper time integral.
  * Therefore it is computed from the proper time table.
  */
-double cel_magnetic_rotation(
+double cel_magnetic_rotation(const struct pumas_physics * physics, 
     struct pumas_context * context, int material, double kinetic)
 {
-        const int imax = s_shared->n_kinetics - 1;
-        const double factor = LARMOR_FACTOR / s_shared->mass;
-        double * const T = table_get_T(PUMAS_SCHEME_CSDA, material, 0);
-        if (kinetic <= *table_get_K(0)) return T[imax] * factor;
+        const int imax = physics->n_kinetics - 1;
+        const double factor = LARMOR_FACTOR / physics->mass;
+        double * const T = table_get_T(physics, PUMAS_SCHEME_CSDA, material, 0);
+        if (kinetic <= *table_get_K(physics, 0)) return T[imax] * factor;
 
-        if (kinetic >= *table_get_K(imax)) {
+        if (kinetic >= *table_get_K(physics, imax)) {
                 /*
                  * Neglect any magnetic rotation above the max tabulated value
                  * of the kinetic energy.
@@ -2520,7 +2561,7 @@ double cel_magnetic_rotation(
 
         /* Interpolation. */
         return (T[imax] -
-                   table_interpolate(context, table_get_K(0), T, kinetic)) *
+                   table_interpolate(physics, context, table_get_K(physics, 0), T, kinetic)) *
             factor;
 }
 
@@ -2532,20 +2573,20 @@ double cel_magnetic_rotation(
  * @param kinetic  The initial kinetic energy.
  * @return On success, the DEL total cross section, otherwise `0`.
  */
-double del_cross_section(
+double del_cross_section(const struct pumas_physics * physics, 
     struct pumas_context * context, int material, double kinetic)
 {
-        const int imax = s_shared->n_kinetics - 1;
-        if (kinetic < *table_get_K(0)) return 0.;
+        const int imax = physics->n_kinetics - 1;
+        if (kinetic < *table_get_K(physics, 0)) return 0.;
 
-        if (kinetic >= *table_get_K(imax)) {
+        if (kinetic >= *table_get_K(physics, imax)) {
                 /* Constant cross section model. */
-                return *table_get_CS(material, imax);
+                return *table_get_CS(physics, material, imax);
         }
 
         /* Interpolation. */
-        return table_interpolate(
-            context, table_get_K(0), table_get_CS(material, 0), kinetic);
+        return table_interpolate(physics, 
+            context, table_get_K(physics, 0), table_get_CS(physics, material, 0), kinetic);
 }
 
 /**
@@ -2556,28 +2597,28 @@ double del_cross_section(
  * @param kinetic  The initial kinetic energy.
  * @return On success, the number of interaction lenths, otherwise `0`.
  */
-double del_interaction_length(
+double del_interaction_length(const struct pumas_physics * physics, 
     struct pumas_context * context, int material, double kinetic)
 {
-        const int imax = s_shared->n_kinetics - 1;
-        if (kinetic < *table_get_K(0)) return 0.;
+        const int imax = physics->n_kinetics - 1;
+        if (kinetic < *table_get_K(physics, 0)) return 0.;
 
-        if (kinetic >= *table_get_K(imax)) {
+        if (kinetic >= *table_get_K(physics, imax)) {
                 /* constant loss model. */
-                const double k0 = *table_get_K(imax);
-                const double a0 = *table_get_a_max(material);
+                const double k0 = *table_get_K(physics, imax);
+                const double a0 = *table_get_a_max(physics, material);
                 const double b0 =
-                    *table_get_b_max(PUMAS_SCHEME_HYBRID, material);
-                const double cs = *table_get_CS(material, imax);
+                    *table_get_b_max(physics, PUMAS_SCHEME_HYBRID, material);
+                const double cs = *table_get_CS(physics, material, imax);
                 const double dZ = cs / b0 *
-                    log((a0 + b0 * (kinetic + s_shared->mass)) /
-                        (a0 + b0 * (k0 + s_shared->mass)));
-                return *table_get_NI_in(material, imax) + dZ;
+                    log((a0 + b0 * (kinetic + physics->mass)) /
+                        (a0 + b0 * (k0 + physics->mass)));
+                return *table_get_NI_in(physics, material, imax) + dZ;
         }
 
         /* Interpolation. */
-        return table_interpolate(
-            context, table_get_K(0), table_get_NI_in(material, 0), kinetic);
+        return table_interpolate(physics, 
+            context, table_get_K(physics, 0), table_get_NI_in(physics, material, 0), kinetic);
 }
 
 /**
@@ -2588,30 +2629,30 @@ double del_interaction_length(
  * @param nI       The number of interaction lengths.
  * @return On success, the initial kinetic energy, otherwise `0`.
  */
-double del_kinetic_from_interaction_length(
+double del_kinetic_from_interaction_length(const struct pumas_physics * physics, 
     struct pumas_context * context, int material, double nI)
 {
-        const int imax = s_shared->n_kinetics - 1;
-        if (nI < *table_get_NI_in(material, 0)) return 0.;
+        const int imax = physics->n_kinetics - 1;
+        if (nI < *table_get_NI_in(physics, material, 0)) return 0.;
 
-        if (nI >= *table_get_NI_in(material, imax)) {
+        if (nI >= *table_get_NI_in(physics, material, imax)) {
                 /* constant loss model. */
-                const double k0 = *table_get_K(imax);
-                const double a0 = *table_get_a_max(material);
+                const double k0 = *table_get_K(physics, imax);
+                const double a0 = *table_get_a_max(physics, material);
                 const double b0 =
-                    *table_get_b_max(PUMAS_SCHEME_HYBRID, material);
-                const double cs = *table_get_CS(material, imax);
-                const double nI0 = *table_get_NI_in(material, imax);
-                return ((a0 + b0 * (k0 + s_shared->mass)) *
+                    *table_get_b_max(physics, PUMAS_SCHEME_HYBRID, material);
+                const double cs = *table_get_CS(physics, material, imax);
+                const double nI0 = *table_get_NI_in(physics, material, imax);
+                return ((a0 + b0 * (k0 + physics->mass)) *
                                exp(b0 * (nI - nI0) / cs) -
                            a0) /
                     b0 -
-                    s_shared->mass;
+                    physics->mass;
         }
 
         /* Interpolation. */
-        return table_interpolate(
-            context, table_get_NI_in(material, 0), table_get_K(0), nI);
+        return table_interpolate(physics, 
+            context, table_get_NI_in(physics, material, 0), table_get_K(physics, 0), nI);
 }
 
 /**
@@ -2623,24 +2664,24 @@ double del_kinetic_from_interaction_length(
  * @param kinetic  The initial kinetic energy.
  * @return On success, the number of interaction lengths, otherwise `0`.
  */
-double ehs_interaction_length(struct pumas_context * context,
+double ehs_interaction_length(const struct pumas_physics * physics, struct pumas_context * context,
     enum pumas_scheme scheme, int material, double kinetic)
 {
-        const int imax = s_shared->n_kinetics - 1;
-        if (kinetic < *table_get_K(0)) return 0.;
+        const int imax = physics->n_kinetics - 1;
+        if (kinetic < *table_get_K(physics, 0)) return 0.;
 
-        if (kinetic >= *table_get_K(imax)) {
+        if (kinetic >= *table_get_K(physics, imax)) {
                 /* linear extrapolation. */
-                const double k0 = *table_get_K(imax - 1);
-                const double k1 = *table_get_K(imax);
-                const double nI0 = *table_get_NI_el(scheme, material, imax - 1);
-                const double nI1 = *table_get_NI_el(scheme, material, imax);
+                const double k0 = *table_get_K(physics, imax - 1);
+                const double k1 = *table_get_K(physics, imax);
+                const double nI0 = *table_get_NI_el(physics, scheme, material, imax - 1);
+                const double nI1 = *table_get_NI_el(physics, scheme, material, imax);
                 return nI1 + (kinetic - k1) * (nI1 - nI0) / (k1 - k0);
         }
 
         /* Interpolation. */
-        return table_interpolate(context, table_get_K(0),
-            table_get_NI_el(scheme, material, 0), kinetic);
+        return table_interpolate(physics, context, table_get_K(physics, 0),
+            table_get_NI_el(physics, scheme, material, 0), kinetic);
 }
 
 /**
@@ -2652,24 +2693,24 @@ double ehs_interaction_length(struct pumas_context * context,
  * @param nI       The number of interaction lengths.
  * @return On success, the initial kinetic energy, otherwise `0`.
  */
-double ehs_kinetic_from_interaction_length(struct pumas_context * context,
+double ehs_kinetic_from_interaction_length(const struct pumas_physics * physics, struct pumas_context * context,
     enum pumas_scheme scheme, int material, double nI)
 {
-        const int imax = s_shared->n_kinetics - 1;
-        if (nI < *table_get_NI_el(scheme, material, 0)) return 0.;
+        const int imax = physics->n_kinetics - 1;
+        if (nI < *table_get_NI_el(physics, scheme, material, 0)) return 0.;
 
-        if (nI >= *table_get_NI_el(scheme, material, imax)) {
+        if (nI >= *table_get_NI_el(physics, scheme, material, imax)) {
                 /* linear extrapolation. */
-                const double k0 = *table_get_K(imax - 1);
-                const double k1 = *table_get_K(imax);
-                const double nI0 = *table_get_NI_el(scheme, material, imax - 1);
-                const double nI1 = *table_get_NI_el(scheme, material, imax);
+                const double k0 = *table_get_K(physics, imax - 1);
+                const double k1 = *table_get_K(physics, imax);
+                const double nI0 = *table_get_NI_el(physics, scheme, material, imax - 1);
+                const double nI1 = *table_get_NI_el(physics, scheme, material, imax);
                 return k1 + (nI - nI1) * (k1 - k0) / (nI1 - nI0);
         }
 
         /* Interpolation. */
-        return table_interpolate(
-            context, table_get_NI_el(scheme, material, 0), table_get_K(0), nI);
+        return table_interpolate(physics, 
+            context, table_get_NI_el(physics, scheme, material, 0), table_get_K(physics, 0), nI);
 }
 
 /*
@@ -2688,33 +2729,33 @@ double ehs_kinetic_from_interaction_length(struct pumas_context * context,
  * Interpolate the cutt-off angle for Coulomb scattering and the total 1st
  * transport path length for MSC.
  */
-void table_get_msc(struct pumas_context * context, int material, double kinetic,
+void table_get_msc(const struct pumas_physics * physics, struct pumas_context * context, int material, double kinetic,
     double * mu0, double * invlb1)
 {
-        const int imax = s_shared->n_kinetics - 1;
-        if (kinetic < *table_get_K(1)) {
-                *mu0 = *table_get_Mu0(material, 1);
+        const int imax = physics->n_kinetics - 1;
+        if (kinetic < *table_get_K(physics, 1)) {
+                *mu0 = *table_get_Mu0(physics, material, 1);
                 /* Use asymptotic limit as lb1 ~ sqrt(kinetic). */
-                *invlb1 = *table_get_Ms1(material, 1) *
-                    sqrt((*table_get_K(1)) / kinetic);
-        } else if (kinetic >= *table_get_K(imax)) {
-                *mu0 = *table_get_Mu0(material, imax);
+                *invlb1 = *table_get_Ms1(physics, material, 1) *
+                    sqrt((*table_get_K(physics, 1)) / kinetic);
+        } else if (kinetic >= *table_get_K(physics, imax)) {
+                *mu0 = *table_get_Mu0(physics, material, imax);
                 /* Use asymptotic limit as lb1 ~ kinetic. */
-                *invlb1 = *table_get_Ms1(material, imax) *
-                    (*table_get_K(imax)) / kinetic;
+                *invlb1 = *table_get_Ms1(physics, material, imax) *
+                    (*table_get_K(physics, imax)) / kinetic;
         } else {
-                const int i1 = table_index(context, table_get_K(0), kinetic);
+                const int i1 = table_index(physics, context, table_get_K(physics, 0), kinetic);
                 const int i2 = i1 + 1;
-                double h = (kinetic - *table_get_K(i1)) /
-                    (*table_get_K(i2) - *table_get_K(i1));
-                *mu0 = *table_get_Mu0(material, i1) +
+                double h = (kinetic - *table_get_K(physics, i1)) /
+                    (*table_get_K(physics, i2) - *table_get_K(physics, i1));
+                *mu0 = *table_get_Mu0(physics, material, i1) +
                     h *
-                        (*table_get_Mu0(material, i2) -
-                            *table_get_Mu0(material, i1));
-                *invlb1 = *table_get_Ms1(material, i1) +
+                        (*table_get_Mu0(physics, material, i2) -
+                            *table_get_Mu0(physics, material, i1));
+                *invlb1 = *table_get_Ms1(physics, material, i1) +
                     h *
-                        (*table_get_Ms1(material, i2) -
-                            *table_get_Ms1(material, i1));
+                        (*table_get_Ms1(physics, material, i2) -
+                            *table_get_Ms1(physics, material, i1));
         }
 }
 
@@ -2735,10 +2776,10 @@ void table_get_msc(struct pumas_context * context, int material, double kinetic,
  * stepping.
  * **Warning** : there is no bound check. x must be in the range of table_X.
  */
-double table_interpolate(struct pumas_context * context, const double * table_X,
+double table_interpolate(const struct pumas_physics * physics, struct pumas_context * context, const double * table_X,
     const double * table_Y, double x)
 {
-        const int i1 = table_index(context, table_X, x);
+        const int i1 = table_index(physics, context, table_X, x);
         const int i2 = i1 + 1;
         double h = (x - table_X[i1]) / (table_X[i2] - table_X[i1]);
         return table_Y[i1] + h * (table_Y[i2] - table_Y[i1]);
@@ -2751,14 +2792,14 @@ double table_interpolate(struct pumas_context * context, const double * table_X,
  * @param table   The tabulated values.
  * @param value   The value to bracket.
  * @return In case of success the closest index from below is returned,
- * otherwise -1 in case of underflow or `shared_data::n_kinetics-1` in
+ * otherwise -1 in case of underflow or `pumas_physics::n_kinetics-1` in
  * case of overflow.
  *
  * Compute the table index for the given entry `value` using a dichotomy
  * algorithm. If a `context` is not `NULL`, `value` is checked against the
  * last used indices in the table, before doing the dichotomy search.
  */
-int table_index(
+int table_index(const struct pumas_physics * physics, 
     struct pumas_context * context, const double * table, double value)
 {
         int * last = NULL;
@@ -2766,7 +2807,7 @@ int table_index(
                 /* Check if the last used indices are still relevant. */
                 struct simulation_context * const ctx =
                     (struct simulation_context * const)context;
-                if (table == table_get_K(0))
+                if (table == table_get_K(physics, 0))
                         last = ctx->index_K_last;
                 else
                         last = ctx->index_X_last;
@@ -2778,7 +2819,7 @@ int table_index(
         }
 
         /* Check the boundaries. */
-        const int imax = s_shared->n_kinetics - 1;
+        const int imax = physics->n_kinetics - 1;
         if (value < table[0]) return -1;
         if (value >= table[imax]) return imax;
 
@@ -2832,7 +2873,7 @@ void table_bracket(const double * table, double value, int * p1, int * p2)
  * @param row The kinetic energy row index.
  * @return A pointer to the table element.
  */
-double * table_get_K(int row) { return s_shared->table_K + row; }
+double * table_get_K(const struct pumas_physics * physics, int row) { return physics->table_K + row; }
 
 /**
  * Encapsulation of the total grammage table.
@@ -2842,11 +2883,11 @@ double * table_get_K(int row) { return s_shared->table_K + row; }
  * @param row      The kinetic energy row index.
  * @return A pointer to the table element.
  */
-double * table_get_X(int scheme, int material, int row)
+double * table_get_X(const struct pumas_physics * physics, int scheme, int material, int row)
 {
         scheme = (scheme > PUMAS_SCHEME_HYBRID) ? PUMAS_SCHEME_HYBRID : scheme;
-        return s_shared->table_X +
-            (scheme * s_shared->n_materials + material) * s_shared->n_kinetics +
+        return physics->table_X +
+            (scheme * physics->n_materials + material) * physics->n_kinetics +
             row;
 }
 
@@ -2858,11 +2899,11 @@ double * table_get_X(int scheme, int material, int row)
  * @param row      The kinetic energy row index.
  * @return A pointer to the table element.
  */
-double * table_get_T(int scheme, int material, int row)
+double * table_get_T(const struct pumas_physics * physics, int scheme, int material, int row)
 {
         scheme = (scheme > PUMAS_SCHEME_HYBRID) ? PUMAS_SCHEME_HYBRID : scheme;
-        return s_shared->table_T +
-            (scheme * s_shared->n_materials + material) * s_shared->n_kinetics +
+        return physics->table_T +
+            (scheme * physics->n_materials + material) * physics->n_kinetics +
             row;
 }
 
@@ -2874,11 +2915,11 @@ double * table_get_T(int scheme, int material, int row)
  * @param row      The kinetic energy row index.
  * @return A pointer to the table element.
  */
-double * table_get_dE(int scheme, int material, int row)
+double * table_get_dE(const struct pumas_physics * physics, int scheme, int material, int row)
 {
         scheme = (scheme > PUMAS_SCHEME_HYBRID) ? PUMAS_SCHEME_HYBRID : scheme;
-        return s_shared->table_dE +
-            (scheme * s_shared->n_materials + material) * s_shared->n_kinetics +
+        return physics->table_dE +
+            (scheme * physics->n_materials + material) * physics->n_kinetics +
             row;
 }
 
@@ -2889,12 +2930,12 @@ double * table_get_dE(int scheme, int material, int row)
  * @param row      The kinetic energy row index.
  * @return A pointer to the table element.
  */
-double * table_get_NI_el(int scheme, int material, int row)
+double * table_get_NI_el(const struct pumas_physics * physics, int scheme, int material, int row)
 {
         scheme = (scheme >= PUMAS_SCHEME_HYBRID) ? PUMAS_SCHEME_HYBRID :
                                                    PUMAS_SCHEME_CSDA;
-        return s_shared->table_NI_el +
-            (scheme * s_shared->n_materials + material) * s_shared->n_kinetics +
+        return physics->table_NI_el +
+            (scheme * physics->n_materials + material) * physics->n_kinetics +
             row;
 }
 
@@ -2905,9 +2946,9 @@ double * table_get_NI_el(int scheme, int material, int row)
  * @param row      The kinetic energy row index.
  * @return A pointer to the table element.
  */
-double * table_get_NI_in(int material, int row)
+double * table_get_NI_in(const struct pumas_physics * physics, int material, int row)
 {
-        return s_shared->table_NI_in + material * s_shared->n_kinetics + row;
+        return physics->table_NI_in + material * physics->n_kinetics + row;
 }
 
 /**
@@ -2917,9 +2958,9 @@ double * table_get_NI_in(int material, int row)
  * @param row      The kinetic energy row index.
  * @return A pointer to the table element.
  */
-double * table_get_CS(int material, int row)
+double * table_get_CS(const struct pumas_physics * physics, int material, int row)
 {
-        return s_shared->table_CS + material * s_shared->n_kinetics + row;
+        return physics->table_CS + material * physics->n_kinetics + row;
 }
 
 /**
@@ -2930,11 +2971,11 @@ double * table_get_CS(int material, int row)
  * @param row       The kinetic energy row index.
  * @return A pointer to the table element.
  */
-double * table_get_CSf(int process, int component, int row)
+double * table_get_CSf(const struct pumas_physics * physics, int process, int component, int row)
 {
-        return s_shared->table_CSf +
-            (process * s_shared->n_components + component) *
-            s_shared->n_kinetics +
+        return physics->table_CSf +
+            (process * physics->n_components + component) *
+            physics->n_kinetics +
             row;
 }
 
@@ -2946,10 +2987,10 @@ double * table_get_CSf(int process, int component, int row)
  * @param row     The kinetic energy row index.
  * @return A pointer to the table element.
  */
-double * table_get_CSn(int process, int element, int row)
+double * table_get_CSn(const struct pumas_physics * physics, int process, int element, int row)
 {
-        return s_shared->table_CSn +
-            (process * s_shared->n_elements + element) * s_shared->n_kinetics +
+        return physics->table_CSn +
+            (process * physics->n_elements + element) * physics->n_kinetics +
             row;
 }
 
@@ -2961,10 +3002,10 @@ double * table_get_CSn(int process, int element, int row)
  * @param row     The kinetic energy row index.
  * @return A pointer to the table element.
  */
-double * table_get_Xt(int process, int element, int row)
+double * table_get_Xt(const struct pumas_physics * physics, int process, int element, int row)
 {
-        return s_shared->table_Xt +
-            (process * s_shared->n_elements + element) * s_shared->n_kinetics +
+        return physics->table_Xt +
+            (process * physics->n_elements + element) * physics->n_kinetics +
             row;
 }
 
@@ -2974,7 +3015,7 @@ double * table_get_Xt(int process, int element, int row)
  * @param material The material index.
  * @return A pointer to the table element.
  */
-double * table_get_Kt(int material) { return s_shared->table_Kt + material; }
+double * table_get_Kt(const struct pumas_physics * physics, int material) { return physics->table_Kt + material; }
 
 /**
  * Encapsulation of the temporary average CEL table, element wise.
@@ -2990,10 +3031,10 @@ double * table_get_Kt(int material) { return s_shared->table_Kt + material; }
  * `property = 0` is the total CEL and `property = 1` is the restricted
  * CEL, splitted with DELs.
  */
-double * table_get_cel(int process, int element, int row, double * table)
+double * table_get_cel(const struct pumas_physics * physics, int process, int element, int row, double * table)
 {
         return table +
-            (process * s_shared->n_elements + element) * s_shared->n_kinetics +
+            (process * physics->n_elements + element) * physics->n_kinetics +
             row;
 }
 
@@ -3006,10 +3047,10 @@ double * table_get_cel(int process, int element, int row, double * table)
  * @param row      The kinetic row index.
  * @return A pointer to the table element.
  */
-double * table_get_Li(int material, int order, int row)
+double * table_get_Li(const struct pumas_physics * physics, int material, int order, int row)
 {
-        return s_shared->table_Li +
-            (material * N_LARMOR_ORDERS + order) * s_shared->n_kinetics + row;
+        return physics->table_Li +
+            (material * N_LARMOR_ORDERS + order) * physics->n_kinetics + row;
 }
 
 /**
@@ -3018,9 +3059,9 @@ double * table_get_Li(int material, int order, int row)
  * @param material The material index.
  * @return A pointer to the table element.
  */
-double * table_get_a_max(int material)
+double * table_get_a_max(const struct pumas_physics * physics, int material)
 {
-        return s_shared->table_a_max + material;
+        return physics->table_a_max + material;
 }
 
 /**
@@ -3030,10 +3071,10 @@ double * table_get_a_max(int material)
  * @param material The material index.
  * @return A pointer to the table element.
  */
-double * table_get_b_max(int scheme, int material)
+double * table_get_b_max(const struct pumas_physics * physics, int scheme, int material)
 {
         scheme = (scheme > PUMAS_SCHEME_HYBRID) ? PUMAS_SCHEME_HYBRID : scheme;
-        return s_shared->table_b_max + scheme * s_shared->n_materials +
+        return physics->table_b_max + scheme * physics->n_materials +
             material;
 }
 
@@ -3044,9 +3085,9 @@ double * table_get_b_max(int scheme, int material)
  * @param row      The kinetic energy row index.
  * @return A pointer to the table element.
  */
-double * table_get_Mu0(int material, int row)
+double * table_get_Mu0(const struct pumas_physics * physics, int material, int row)
 {
-        return s_shared->table_Mu0 + material * s_shared->n_kinetics + row;
+        return physics->table_Mu0 + material * physics->n_kinetics + row;
 }
 
 /**
@@ -3056,9 +3097,9 @@ double * table_get_Mu0(int material, int row)
  * @param row      The kinetic energy row index.
  * @return A pointer to the table element.
  */
-double * table_get_Lb(int material, int row)
+double * table_get_Lb(const struct pumas_physics * physics, int material, int row)
 {
-        return s_shared->table_Lb + material * s_shared->n_kinetics + row;
+        return physics->table_Lb + material * physics->n_kinetics + row;
 }
 
 /*!
@@ -3068,9 +3109,9 @@ double * table_get_Lb(int material, int row)
  * @param [in] row      The kinetic energy row index.
  * @return A pointer to the table element.
  */
-double * table_get_Ms1(int material, int row)
+double * table_get_Ms1(const struct pumas_physics * physics, int material, int row)
 {
-        return s_shared->table_Ms1 + material * s_shared->n_kinetics + row;
+        return physics->table_Ms1 + material * physics->n_kinetics + row;
 }
 
 /*!
@@ -3081,9 +3122,9 @@ double * table_get_Ms1(int material, int row)
  * @param [in] table    The temporary table.
  * @return A pointer to the table element.
  */
-double * table_get_ms1(int element, int row, double * table)
+double * table_get_ms1(const struct pumas_physics * physics, int element, int row, double * table)
 {
-        return table + element * s_shared->n_kinetics + row;
+        return table + element * physics->n_kinetics + row;
 }
 
 /**
@@ -3094,13 +3135,13 @@ double * table_get_ms1(int element, int row, double * table)
  * @param row     The kinetic energy row index.
  * @return A pointer to the table element.
  */
-float * table_get_dcs_coeff(
+float * table_get_dcs_coeff(const struct pumas_physics * physics,
     const struct atomic_element * element, int process, int kinetic)
 {
         const int n =
             DCS_MODEL_ORDER_P + DCS_MODEL_ORDER_Q + 1 + DCS_SAMPLING_N;
         return element->dcs_data +
-            (process * (s_shared->n_kinetics - s_shared->dcs_model_offset) +
+            (process * (physics->n_kinetics - physics->dcs_model_offset) +
                 kinetic) *
             n;
 }
@@ -3113,12 +3154,12 @@ float * table_get_dcs_coeff(
  * @param row     The kinetic energy row index.
  * @return A pointer to the table element.
  */
-float * table_get_dcs_value(
+float * table_get_dcs_value(const struct pumas_physics * physics,
     const struct atomic_element * element, int process, int kinetic)
 {
         const int n = DCS_MODEL_ORDER_P + DCS_MODEL_ORDER_Q + 1;
         return element->dcs_data +
-            (process * (s_shared->n_kinetics - s_shared->dcs_model_offset) +
+            (process * (physics->n_kinetics - physics->dcs_model_offset) +
                 kinetic) *
             (n + DCS_SAMPLING_N) +
             n;
@@ -3146,7 +3187,7 @@ float * table_get_dcs_value(
  * proper time are also given.
  * **Warning** : the initial state must have been initialized before the call.
  */
-enum pumas_event transport_with_csda(struct pumas_context * context,
+enum pumas_event transport_with_csda(const struct pumas_physics * physics, struct pumas_context * context,
     struct pumas_state * state, struct pumas_medium * medium,
     struct medium_locals * locals, struct error_context * error_)
 {
@@ -3157,9 +3198,9 @@ enum pumas_event transport_with_csda(struct pumas_context * context,
         const double di = state->distance;
         const double ti = state->time;
         const double xi =
-            cel_grammage(context, PUMAS_SCHEME_CSDA, material, ki);
+            cel_grammage(physics, context, PUMAS_SCHEME_CSDA, material, ki);
         const double Ti =
-            cel_proper_time(context, PUMAS_SCHEME_CSDA, material, ki);
+            cel_proper_time(physics, context, PUMAS_SCHEME_CSDA, material, ki);
 
         /* Register the start of the the track, if recording. */
         enum pumas_event event = PUMAS_EVENT_NONE;
@@ -3203,7 +3244,7 @@ enum pumas_event transport_with_csda(struct pumas_context * context,
                         const double Tf = Ti - sgn * dt * density;
                         if (Tf > 0.) {
                                 const double xT = fabs(xi -
-                                    cel_grammage_as_time(context,
+                                    cel_grammage_as_time(physics, context,
                                         PUMAS_SCHEME_CSDA, material, Tf));
                                 if (xT < xB) {
                                         xB = xT;
@@ -3218,7 +3259,7 @@ enum pumas_event transport_with_csda(struct pumas_context * context,
         if (context->forward != 0) {
                 if (xi > xB) {
                         xf = xi - xB;
-                        kf = cel_kinetic_energy(
+                        kf = cel_kinetic_energy(physics, 
                             context, PUMAS_SCHEME_CSDA, material, xf);
                 } else {
                         xf = kf = 0.;
@@ -3230,21 +3271,21 @@ enum pumas_event transport_with_csda(struct pumas_context * context,
                                 return PUMAS_EVENT_LIMIT_KINETIC;
                         if (kf < context->kinetic_limit) {
                                 kf = context->kinetic_limit;
-                                xf = cel_grammage(
+                                xf = cel_grammage(physics, 
                                     context, PUMAS_SCHEME_CSDA, material, kf);
                                 event = PUMAS_EVENT_LIMIT_KINETIC;
                         }
                 }
         } else {
                 xf = xB + xi;
-                kf = cel_kinetic_energy(
+                kf = cel_kinetic_energy(physics, 
                     context, PUMAS_SCHEME_CSDA, material, xf);
                 if (context->event & PUMAS_EVENT_LIMIT_KINETIC) {
                         if (ki >= context->kinetic_limit)
                                 return PUMAS_EVENT_LIMIT_KINETIC;
                         if (kf > context->kinetic_limit) {
                                 kf = context->kinetic_limit;
-                                xf = cel_grammage(
+                                xf = cel_grammage(physics, 
                                     context, PUMAS_SCHEME_CSDA, material, kf);
                                 event = PUMAS_EVENT_LIMIT_KINETIC;
                         }
@@ -3268,19 +3309,19 @@ enum pumas_event transport_with_csda(struct pumas_context * context,
                 if (decayed) event = PUMAS_EVENT_VERTEX_DECAY;
         } else
                 state->time += fabs(Ti -
-                                   cel_proper_time(context, PUMAS_SCHEME_CSDA,
+                                   cel_proper_time(physics, context, PUMAS_SCHEME_CSDA,
                                        material, kf)) /
                     density;
         if (!context->forward)
                 state->weight *=
-                    cel_energy_loss(context, PUMAS_SCHEME_CSDA, material, kf) /
-                    cel_energy_loss(context, PUMAS_SCHEME_CSDA, material, ki);
+                    cel_energy_loss(physics, context, PUMAS_SCHEME_CSDA, material, kf) /
+                    cel_energy_loss(physics, context, PUMAS_SCHEME_CSDA, material, ki);
         if (context->decay == PUMAS_DECAY_WEIGHT)
-                state->weight *= exp(-fabs(ti - state->time) / s_shared->ctau);
+                state->weight *= exp(-fabs(ti - state->time) / physics->ctau);
 
         /* Update the position and direction. */
         if ((locals->magnetized != 0)) {
-                if (transport_csda_deflect(context, state, medium, locals, ki,
+                if (transport_csda_deflect(physics, context, state, medium, locals, ki,
                         distance, error_) != PUMAS_RETURN_SUCCESS)
                         return event;
         } else {
@@ -3317,7 +3358,7 @@ enum pumas_event transport_with_csda(struct pumas_context * context,
  * The final kinetic energy is read from the state. At return the final state
  * position and direction are updated.
  */
-enum pumas_return transport_csda_deflect(struct pumas_context * context,
+enum pumas_return transport_csda_deflect(const struct pumas_physics * physics, struct pumas_context * context,
     struct pumas_state * state, struct pumas_medium * medium,
     struct medium_locals * locals, double ki, double distance,
     struct error_context * error_)
@@ -3369,8 +3410,8 @@ enum pumas_return transport_csda_deflect(struct pumas_context * context,
         {
                 /* Negative charge convention. */
                 double a = -b0 * charge / density;
-                double pi = a * cel_magnetic_rotation(context, material, ki);
-                double pf = a * cel_magnetic_rotation(context, material, kf);
+                double pi = a * cel_magnetic_rotation(physics, context, material, ki);
+                double pf = a * cel_magnetic_rotation(physics, context, material, kf);
                 dp = pf - pi;
 
                 const double ps = fabs(pi + pf);
@@ -3390,11 +3431,11 @@ enum pumas_return transport_csda_deflect(struct pumas_context * context,
                         dy = 0.5 * dz * dp;
                 } else {
                         double xi, yi, zi, xf, yf, zf;
-                        if (csda_magnetic_transport(context, material, density,
+                        if (csda_magnetic_transport(physics, context, material, density,
                                 b0, charge, ki, pi, &xi, &yi, &zi,
                                 error_) != PUMAS_RETURN_SUCCESS)
                                 return error_->code;
-                        if (csda_magnetic_transport(context, material, density,
+                        if (csda_magnetic_transport(physics, context, material, density,
                                 b0, charge, kf, pf, &xf, &yf, &zf,
                                 error_) != PUMAS_RETURN_SUCCESS)
                                 return error_->code;
@@ -3442,28 +3483,28 @@ enum pumas_return transport_csda_deflect(struct pumas_context * context,
  * an
  * out of bound error ooccured.
  */
-enum pumas_return csda_magnetic_transport(struct pumas_context * context,
+enum pumas_return csda_magnetic_transport(const struct pumas_physics * physics, struct pumas_context * context,
     int material, double density, double magnet, double charge, double kinetic,
     double phase, double * x, double * y, double * z,
     struct error_context * error_)
 {
-        const int imax = s_shared->n_kinetics - 1;
+        const int imax = physics->n_kinetics - 1;
         double k0 = kinetic;
         int i1, i2;
-        if (kinetic <= *table_get_K(0)) {
-                k0 = *table_get_K(0);
+        if (kinetic <= *table_get_K(physics, 0)) {
+                k0 = *table_get_K(physics, 0);
                 i1 = 0;
                 i2 = 1;
-        } else if (kinetic >= *table_get_K(imax)) {
+        } else if (kinetic >= *table_get_K(physics, imax)) {
                 /* Neglect deflection at very high energy. */
                 *y = 0.0;
-                *x = *z = -(cel_grammage(
+                *x = *z = -(cel_grammage(physics, 
                                 context, PUMAS_SCHEME_CSDA, material, kinetic) -
-                    *table_get_X(0, material, imax));
+                    *table_get_X(physics, 0, material, imax));
                 return PUMAS_RETURN_SUCCESS;
         } else {
                 /* Interpolation of the step starting energy. */
-                i1 = table_index(context, table_get_K(0), k0);
+                i1 = table_index(physics, context, table_get_K(physics, 0), k0);
                 i2 = i1 + 1;
         }
 
@@ -3494,20 +3535,20 @@ enum pumas_return csda_magnetic_transport(struct pumas_context * context,
                 double u = 1.;
                 int j;
                 for (j = 0; j < N_LARMOR_ORDERS; j++) {
-                        x1 += u * poly_x[j] * (*table_get_Li(material, j, i1));
-                        y1 += u * poly_y[j] * (*table_get_Li(material, j, i1));
-                        x2 += u * poly_x[j] * (*table_get_Li(material, j, i2));
-                        y2 += u * poly_y[j] * (*table_get_Li(material, j, i2));
+                        x1 += u * poly_x[j] * (*table_get_Li(physics, material, j, i1));
+                        y1 += u * poly_y[j] * (*table_get_Li(physics, material, j, i1));
+                        x2 += u * poly_x[j] * (*table_get_Li(physics, material, j, i2));
+                        y2 += u * poly_y[j] * (*table_get_Li(physics, material, j, i2));
                         u *= a;
                 }
-                z1 = *table_get_Li(material, 0, i1);
-                z2 = *table_get_Li(material, 0, i2);
+                z1 = *table_get_Li(physics, material, 0, i1);
+                z2 = *table_get_Li(physics, material, 0, i2);
         }
 
         /* Update the position. */
         {
-                double h = (k0 - *table_get_K(i1)) /
-                    (*table_get_K(i2) - *table_get_K(i1));
+                double h = (k0 - *table_get_K(physics, i1)) /
+                    (*table_get_K(physics, i2) - *table_get_K(physics, i1));
                 *x = (x1 + h * (x2 - x1)) / density;
                 *y = (y1 + h * (y2 - y1)) / density;
                 *z = (z1 + h * (z2 - z1)) / density;
@@ -3535,7 +3576,7 @@ enum pumas_return csda_magnetic_transport(struct pumas_context * context,
  *
  * **Warning** : The initial state must have been initialized before the call.
  */
-enum pumas_event transport_with_stepping(struct pumas_context * context,
+enum pumas_event transport_with_stepping(const struct pumas_physics * physics, struct pumas_context * context,
     struct pumas_state * state, struct pumas_medium ** medium_ptr,
     struct medium_locals * locals, double step_max_medium,
     double step_max_locals, struct error_context * error_)
@@ -3579,8 +3620,8 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
         double dei, Xf;
         if (scheme > PUMAS_SCHEME_NO_LOSS) {
                 const double ki = state->kinetic;
-                Xf = cel_grammage(context, scheme, material, ki);
-                dei = 1. / cel_energy_loss(context, scheme, material, ki);
+                Xf = cel_grammage(physics, context, scheme, material, ki);
+                dei = 1. / cel_energy_loss(physics, context, scheme, material, ki);
 
         } else {
                 Xf = dei = 0.;
@@ -3603,12 +3644,12 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
         context_->step_event = PUMAS_EVENT_NONE;
         context_->step_first = 1;
         context_->step_X_limit = (context->event & PUMAS_EVENT_LIMIT_KINETIC) ?
-            cel_grammage(context, (scheme > PUMAS_SCHEME_NO_LOSS) ? scheme :
-            PUMAS_SCHEME_CSDA, material, context->kinetic_limit) : 0.;
+            cel_grammage(physics, context, (scheme > PUMAS_SCHEME_NO_LOSS) ? scheme : PUMAS_SCHEME_CSDA, material, context->kinetic_limit) :
+            0.;
         context_->step_invlb1 = 0;
         context_->step_rLarmor = 0.;
         memset(context_->step_uT, 0x0, 3 * sizeof(*(context_->step_uT)));
-        transport_limit(context, state, material, Xi, Xf, &grammage_max);
+        transport_limit(physics, context, state, material, Xi, Xf, &grammage_max);
         if (context_->step_event) return context_->step_event;
 
         /* Step through the media. */
@@ -3623,7 +3664,7 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
                 }
 
                 struct pumas_medium * new_medium = NULL;
-                if (step_transport(context, state, straight, medium, locals,
+                if (step_transport(physics, context, state, straight, medium, locals,
                         grammage_max, step_max_medium, &step_max_locals,
                         &new_medium) != PUMAS_RETURN_SUCCESS)
                         return context_->step_event;
@@ -3645,16 +3686,16 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
                 if (context->scheme >= PUMAS_SCHEME_CSDA) {
                         const double w0 =
                             (context->decay == PUMAS_DECAY_WEIGHT) ?
-                            wi * exp(-fabs(state->time - ti) / s_shared->ctau) :
+                            wi * exp(-fabs(state->time - ti) / physics->ctau) :
                             wi;
                         state->weight = context->forward ? w0 :
                                                            w0 *
-                                cel_energy_loss(
+                                cel_energy_loss(physics, 
                                     context, scheme, material, state->kinetic) *
                                 dei;
                 } else {
                         state->weight =
-                            wi * exp(-fabs(state->time - ti) / s_shared->ctau);
+                            wi * exp(-fabs(state->time - ti) / physics->ctau);
                 }
 
                 /* Process the event. */
@@ -3690,7 +3731,7 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
 
                                         /* Apply the inelastic DEL. */
                                         transport_do_del(
-                                            context, state, material);
+                                            physics, context, state, material);
 
                                         /* Record the pre step point. */
                                         if (rec != 0) {
@@ -3730,7 +3771,7 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
                                             3 * sizeof(*(context_->step_uT)));
                                 } else {
                                         /* An EHS event occured. */
-                                        transport_do_ehs(
+                                        transport_do_ehs(physics, 
                                             context, state, material);
 
                                         /* Check for any stop condition */
@@ -3747,7 +3788,7 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
                                             medium, state, locals);
                                         if (locals->api.density <= 0.) {
                                                 ERROR_REGISTER_NEGATIVE_DENSITY(
-                                                    s_shared->material_name
+                                                    physics->material_name
                                                         [medium->material]);
                                                 return context_->step_event;
                                         }
@@ -3767,7 +3808,7 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
                                     transport_set_locals(medium, state, locals);
                                 if (locals->api.density <= 0.) {
                                         ERROR_REGISTER_NEGATIVE_DENSITY(
-                                            s_shared->material_name
+                                            physics->material_name
                                                 [medium->material]);
                                         return context_->step_event;
                                 }
@@ -3788,7 +3829,7 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
                                 context_->step_X_limit =
                                     (context->event &
                                         PUMAS_EVENT_LIMIT_KINETIC) ?
-                                    cel_grammage(context, tmp_scheme, material,
+                                    cel_grammage(physics, context, tmp_scheme, material,
                                         context->kinetic_limit) :
                                     0.;
 
@@ -3817,13 +3858,13 @@ enum pumas_event transport_with_stepping(struct pumas_context * context,
                         Xi = state->grammage;
                         if (context->scheme >= PUMAS_SCHEME_CSDA) {
                                 const double ki = state->kinetic;
-                                Xf = cel_grammage(
+                                Xf = cel_grammage(physics, 
                                     context, scheme, material, ki);
                                 dei = 1. /
-                                    cel_energy_loss(
+                                    cel_energy_loss(physics, 
                                         context, scheme, material, ki);
                         }
-                        transport_limit(
+                        transport_limit(physics, 
                             context, state, material, Xi, Xf, &grammage_max);
                         if (context_->step_event) break;
                 }
@@ -3889,7 +3930,7 @@ double transport_set_locals(struct pumas_medium * medium,
  * At return *distance* is overwriten with the new limit and the context event
  * flags are updated.
  */
-void transport_limit(struct pumas_context * context,
+void transport_limit(const struct pumas_physics * physics, struct pumas_context * context,
     const struct pumas_state * state, int material, double Xi, double Xf,
     double * grammage_max)
 {
@@ -3934,7 +3975,7 @@ void transport_limit(struct pumas_context * context,
         if (scheme == PUMAS_SCHEME_NO_LOSS) {
                 if (context->longitudinal == 0) {
                         const double X = Xi -
-                            coulomb_ehs_length(
+                            coulomb_ehs_length(physics, 
                                 context, material, state->kinetic) *
                                 log(context->random(context));
                         if ((*grammage_max == 0.) || (X < *grammage_max)) {
@@ -3953,13 +3994,13 @@ void transport_limit(struct pumas_context * context,
         double kinetic_limit = 0.;
         if (scheme == PUMAS_SCHEME_HYBRID) {
                 const double nI =
-                    del_interaction_length(context, material, state->kinetic) +
+                    del_interaction_length(physics, context, material, state->kinetic) +
                     sgn * log(context->random(context));
                 if (nI > 0.) {
-                        const double k = del_kinetic_from_interaction_length(
+                        const double k = del_kinetic_from_interaction_length(physics, 
                             context, material, nI);
                         if (!context->forward ||
-                            (k > *table_get_Kt(material))) {
+                            (k > *table_get_Kt(physics, material))) {
                                 kinetic_limit = k;
                                 foreseen = PUMAS_EVENT_VERTEX_DEL;
                         }
@@ -3968,11 +4009,11 @@ void transport_limit(struct pumas_context * context,
 
         /* Check for an EHS event. */
         if ((scheme < PUMAS_SCHEME_DETAILED) && !context->longitudinal) {
-                const double nI = ehs_interaction_length(context, scheme,
+                const double nI = ehs_interaction_length(physics, context, scheme,
                                       material, state->kinetic) +
                     sgn * log(context->random(context));
                 if (nI > 0.) {
-                        const double k = ehs_kinetic_from_interaction_length(
+                        const double k = ehs_kinetic_from_interaction_length(physics, 
                             context, scheme, material, nI);
                         if ((kinetic_limit <= 0.) ||
                             ((context->forward != 0) && (k > kinetic_limit)) ||
@@ -3988,7 +4029,7 @@ void transport_limit(struct pumas_context * context,
 
         /* Convert the kinetic limit to a grammage one and update. */
         const double X = Xi +
-            sgn * (Xf - cel_grammage(context, scheme, material, kinetic_limit));
+            sgn * (Xf - cel_grammage(physics, context, scheme, material, kinetic_limit));
         if ((*grammage_max <= 0) || (X < *grammage_max)) {
                 *grammage_max = X;
                 context_->step_foreseen = foreseen;
@@ -4002,7 +4043,7 @@ void transport_limit(struct pumas_context * context,
  * @param material The index of the propagation material.
  * @param state    The initial/final state.
  */
-void transport_do_del(
+void transport_do_del(const struct pumas_physics * physics,
     struct pumas_context * context, struct pumas_state * state, int material)
 {
         /* Update the energy. */
@@ -4012,12 +4053,12 @@ void transport_do_del(
         if (context->forward != 0) {
                 ki = state->kinetic;
                 polar_func =
-                    del_randomise_forward(context, state, material, &process);
+                    del_randomise_forward(physics, context, state, material, &process);
                 kf = state->kinetic;
         } else {
                 kf = state->kinetic;
                 polar_func =
-                    del_randomise_reverse(context, state, material, &process);
+                    del_randomise_reverse(physics, context, state, material, &process);
                 ki = state->kinetic;
         }
 
@@ -4038,7 +4079,7 @@ void transport_do_del(
 
         /* Update the direction. */
         if ((context->longitudinal == 0) && (polar_func != NULL)) {
-                const double ct = polar_func(context, ki, kf);
+                const double ct = polar_func(physics, context, ki, kf);
                 step_rotate_direction(context, state, ct);
         }
 }
@@ -4051,7 +4092,7 @@ void transport_do_del(
  * @param material The index of the propagation material.
  * @param state    The initial/final state.
  */
-void transport_do_ehs(
+void transport_do_ehs(const struct pumas_physics * physics, 
     struct pumas_context * context, struct pumas_state * state, int material)
 {
         /* Unpack data. */
@@ -4061,7 +4102,7 @@ void transport_do_ehs(
 
         /* Get the cut-off angle and the soft scattering 1st moment. */
         double mu0 = 0., invlb1 = 0.;
-        table_get_msc(context, material, kinetic, &mu0, &invlb1);
+        table_get_msc(physics, context, material, kinetic, &mu0, &invlb1);
 
         /* Compute the scattering parameters and the the total Coulomb
          * cross section.
@@ -4069,22 +4110,22 @@ void transport_do_ehs(
         int i;
         struct coulomb_data * data;
         double cs_tot = 0.;
-        for (i = 0, data = workspace->data; i < s_shared->elements_in[material];
+        for (i = 0, data = workspace->data; i < physics->elements_in[material];
              i++, data++) {
                 /* Compute the scattering parameters. */
                 const struct material_component * const component =
-                    &s_shared->composition[material][i];
+                    &physics->composition[material][i];
                 const struct atomic_element * const element =
-                    s_shared->element[component->element];
+                    physics->element[component->element];
                 double kinetic0;
-                coulomb_frame_parameters(
+                coulomb_frame_parameters(physics, 
                     kinetic, element->A, &kinetic0, data->fCM);
-                data->fspin = coulomb_spin_factor(kinetic0);
-                coulomb_screening_parameters(
+                data->fspin = coulomb_spin_factor(physics, kinetic0);
+                coulomb_screening_parameters(physics, 
                     context, kinetic0, component->element, data->screening);
                 coulomb_pole_decomposition(data->screening, data->a, data->b);
                 data->invlambda = component->fraction /
-                    coulomb_wentzel_path(
+                    coulomb_wentzel_path(physics, 
                         kinetic0, element->Z, element->A, data->screening[0]);
 
                 /* Compute the restricted Coulomb cross-section in the
@@ -4098,9 +4139,9 @@ void transport_do_ehs(
 
         /* Randomise the hard scatterer element. */
         const double cc0 = context->random(context) * cs_tot;
-        int ihard = s_shared->elements_in[material] - 1;
+        int ihard = physics->elements_in[material] - 1;
         double cs = 0.;
-        for (i = 0, data = workspace->data; i < s_shared->elements_in[material];
+        for (i = 0, data = workspace->data; i < physics->elements_in[material];
              i++, data++) {
                 cs += data->cs_hard;
                 if (cs >= cc0) {
@@ -4122,13 +4163,13 @@ void transport_do_ehs(
         workspace->cs_h = data->cs_hard * (1. - zeta);
 
         /* Check the asymptotic value. */
-        const double f1 = transport_hard_coulomb_objective(mu1, workspace);
+        const double f1 = transport_hard_coulomb_objective(physics, mu1, workspace);
         if ((f1 < 0.) && (-f1 / workspace->cs_h >= 1E-06)) {
                 /* We hit a form factor suppression. Let's call the
                  * root solver.
                  */
                 const double f0 = data->cs_hard * zeta;
-                math_find_root(transport_hard_coulomb_objective, mu0, mu1, &f0,
+                math_find_root(transport_hard_coulomb_objective, physics, mu0, mu1, &f0,
                     &f1, 1E-06 * mu0, 1E-06, 100, workspace, &mu1);
         }
 
@@ -4153,7 +4194,7 @@ void transport_do_ehs(
  * This is a wrapper for the root solver. It provides the objective function
  * to resolve.
  */
-double transport_hard_coulomb_objective(double mu, void * parameters)
+double transport_hard_coulomb_objective(const struct pumas_physics * physics, double mu, void * parameters)
 {
         /* Unpack the workspace. */
         struct coulomb_workspace * workspace = parameters;
@@ -4182,22 +4223,22 @@ double transport_hard_coulomb_objective(double mu, void * parameters)
  * a ziggurat algorithm is used.
  */
 
-polar_function_t * del_randomise_forward(struct pumas_context * context,
+polar_function_t * del_randomise_forward(const struct pumas_physics * physics, struct pumas_context * context,
     struct pumas_state * state, int material, int * process)
 {
         /* Check for a *do nothing* process. */
-        if (state->kinetic <= *table_get_Kt(material)) return NULL;
+        if (state->kinetic <= *table_get_Kt(physics, material)) return NULL;
 
         /* Randomise the target element and the DEL sub-process. */
         struct del_info info;
-        del_randomise_target(context, state, material, &info);
+        del_randomise_target(physics, context, state, material, &info);
         dcs_function_t * const dcs_func = dcs_get(info.process);
-        const struct atomic_element * element = s_shared->element[info.element];
+        const struct atomic_element * element = physics->element[info.element];
 
         if (info.process == 3) {
-                const double m1 = s_shared->mass - ELECTRON_MASS;
+                const double m1 = physics->mass - ELECTRON_MASS;
                 if (state->kinetic <= 0.5 * m1 * m1 / ELECTRON_MASS) {
-                        state->kinetic = dcs_ionisation_randomise(
+                        state->kinetic = dcs_ionisation_randomise(physics, 
                             context, element, state->kinetic, X_FRACTION);
                         *process = info.process;
                         return polar_get(info.process);
@@ -4207,20 +4248,20 @@ polar_function_t * del_randomise_forward(struct pumas_context * context,
         /* Interpolate the lower fractional threshold. */
         int row;
         double xmin, hK;
-        if (state->kinetic >= *table_get_K(s_shared->n_kinetics - 1)) {
-                row = s_shared->n_kinetics - 1;
+        if (state->kinetic >= *table_get_K(physics, physics->n_kinetics - 1)) {
+                row = physics->n_kinetics - 1;
                 hK = 0.;
-                xmin = *table_get_Xt(info.process, info.element, row);
+                xmin = *table_get_Xt(physics, info.process, info.element, row);
         } else {
-                row = table_index(context, table_get_K(0), state->kinetic);
+                row = table_index(physics, context, table_get_K(physics, 0), state->kinetic);
                 if (row <= 0) {
                         row = 0;
                         hK = 0.;
-                        xmin = *table_get_Xt(info.process, info.element, row);
+                        xmin = *table_get_Xt(physics, info.process, info.element, row);
                 } else {
-                        const double * const k = table_get_K(row);
+                        const double * const k = table_get_K(physics, row);
                         const double * const y =
-                            table_get_Xt(info.process, info.element, row);
+                            table_get_Xt(physics, info.process, info.element, row);
                         hK = (state->kinetic - k[0]) / (k[1] - k[0]);
                         xmin = hK * y[1] + (1. - hK) * y[0];
                 }
@@ -4231,10 +4272,10 @@ polar_function_t * del_randomise_forward(struct pumas_context * context,
         if (info.process == 3) {
                 /* Ionisation case with upper kinematic threshold. */
                 const double P2 =
-                    state->kinetic * (state->kinetic + 2. * s_shared->mass);
-                const double E = state->kinetic + s_shared->mass;
+                    state->kinetic * (state->kinetic + 2. * physics->mass);
+                const double E = state->kinetic + physics->mass;
                 const double Wmax = 2. * ELECTRON_MASS * P2 /
-                    (s_shared->mass * s_shared->mass +
+                    (physics->mass * physics->mass +
                         ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
                 xmax = Wmax / state->kinetic;
                 if (xmax > 1.) xmax = 1.;
@@ -4249,7 +4290,7 @@ polar_function_t * del_randomise_forward(struct pumas_context * context,
                     context, alpha[info.process], xmin, xmax, &r, &w_bias);
 
                 /* Update the kinetic energy and the Monte-Carlo weight. */
-                const double d = dcs_evaluate(context, dcs_func, element,
+                const double d = dcs_evaluate(physics, context, dcs_func, element,
                     state->kinetic, state->kinetic * (1 - r));
                 state->kinetic *= r;
                 state->weight *= info.reverse.weight * d * w_bias;
@@ -4264,8 +4305,8 @@ polar_function_t * del_randomise_forward(struct pumas_context * context,
                         dcs_samples = tmp;
                         const int n = DCS_MODEL_ORDER_P + DCS_MODEL_ORDER_Q +
                             1 + DCS_SAMPLING_N;
-                        const float * y = table_get_dcs_value(element,
-                            info.process, row - s_shared->dcs_model_offset);
+                        const float * y = table_get_dcs_value(physics, element,
+                            info.process, row - physics->dcs_model_offset);
                         memcpy(tmp, y, DCS_SAMPLING_N * sizeof(float));
                         if (hK > 0.) {
                                 y += n;
@@ -4275,7 +4316,7 @@ polar_function_t * del_randomise_forward(struct pumas_context * context,
                                             (float)(hK * y[i]);
                         }
                 }
-                del_randomise_ziggurat(
+                del_randomise_ziggurat(physics,
                     context, state, dcs_func, element, xmin, xmax, dcs_samples);
         }
 
@@ -4298,12 +4339,12 @@ polar_function_t * del_randomise_forward(struct pumas_context * context,
  * DEL is processed by randomising the initial kinetic energy over a power law
  * distribution and then randomising the target element.
  */
-polar_function_t * del_randomise_reverse(struct pumas_context * context,
+polar_function_t * del_randomise_reverse(const struct pumas_physics * physics, struct pumas_context * context,
     struct pumas_state * state, int material, int * process)
 {
         /* Check for a pure CEL event. */
         const double lnq0 = -log(X_FRACTION);
-        const double kt = *table_get_Kt(material);
+        const double kt = *table_get_Kt(physics, material);
         const double kf = state->kinetic;
         const double pCEL =
             (kf >= kt) ? 0. : lnq0 / (lnq0 + log(kt / (kt - kf)));
@@ -4316,11 +4357,11 @@ polar_function_t * del_randomise_reverse(struct pumas_context * context,
 
         /* Randomise the initial energy with a bias model. */
         double xmax, alpha;
-        const double m1 = s_shared->mass - ELECTRON_MASS;
+        const double m1 = physics->mass - ELECTRON_MASS;
         if (state->kinetic < 0.5 * m1 * m1 / ELECTRON_MASS) {
-                const double m2 = s_shared->mass + ELECTRON_MASS;
+                const double m2 = physics->mass + ELECTRON_MASS;
                 xmax = 2. * ELECTRON_MASS *
-                    (state->kinetic + 2. * s_shared->mass) / (m2 * m2);
+                    (state->kinetic + 2. * physics->mass) / (m2 * m2);
                 if (xmax < xf) return NULL;
                 alpha = RMC_ALPHA_LOW;
         } else {
@@ -4336,17 +4377,17 @@ polar_function_t * del_randomise_reverse(struct pumas_context * context,
         /* Randomise the target element and the SEL process. */
         struct del_info info;
         info.reverse.Q = state->kinetic - kf;
-        del_randomise_target(context, state, material, &info);
+        del_randomise_target(physics, context, state, material, &info);
         dcs_function_t * const dcs_func = dcs_get(info.process);
-        const struct atomic_element * element = s_shared->element[info.element];
+        const struct atomic_element * element = physics->element[info.element];
 
         /* Update the MC weight. */
-        const double f = dcs_evaluate(context, dcs_func, element,
+        const double f = dcs_evaluate(physics, context, dcs_func, element,
                              state->kinetic, state->kinetic - kf) *
             info.reverse.weight;
         state->weight *= w_bias * f *
-            del_cross_section(context, material, state->kinetic) /
-            (del_cross_section(context, material, kf) * (1. - pCEL));
+            del_cross_section(physics, context, material, state->kinetic) /
+            (del_cross_section(physics, context, material, kf) * (1. - pCEL));
 
         *process = info.process;
         return polar_get(info.process);
@@ -4409,7 +4450,7 @@ void del_randomise_power_law(struct pumas_context * context, double alpha,
  * be a decreasing function of the energy loss. It is bounded by a piecewise
  * uniform pdf.
  */
-void del_randomise_ziggurat(struct pumas_context * context,
+void del_randomise_ziggurat(const struct pumas_physics * physics, struct pumas_context * context,
     struct pumas_state * state, dcs_function_t * dcs_func,
     const struct atomic_element * element, double xmin, double xmax,
     float * dcs_sampling)
@@ -4421,11 +4462,11 @@ void del_randomise_ziggurat(struct pumas_context * context,
                 const double dx =
                     state->kinetic * (xmax - xmin) / DCS_SAMPLING_N;
                 x_b[0] = xmin * state->kinetic;
-                dcs_b[0] = dcs_evaluate(
+                dcs_b[0] = dcs_evaluate(physics, 
                     context, dcs_func, element, state->kinetic, x_b[0]);
                 for (ib = 1; ib < DCS_SAMPLING_N; ib++) {
                         x_b[ib] = x_b[ib - 1] + dx;
-                        dcs_b[ib] = dcs_evaluate(context, dcs_func, element,
+                        dcs_b[ib] = dcs_evaluate(physics, context, dcs_func, element,
                             state->kinetic, x_b[ib]);
                         if ((dcs_b[ib] <= 0.) || (dcs_b[ib] > dcs_b[ib - 1])) {
                                 /* Protect against numeric errors. */
@@ -4464,7 +4505,7 @@ void del_randomise_ziggurat(struct pumas_context * context,
                         if (zeta <= cdf_b[i]) break;
                 xsol =
                     (x_b[i + 1] - x_b[i]) * context->random(context) + x_b[i];
-                const double dd = dcs_evaluate(
+                const double dd = dcs_evaluate(physics, 
                     context, dcs_func, element, state->kinetic, xsol);
                 if (context->random(context) * dcs_b[i] <= dd) break;
         }
@@ -4486,54 +4527,54 @@ void del_randomise_ziggurat(struct pumas_context * context,
  * the target is selected according to the DCS. At output the *info* structure
  * is filled with the target element data and the MC weight, for backward mode.
  */
-void del_randomise_target(struct pumas_context * context,
+void del_randomise_target(const struct pumas_physics * physics, struct pumas_context * context,
     struct pumas_state * state, int material, struct del_info * info)
 {
         /* Interpolate the kinetic table. */
         int i1, i2;
         double h;
-        i1 = table_index(context, table_get_K(0), state->kinetic);
+        i1 = table_index(physics, context, table_get_K(physics, 0), state->kinetic);
         if (i1 < 0) {
                 i1 = i2 = 0;
                 h = 0.;
-        } else if (i1 >= s_shared->n_kinetics - 1) {
-                i1 = i2 = s_shared->n_kinetics - 1;
+        } else if (i1 >= physics->n_kinetics - 1) {
+                i1 = i2 = physics->n_kinetics - 1;
                 h = 0.;
         } else {
                 i2 = i1 + 1;
-                const double K1 = *table_get_K(i1);
-                h = (state->kinetic - K1) / (*table_get_K(i2) - K1);
+                const double K1 = *table_get_K(physics, i1);
+                h = (state->kinetic - K1) / (*table_get_K(physics, i2) - K1);
         }
 
         /* Randomise the target element and the DEL process. */
         const struct material_component * component;
         int ic, ic0 = 0, ip;
-        for (ic = 0; ic < material; ic++) ic0 += s_shared->elements_in[ic];
+        for (ic = 0; ic < material; ic++) ic0 += physics->elements_in[ic];
         if (context->forward != 0) {
                 /* Randomise according to the total cross section. */
                 double zeta = context->random(context);
-                component = s_shared->composition[material];
-                for (ic = ic0; ic < ic0 + s_shared->elements_in[material];
+                component = physics->composition[material];
+                for (ic = ic0; ic < ic0 + physics->elements_in[material];
                      ic++, component++)
                         for (ip = 0; ip < N_DEL_PROCESSES; ip++) {
-                                const double f1 = *table_get_CSf(ip, ic, i1);
-                                const double f2 = *table_get_CSf(ip, ic, i2);
+                                const double f1 = *table_get_CSf(physics, ip, ic, i1);
+                                const double f2 = *table_get_CSf(physics, ip, ic, i2);
                                 const double csf = (f2 - f1) * h + f1;
                                 if (!(zeta > csf)) {
                                         double csn;
-                                        double csn1 = *table_get_CSn(
+                                        double csn1 = *table_get_CSn(physics, 
                                             ip, component->element, i1);
                                         if (csn1 == 0.) {
                                                 /* Linear interpolation. */
                                                 const double csn2 =
-                                                    *table_get_CSn(ip,
+                                                    *table_get_CSn(physics, ip,
                                                         component->element, i2);
                                                 csn = (csn2 - csn1) * h + csn1;
                                         } else {
                                                 /* Log interpolation. */
                                                 csn1 = log(csn1);
                                                 const double csn2 =
-                                                    log(*table_get_CSn(ip,
+                                                    log(*table_get_CSn(physics, ip,
                                                         component->element,
                                                         i2));
                                                 csn = exp(
@@ -4548,14 +4589,14 @@ void del_randomise_target(struct pumas_context * context,
                 /* Randomise according to the differential cross section. */
                 double stot = 0.;
                 for (ip = 0; ip < N_DEL_PROCESSES; ip++) {
-                        component = s_shared->composition[material];
+                        component = physics->composition[material];
                         for (ic = ic0;
-                             ic < ic0 + s_shared->elements_in[material];
+                             ic < ic0 + physics->elements_in[material];
                              ic++, component++) {
                                 const struct atomic_element * element =
-                                    s_shared->element[component->element];
+                                    physics->element[component->element];
                                 const double d =
-                                    dcs_evaluate(context, dcs_get(ip), element,
+                                    dcs_evaluate(physics, context, dcs_get(ip), element,
                                         state->kinetic, info->reverse.Q);
                                 stot += d * component->fraction;
                         }
@@ -4568,36 +4609,36 @@ void del_randomise_target(struct pumas_context * context,
                         if ((zeta > 0.) && (zeta < stot)) break;
                 }
                 double s = 0., csf_last = 0.;
-                component = s_shared->composition[material];
-                for (ic = ic0; ic < ic0 + s_shared->elements_in[material];
+                component = physics->composition[material];
+                for (ic = ic0; ic < ic0 + physics->elements_in[material];
                      ic++, component++)
                         for (ip = 0; ip < N_DEL_PROCESSES; ip++) {
                                 const int iel = component->element;
                                 const struct atomic_element * element =
-                                    s_shared->element[iel];
+                                    physics->element[iel];
                                 const double si =
-                                    dcs_evaluate(context, dcs_get(ip), element,
+                                    dcs_evaluate(physics, context, dcs_get(ip), element,
                                         state->kinetic, info->reverse.Q) *
                                     component->fraction;
                                 s += si;
-                                const double csf1 = *table_get_CSf(ip, ic, i1);
-                                const double csf2 = *table_get_CSf(ip, ic, i2);
+                                const double csf1 = *table_get_CSf(physics, ip, ic, i1);
+                                const double csf2 = *table_get_CSf(physics, ip, ic, i2);
                                 const double csf = (csf2 - csf1) * h + csf1;
                                 if (!(zeta > s)) {
                                         double csn;
                                         double csn1 =
-                                            *table_get_CSn(ip, iel, i1);
+                                            *table_get_CSn(physics, ip, iel, i1);
                                         if (csn1 == 0.) {
                                                 /* Linear interpolation. */
                                                 const double csn2 =
-                                                    *table_get_CSn(ip, iel, i2);
+                                                    *table_get_CSn(physics, ip, iel, i2);
                                                 csn = (csn2 - csn1) * h + csn1;
                                         } else {
                                                 /* Log interpolation. */
                                                 csn1 = log(csn1);
                                                 const double csn2 =
                                                     log(*table_get_CSn(
-                                                        ip, iel, i2));
+                                                        physics, ip, iel, i2));
                                                 csn = exp(
                                                     (csn2 - csn1) * h + csn1);
                                         }
@@ -4638,7 +4679,7 @@ target_found:
  * At return the state kinetic energy, position, direction and distance are
  * updated. In case of a stochastic CEL the proper time is also updated.
  */
-enum pumas_return step_transport(struct pumas_context * context,
+enum pumas_return step_transport(const struct pumas_physics * physics, struct pumas_context * context,
     struct pumas_state * state, int straight, struct pumas_medium * medium,
     struct medium_locals * locals, double grammage_max,
     double step_max_medium, double * step_max_locals,
@@ -4654,13 +4695,13 @@ enum pumas_return step_transport(struct pumas_context * context,
         const double density = locals->api.density;
         const double density_i = 1. / density;
         const double momentum =
-            sqrt(state->kinetic * (state->kinetic + 2. * s_shared->mass));
+            sqrt(state->kinetic * (state->kinetic + 2. * physics->mass));
 
         /* Total grammage for the initial kinetic energy.  */
         const int tmp_scheme =
             (scheme == PUMAS_SCHEME_NO_LOSS) ? PUMAS_SCHEME_CSDA : scheme;
         const double Xtot =
-            cel_grammage(context, tmp_scheme, material, state->kinetic);
+            cel_grammage(physics, context, tmp_scheme, material, state->kinetic);
 
         /* Compute the local step length. */
         double step_loc, rLarmor = 0., uT[3];
@@ -4684,7 +4725,7 @@ enum pumas_return step_transport(struct pumas_context * context,
                         /* Compute the soft scattering path length. */
                         if (context_->step_first != 0) {
                                 double mu0;
-                                table_get_msc(context, material, state->kinetic,
+                                table_get_msc(physics, context, material, state->kinetic,
                                     &mu0, &invlb1);
                                 invlb1 *= density;
                         } else
@@ -4867,10 +4908,10 @@ enum pumas_return step_transport(struct pumas_context * context,
                                 event = PUMAS_EVENT_LIMIT_KINETIC;
                         }
                 } else
-                        k1 = cel_kinetic_energy(context, scheme, material, X);
+                        k1 = cel_kinetic_energy(physics, context, scheme, material, X);
         } else if (scheme == PUMAS_SCHEME_DETAILED) {
                 /* Fluctuate the CEL around its average value. */
-                step_fluctuate(context, state, material, Xtot, dX, &k1, &dk);
+                step_fluctuate(physics, context, state, material, Xtot, dX, &k1, &dk);
 
                 /* Check for a kinetic limit. */
                 double kinetic_limit = -1.;
@@ -4905,8 +4946,8 @@ enum pumas_return step_transport(struct pumas_context * context,
 
                 /* Randomise an inelastic DEL. */
                 double xs_del =
-                    del_cross_section(context, material, state->kinetic);
-                const double tmp_del = del_cross_section(context, material, k1);
+                    del_cross_section(physics, context, material, state->kinetic);
+                const double tmp_del = del_cross_section(physics, context, material, k1);
                 if (tmp_del > xs_del) xs_del = tmp_del;
                 if (xs_del <= 0.) goto no_del_event;
                 const double X_del = -log(context->random(context)) / xs_del;
@@ -4914,7 +4955,7 @@ enum pumas_return step_transport(struct pumas_context * context,
                 const double k_del = state->kinetic - sgn * X_del * dk / dX;
                 if (k_del <= 0.) goto no_del_event;
                 const double r =
-                    del_cross_section(context, material, k_del) / xs_del;
+                    del_cross_section(physics, context, material, k_del) / xs_del;
                 if (context->random(context) > r) goto no_del_event;
                 k_x = k_del;
                 Xmax = X_del;
@@ -4928,12 +4969,12 @@ enum pumas_return step_transport(struct pumas_context * context,
                                 kmin = k1, kmax = state->kinetic;
                         else
                                 kmax = k1, kmin = state->kinetic;
-                        if (kmin < s_shared->table_K[1]) {
+                        if (kmin < physics->table_K[1]) {
                                 const double tmp = kmin;
                                 kmin = kmax, kmax = tmp;
                         }
                         double lb_ehs =
-                            coulomb_ehs_length(context, material, kmin);
+                            coulomb_ehs_length(physics, context, material, kmin);
                         if (lb_ehs <= 0.) goto no_ehs_event;
                         const double X_ehs =
                             -log(context->random(context)) * lb_ehs;
@@ -4942,7 +4983,7 @@ enum pumas_return step_transport(struct pumas_context * context,
                             state->kinetic - sgn * X_ehs * dk / dX;
                         if (k_ehs <= 0.) goto no_ehs_event;
                         const double r =
-                            coulomb_ehs_length(context, material, k_ehs) /
+                            coulomb_ehs_length(physics, context, material, k_ehs) /
                             lb_ehs;
                         if ((r <= 0.) || (context->random(context) > 1. / r))
                                 goto no_ehs_event;
@@ -4982,7 +5023,7 @@ enum pumas_return step_transport(struct pumas_context * context,
                         /*  Update the kinetic energy. */
                         if (scheme <= PUMAS_SCHEME_HYBRID) {
                                 if (scheme != PUMAS_SCHEME_NO_LOSS)
-                                        k1 = cel_kinetic_energy(context, scheme,
+                                        k1 = cel_kinetic_energy(physics, context, scheme,
                                             material,
                                             Xtot -
                                                 sgn * (state->grammage - Xi));
@@ -5022,14 +5063,14 @@ enum pumas_return step_transport(struct pumas_context * context,
         const double sf1 = step;
         if (straight && (scheme != PUMAS_SCHEME_NO_LOSS)) {
                 const double Ti =
-                    cel_proper_time(context, scheme, material, state->kinetic);
+                    cel_proper_time(physics, context, scheme, material, state->kinetic);
                 if (time_max > 0.) {
                         const double Tf =
                             Ti - sgn * (time_max - state->time) * density;
                         if (Tf > 0.) {
                                 const double dxT = fabs(Xtot -
                                     cel_grammage_as_time(
-                                        context, scheme, material, Tf));
+                                        physics, context, scheme, material, Tf));
                                 if (Xi + dxT < state->grammage) {
                                         /* A proper time limit is reached. */
                                         event = PUMAS_EVENT_LIMIT_TIME;
@@ -5039,7 +5080,7 @@ enum pumas_return step_transport(struct pumas_context * context,
                                         if (step > sf1) step = sf1;
                                         state->grammage = Xi + dxT;
                                         const double xf = Xtot - sgn * dxT;
-                                        k1 = cel_kinetic_energy(
+                                        k1 = cel_kinetic_energy(physics, 
                                             context, scheme, material, xf);
                                 }
                         }
@@ -5047,16 +5088,16 @@ enum pumas_return step_transport(struct pumas_context * context,
 
                 if (event != PUMAS_EVENT_LIMIT_TIME) {
                         const double Tf =
-                            cel_proper_time(context, scheme, material, k1);
+                            cel_proper_time(physics, context, scheme, material, k1);
                         state->time += fabs(Tf - Ti) * density_i;
                 }
         } else {
                 const double p_f = (k1 <= 0) ?
                     momentum :
-                    sqrt(k1 * (k1 + 2. * s_shared->mass));
+                    sqrt(k1 * (k1 + 2. * physics->mass));
                 const double ti = state->time;
                 state->time +=
-                    0.5 * step * s_shared->mass * (1. / momentum + 1. / p_f);
+                    0.5 * step * physics->mass * (1. / momentum + 1. / p_f);
                 if ((time_max > 0.) && (state->time >= time_max)) {
                         /* A proper time limit is reached. */
                         event = PUMAS_EVENT_LIMIT_TIME;
@@ -5066,7 +5107,7 @@ enum pumas_return step_transport(struct pumas_context * context,
                         /* Interpolate the step length. */
                         const double a = (momentum / p_f - 1.) / sf1;
                         const double c =
-                            -2. * (time_max - ti) * momentum / s_shared->mass;
+                            -2. * (time_max - ti) * momentum / physics->mass;
                         if (a != 0.) {
                                 double delta = 1. - a * c;
                                 if (delta < 0.) delta = 0.;
@@ -5080,8 +5121,8 @@ enum pumas_return step_transport(struct pumas_context * context,
                         if (scheme != PUMAS_SCHEME_NO_LOSS) {
                                 const double p1 = momentum / (1 + a * step);
                                 k1 = sqrt(p1 * p1 -
-                                         s_shared->mass * s_shared->mass) -
-                                    s_shared->mass;
+                                         physics->mass * physics->mass) -
+                                    physics->mass;
                                 if (k1 < 0.) k1 = 0.;
                         }
 
@@ -5123,7 +5164,7 @@ enum pumas_return step_transport(struct pumas_context * context,
                 if (state->kinetic <= 0.) {
                         context_->step_invlb1 = invlb1;
                 } else {
-                        table_get_msc(
+                        table_get_msc(physics, 
                             context, material, state->kinetic, &mu0, &invlb1_);
                         context_->step_invlb1 = locals->api.density * invlb1_;
                 }
@@ -5162,7 +5203,7 @@ enum pumas_return step_transport(struct pumas_context * context,
                                 const double p = (state->kinetic <= 0) ?
                                     momentum :
                                     sqrt(state->kinetic *
-                                        (state->kinetic + 2. * s_shared->mass));
+                                        (state->kinetic + 2. * physics->mass));
                                 const double iBT = 1. / BT;
                                 context_->step_rLarmor =
                                     p * iBT / LARMOR_FACTOR;
@@ -5237,18 +5278,18 @@ enum pumas_return step_transport(struct pumas_context * context,
  * `dE` differs from `ki-kf` if the kinetic energy falls to `0` before the
  * end of the step.
  */
-static void step_fluctuate(struct pumas_context * context,
+static void step_fluctuate(const struct pumas_physics * physics, struct pumas_context * context,
     struct pumas_state * state, int material, double Xtot, double dX,
     double * kf, double * dE)
 {
         const enum pumas_scheme scheme = context->scheme;
         const double sgn = context->forward ? 1. : -1.;
         double k1, dk = 0.;
-        k1 = cel_kinetic_energy(context, scheme, material, Xtot - sgn * dX);
+        k1 = cel_kinetic_energy(physics, context, scheme, material, Xtot - sgn * dX);
         if (k1 > 0.) {
                 const double dk1 = sqrt(0.5 * dX *
-                    (step_fluctuations2(material, state->kinetic) +
-                        step_fluctuations2(material, k1)));
+                    (step_fluctuations2(physics, material, state->kinetic) +
+                        step_fluctuations2(physics, material, k1)));
                 const double dk0 = fabs(state->kinetic - k1);
                 if (dk0 >= 3. * dk1) {
                         double u;
@@ -5278,7 +5319,7 @@ static void step_fluctuate(struct pumas_context * context,
         }
         if (dk == 0.)
                 dk =
-                    cel_energy_loss(context, scheme, material, state->kinetic) *
+                    cel_energy_loss(physics, context, scheme, material, state->kinetic) *
                     dX;
 
         /* Copy back the result. */
@@ -5295,15 +5336,15 @@ static void step_fluctuate(struct pumas_context * context,
  *
  * The Gaussian thick aborber approximation of ICRU Report 49 is assumed.
  */
-static double step_fluctuations2(int material, double kinetic)
+static double step_fluctuations2(const struct pumas_physics * physics, int material, double kinetic)
 {
-        const double r = ELECTRON_MASS / s_shared->mass;
-        const double g = 1. + kinetic / s_shared->mass;
+        const double r = ELECTRON_MASS / physics->mass;
+        const double g = 1. + kinetic / physics->mass;
         const double b2 = 1. - 1. / (g * g);
         double qmax = 2. * ELECTRON_MASS * b2 * g * g / (1. + r * (2. * g + r));
         const double qcut = X_FRACTION * kinetic;
         if (qmax > qcut) qmax = qcut;
-        return 1.535375E-05 * s_shared->material_ZoA[material] *
+        return 1.535375E-05 * physics->material_ZoA[material] *
             (1. / b2 - 0.5) * qmax;
 }
 
@@ -5405,11 +5446,11 @@ void step_rotate_direction(struct pumas_context * context,
  * @param name The element name.
  * @return The element index or `-1` if it wasn't found.
  */
-int element_index(const char * name)
+int element_index(const struct pumas_physics * physics, const char * name)
 {
         int index = 0;
-        for (; index < s_shared->n_elements; index++)
-                if (strcmp(s_shared->element[index]->name, name) == 0)
+        for (; index < physics->n_elements; index++)
+                if (strcmp(physics->element[index]->name, name) == 0)
                         return index;
         return -1;
 }
@@ -5426,12 +5467,12 @@ int element_index(const char * name)
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned.
  */
-static enum pumas_return material_index(
+static enum pumas_return material_index(const struct pumas_physics * physics, 
     const char * material, int * index, struct error_context * error_)
 {
         int i;
-        for (i = 0; i < s_shared->n_materials; i++) {
-                if (strcmp(s_shared->material_name[i], material) == 0) {
+        for (i = 0; i < physics->n_materials; i++) {
+                if (strcmp(physics->material_name[i], material) == 0) {
                         *index = i;
                         return PUMAS_RETURN_SUCCESS;
                 }
@@ -5456,15 +5497,15 @@ static enum pumas_return material_index(
  * parameterisation for relativistic particles or using Moliere's one at low
  * energies.
  */
-void coulomb_screening_parameters(struct pumas_context * context,
+void coulomb_screening_parameters(const struct pumas_physics * physics, struct pumas_context * context,
     double kinetic, int element, double * screening)
 {
         /* Nuclear screening. */
         const double third = 1. / 3;
-        const double A13 = pow(s_shared->element[element]->A, third);
+        const double A13 = pow(physics->element[element]->A, third);
         const double R1 = 1.02934 * A13 + 0.435;
         const double R2 = 2.;
-        const double p2 = kinetic * (kinetic + 2. * s_shared->mass);
+        const double p2 = kinetic * (kinetic + 2. * physics->mass);
         const double d = 5.8406E-02 / p2;
         screening[1] = d / (R1 * R1);
         screening[2] = d / (R2 * R2);
@@ -5473,8 +5514,8 @@ void coulomb_screening_parameters(struct pumas_context * context,
          * Phys. Rev. D 89, 116016 (2014). Valid for ultra-relativistic
          * particles only.
          */
-        struct atomic_element * e = s_shared->element[element];
-        const double etot = kinetic + s_shared->mass;
+        struct atomic_element * e = physics->element[element];
+        const double etot = kinetic + physics->mass;
         const double ZE = e->Z * etot;
         const double zeta2 = 5.3251346E-05 * (ZE * ZE) / p2;
         double cK;
@@ -5512,11 +5553,11 @@ void coulomb_screening_parameters(struct pumas_context * context,
  * @param screening The atomic screening factor.
  * @return The mean free path in kg/m^2.
  */
-double coulomb_wentzel_path(
+double coulomb_wentzel_path(const struct pumas_physics * physics, 
     double kinetic, double Z, double A, double screening)
 {
-        const double d = kinetic * (kinetic + 2. * s_shared->mass) /
-            (Z * (kinetic + s_shared->mass));
+        const double d = kinetic * (kinetic + 2. * physics->mass) /
+            (Z * (kinetic + physics->mass));
         return A * 2.54910918E+08 * screening * (1. + screening) * d * d;
 }
 
@@ -5528,24 +5569,24 @@ double coulomb_wentzel_path(
  * @param kinetic  The kinetic energy.
  * @return The grammage length for hard scattering events.
  */
-double coulomb_ehs_length(
+double coulomb_ehs_length(const struct pumas_physics * physics, 
     struct pumas_context * context, int material, double kinetic)
 {
-        const double p2 = kinetic * (kinetic + 2. * s_shared->mass);
-        const int imax = s_shared->n_kinetics - 1;
-        if (kinetic < *table_get_K(1)) {
-                return *table_get_Lb(material, 1) / p2;
-        } else if (kinetic >= *table_get_K(imax)) {
-                return *table_get_Lb(material, imax) / p2;
+        const double p2 = kinetic * (kinetic + 2. * physics->mass);
+        const int imax = physics->n_kinetics - 1;
+        if (kinetic < *table_get_K(physics, 1)) {
+                return *table_get_Lb(physics, material, 1) / p2;
+        } else if (kinetic >= *table_get_K(physics, imax)) {
+                return *table_get_Lb(physics, material, imax) / p2;
         } else {
-                const int i1 = table_index(context, table_get_K(0), kinetic);
+                const int i1 = table_index(physics, context, table_get_K(physics, 0), kinetic);
                 const int i2 = i1 + 1;
-                double h = (kinetic - *table_get_K(i1)) /
-                    (*table_get_K(i2) - *table_get_K(i1));
-                return (*table_get_Lb(material, i1) +
+                double h = (kinetic - *table_get_K(physics, i1)) /
+                    (*table_get_K(physics, i2) - *table_get_K(physics, i1));
+                return (*table_get_Lb(physics, material, i1) +
                            h *
-                               (*table_get_Lb(material, i2) -
-                                   *table_get_Lb(material, i1))) /
+                               (*table_get_Lb(physics, material, i2) -
+                                   *table_get_Lb(physics, material, i1))) /
                     p2;
         }
 }
@@ -5556,10 +5597,10 @@ double coulomb_ehs_length(
  * @param kinetic The kinetic energy.
  * @return The spin factor.
  */
-double coulomb_spin_factor(double kinetic)
+double coulomb_spin_factor(const struct pumas_physics * physics, double kinetic)
 {
-        const double e = kinetic + s_shared->mass;
-        return kinetic * (e + s_shared->mass) / (e * e);
+        const double e = kinetic + physics->mass;
+        return kinetic * (e + physics->mass) / (e * e);
 }
 
 /**
@@ -5571,22 +5612,22 @@ double coulomb_spin_factor(double kinetic)
  * @param kinetic0   The CM kinetic energy.
  * @param parameters The vector of Lorentz parameters (gamma, tau).
  */
-void coulomb_frame_parameters(
+void coulomb_frame_parameters(const struct pumas_physics * physics, 
     double kinetic, double Ma, double * kinetic0, double * parameters)
 {
         Ma *= 0.931494; /* Convert from atomic unit to GeV. */
-        double M2 = s_shared->mass + Ma;
+        double M2 = physics->mass + Ma;
         M2 *= M2;
         const double sCM12i = 1. / sqrt(M2 + 2. * Ma * kinetic);
-        parameters[0] = (kinetic + s_shared->mass + Ma) * sCM12i;
+        parameters[0] = (kinetic + physics->mass + Ma) * sCM12i;
         *kinetic0 =
-            (kinetic * Ma + s_shared->mass * (s_shared->mass + Ma)) * sCM12i -
-            s_shared->mass;
+            (kinetic * Ma + physics->mass * (physics->mass + Ma)) * sCM12i -
+            physics->mass;
         if (*kinetic0 < 1E-09) *kinetic0 = 1E-09;
-        const double etot = kinetic + s_shared->mass + Ma;
+        const double etot = kinetic + physics->mass + Ma;
         const double betaCM2 =
-            kinetic * (kinetic + 2. * s_shared->mass) / (etot * etot);
-        double rM2 = s_shared->mass / Ma;
+            kinetic * (kinetic + 2. * physics->mass) / (etot * etot);
+        double rM2 = physics->mass / Ma;
         rM2 *= rM2;
         parameters[1] = sqrt(rM2 * (1. - betaCM2) + betaCM2);
 }
@@ -5739,14 +5780,14 @@ void coulomb_transport_coefficients(double mu, double fspin, double * screening,
  * and approximating the electronic structure by a single shell of energy I
  * with occupancy Z.
  */
-double transverse_transport_ionisation(
+double transverse_transport_ionisation(const struct pumas_physics * physics, 
     const struct atomic_element * element, double kinetic)
 {
         /* Soft close interactions, restricted to X_FRACTION. */
-        const double momentum2 = kinetic * (kinetic + 2. * s_shared->mass);
-        const double E = kinetic + s_shared->mass;
+        const double momentum2 = kinetic * (kinetic + 2. * physics->mass);
+        const double E = kinetic + physics->mass;
         const double Wmax = 2. * ELECTRON_MASS * momentum2 /
-            (s_shared->mass * s_shared->mass +
+            (physics->mass * physics->mass +
                 ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
         const double W0 = 2. * momentum2 / ELECTRON_MASS;
         const double mu_max = Wmax / W0;
@@ -5777,12 +5818,12 @@ double transverse_transport_ionisation(
  * analyticaly. The integration over nu is done numericaly with a Gaussian
  * quadrature.
  */
-double transverse_transport_photonuclear(
+double transverse_transport_photonuclear(const struct pumas_physics * physics, 
     const struct atomic_element * element, double kinetic)
 {
         /* Integration over the kinetic transfer, q, done with a log sampling.
          */
-        const double E = kinetic + s_shared->mass;
+        const double E = kinetic + physics->mass;
         double x0 = log(1E-06);
         double x1 = 0.;
         math_gauss_quad(100, &x0, &x1); /* Initialisation. */
@@ -5797,7 +5838,7 @@ double transverse_transport_photonuclear(
                 const double q2 = q * q;
                 const double tmax = 1.876544 * q;
                 const double tmin =
-                    q2 * s_shared->mass * s_shared->mass / (E * (E - q));
+                    q2 * physics->mass * physics->mass / (E * (E - q));
                 const double b1 = 1. / (1. - q2 / m02);
                 const double c1 = 1. / (1. - m02 / q2);
                 double L1 = b1 * log((q2 + tmax) / (q2 + tmin));
@@ -5812,11 +5853,11 @@ double transverse_transport_photonuclear(
                     (tmax - tmin) * (b1 * q2 + c1 * m02) - L1 - L2;
                 const double ratio = (I1 * tmax - I2) /
                     ((I0 * tmax - I1) * kinetic *
-                        (kinetic + 2. * s_shared->mass));
+                        (kinetic + 2. * physics->mass));
 
                 /* Update the double integral value.  */
                 lbipn += ratio * nu *
-                    dcs_photonuclear(element, kinetic, nu * kinetic) * wi;
+                    dcs_photonuclear(physics, element, kinetic, nu * kinetic) * wi;
         }
         return 2. * lbipn;
 }
@@ -5967,7 +6008,7 @@ static enum pumas_return error_raise(struct error_context * error_)
  *
  * Parse a dE/dX data table in PDG text file format.
  */
-enum pumas_return io_parse_dedx_file(FILE * fid, int material,
+enum pumas_return io_parse_dedx_file(struct pumas_physics * physics, FILE * fid, int material,
     const char * filename, struct error_context * error_)
 {
         char * buffer = NULL;
@@ -5975,7 +6016,7 @@ enum pumas_return io_parse_dedx_file(FILE * fid, int material,
         /* Skip the header lines. */
         int line = 0;
         int i;
-        for (i = 0; i < s_shared->n_energy_loss_header; i++) {
+        for (i = 0; i < physics->n_energy_loss_header; i++) {
                 io_read_line(fid, &buffer, filename, line, error_);
                 line++;
                 if (error_->code != PUMAS_RETURN_SUCCESS) return error_->code;
@@ -5983,19 +6024,19 @@ enum pumas_return io_parse_dedx_file(FILE * fid, int material,
 
         /* Initialise the new table. */
         int row = 0;
-        *table_get_T(PUMAS_SCHEME_CSDA, material, row) = 0.;
-        *table_get_T(PUMAS_SCHEME_HYBRID, material, row) = 0.;
-        *table_get_K(row) = 0.;
-        *table_get_dE(PUMAS_SCHEME_CSDA, material, row) = 0.;
-        *table_get_dE(PUMAS_SCHEME_HYBRID, material, row) = 0.;
-        *table_get_NI_el(PUMAS_SCHEME_CSDA, material, row) = 0.;
-        *table_get_NI_el(PUMAS_SCHEME_HYBRID, material, row) = 0.;
-        *table_get_NI_in(material, row) = 0.;
-        *table_get_CS(material, row) = 0.;
+        *table_get_T(physics, PUMAS_SCHEME_CSDA, material, row) = 0.;
+        *table_get_T(physics, PUMAS_SCHEME_HYBRID, material, row) = 0.;
+        *table_get_K(physics, row) = 0.;
+        *table_get_dE(physics, PUMAS_SCHEME_CSDA, material, row) = 0.;
+        *table_get_dE(physics, PUMAS_SCHEME_HYBRID, material, row) = 0.;
+        *table_get_NI_el(physics, PUMAS_SCHEME_CSDA, material, row) = 0.;
+        *table_get_NI_el(physics, PUMAS_SCHEME_HYBRID, material, row) = 0.;
+        *table_get_NI_in(physics, material, row) = 0.;
+        *table_get_CS(physics, material, row) = 0.;
         int ip;
         for (ip = 0; ip < N_DEL_PROCESSES; ip++) {
-                *table_get_CSf(ip, material, row) = 0.;
-                *table_get_CSn(ip, material, row) = 0.;
+                *table_get_CSf(physics, ip, material, row) = 0.;
+                *table_get_CSn(physics, ip, material, row) = 0.;
         }
         row++;
 
@@ -6004,7 +6045,7 @@ enum pumas_return io_parse_dedx_file(FILE * fid, int material,
                 io_read_line(fid, &buffer, filename, line, error_);
                 line++;
                 if (error_->code != PUMAS_RETURN_SUCCESS) break;
-                io_parse_dedx_row(
+                io_parse_dedx_row(physics, 
                     buffer, material, &row, filename, line, error_);
         }
 
@@ -6014,13 +6055,13 @@ enum pumas_return io_parse_dedx_file(FILE * fid, int material,
         }
         if (error_->code != PUMAS_RETURN_SUCCESS) return error_->code;
 
-        if (row != s_shared->n_kinetics)
+        if (row != physics->n_kinetics)
                 return ERROR_VREGISTER(PUMAS_RETURN_FORMAT_ERROR,
                     "inconsistent number of rows in energy loss tables [%s, %d "
                     "!= %d]",
-                    filename, row, s_shared->n_kinetics);
+                    filename, row, physics->n_kinetics);
 
-        compute_regularise_del(material);
+        compute_regularise_del(physics, material);
 
         return error_->code;
 }
@@ -6038,7 +6079,7 @@ enum pumas_return io_parse_dedx_file(FILE * fid, int material,
  *
  * Parse a row of a dE/dX data table formated in PDG text file format.
  */
-enum pumas_return io_parse_dedx_row(char * buffer, int material, int * row,
+enum pumas_return io_parse_dedx_row(struct pumas_physics * physics, char * buffer, int material, int * row,
     const char * filename, int line, struct error_context * error_)
 {
         /*
@@ -6053,7 +6094,7 @@ enum pumas_return io_parse_dedx_row(char * buffer, int material, int * row,
         double k, a, be, de, brems, pair, photo;
         int count = sscanf(buffer, "%lf %*f %lf %lf %lf %lf %lf %lf", &k, &a,
             &brems, &pair, &photo, &be, &de);
-        if ((count != 7) || (*row >= s_shared->n_kinetics))
+        if ((count != 7) || (*row >= physics->n_kinetics))
                 return ERROR_VREGISTER(PUMAS_RETURN_FORMAT_ERROR,
                     "invalid data line [@%s:%d]", filename, line);
 
@@ -6068,12 +6109,12 @@ enum pumas_return io_parse_dedx_row(char * buffer, int material, int * row,
 
         /* Check the consistency of kinetic values. */
         if (material == 0) {
-                *table_get_K(*row) = k;
-        } else if (*table_get_K(*row) != k)
+                *table_get_K(physics, *row) = k;
+        } else if (*table_get_K(physics, *row) != k)
                 return ERROR_VREGISTER(PUMAS_RETURN_FORMAT_ERROR,
                     "inconsistent kinetic energy value [@%s:%d, %.5lE != "
                     "%.5lE]",
-                    filename, line, *table_get_K(*row), k);
+                    filename, line, *table_get_K(physics, *row), k);
 
         /* Compute the fractional contributions of the energy loss
          * processes to the CEL and to DELs.
@@ -6081,27 +6122,27 @@ enum pumas_return io_parse_dedx_row(char * buffer, int material, int * row,
         static double * cel_table = NULL;
         if (material == 0) {
                 /* Precompute the per element terms. */
-                if ((cel_table = compute_cel_and_del(*row)) == NULL)
+                if ((cel_table = compute_cel_and_del(physics, *row)) == NULL)
                         return ERROR_REGISTER_MEMORY();
         }
 
-        struct material_component * component = s_shared->composition[material];
+        struct material_component * component = physics->composition[material];
         double frct_cel[] = { 0., 0., 0., 0. };
         double frct_cs[] = { 0., 0., 0., 0. };
         int ic, ic0 = 0;
-        for (ic = 0; ic < material; ic++) ic0 += s_shared->elements_in[ic];
-        for (ic = ic0; ic < ic0 + s_shared->elements_in[material];
+        for (ic = 0; ic < material; ic++) ic0 += physics->elements_in[ic];
+        for (ic = ic0; ic < ic0 + physics->elements_in[material];
              ic++, component++) {
                 int iel = component->element;
                 const double w = component->fraction;
                 /* Loop over processes. */
                 int ip;
                 for (ip = 0; ip < N_DEL_PROCESSES; ip++) {
-                        const double f = (*table_get_CSn(ip, iel, *row)) * w;
-                        *table_get_CSf(ip, ic, *row) = f;
+                        const double f = (*table_get_CSn(physics, ip, iel, *row)) * w;
+                        *table_get_CSf(physics, ip, ic, *row) = f;
                         frct_cs[ip] += f;
                         frct_cel[ip] +=
-                            *table_get_cel(ip, iel, *row, cel_table) * w;
+                            *table_get_cel(physics, ip, iel, *row, cel_table) * w;
                 }
         }
 
@@ -6116,48 +6157,48 @@ enum pumas_return io_parse_dedx_row(char * buffer, int material, int * row,
 
         /* Normalise the fractional cross-sections terms. */
         if (frct_cs_del <= 0.) {
-                for (ic = ic0; ic < ic0 + s_shared->elements_in[material]; ic++)
+                for (ic = ic0; ic < ic0 + physics->elements_in[material]; ic++)
                         for (ip = 0; ip < N_DEL_PROCESSES; ip++)
-                                *table_get_CSf(ip, ic, *row) = 0.;
+                                *table_get_CSf(physics, ip, ic, *row) = 0.;
         } else {
                 double sum_tot = 0.;
-                for (ic = ic0; ic < ic0 + s_shared->elements_in[material]; ic++)
+                for (ic = ic0; ic < ic0 + physics->elements_in[material]; ic++)
                         for (ip = 0; ip < N_DEL_PROCESSES; ip++)
-                                sum_tot += *table_get_CSf(ip, ic, *row);
+                                sum_tot += *table_get_CSf(physics, ip, ic, *row);
                 double sum = 0.;
-                for (ic = ic0; ic < ic0 + s_shared->elements_in[material]; ic++)
+                for (ic = ic0; ic < ic0 + physics->elements_in[material]; ic++)
                         for (ip = 0; ip < N_DEL_PROCESSES; ip++) {
-                                sum += *table_get_CSf(ip, ic, *row);
-                                *table_get_CSf(ip, ic, *row) = sum / sum_tot;
+                                sum += *table_get_CSf(physics, ip, ic, *row);
+                                *table_get_CSf(physics, ip, ic, *row) = sum / sum_tot;
                         }
 
                 /* Protect against rounding errors. */
-                ic = ic0 + s_shared->elements_in[material] - 1;
+                ic = ic0 + physics->elements_in[material] - 1;
                 ip = N_DEL_PROCESSES - 1;
-                *table_get_CSf(ip, ic, *row) = 1.;
+                *table_get_CSf(physics, ip, ic, *row) = 1.;
         }
 
         /* Update the table values */
         const double de_cel = de - be_cel;
 
         /* If this is the last entry, save the energy loss values. */
-        if (*row == s_shared->n_kinetics - 1) {
-                const double etot = k + s_shared->mass;
-                *table_get_a_max(material) = a;
-                *table_get_b_max(PUMAS_SCHEME_CSDA, material) = be / etot;
-                *table_get_b_max(PUMAS_SCHEME_HYBRID, material) =
+        if (*row == physics->n_kinetics - 1) {
+                const double etot = k + physics->mass;
+                *table_get_a_max(physics, material) = a;
+                *table_get_b_max(physics, PUMAS_SCHEME_CSDA, material) = be / etot;
+                *table_get_b_max(physics, PUMAS_SCHEME_HYBRID, material) =
                     (be - be_cel) / etot;
         }
 
         /* End point statistics */
-        *table_get_dE(PUMAS_SCHEME_CSDA, material, *row) = de;
-        *table_get_dE(PUMAS_SCHEME_HYBRID, material, *row) = de_cel;
-        *table_get_CS(material, *row) = frct_cs_del;
+        *table_get_dE(physics, PUMAS_SCHEME_CSDA, material, *row) = de;
+        *table_get_dE(physics, PUMAS_SCHEME_HYBRID, material, *row) = de_cel;
+        *table_get_CS(physics, material, *row) = frct_cs_del;
 
         /* Weighted integrands */
         const double dei = 1. / de_cel;
-        *table_get_X(PUMAS_SCHEME_HYBRID, material, *row) = dei;
-        *table_get_NI_in(material, *row) = frct_cs_del * dei;
+        *table_get_X(physics, PUMAS_SCHEME_HYBRID, material, *row) = dei;
+        *table_get_NI_in(physics, material, *row) = frct_cs_del * dei;
 
         (*row)++;
         return PUMAS_RETURN_SUCCESS;
@@ -6237,7 +6278,7 @@ enum pumas_return io_read_line(FILE * fid, char ** buf, const char * filename,
  * @param error_       The error data.
  * @return On success `PUMAS_RETURN_SUCCESS` otherwise an error code.
  */
-enum pumas_return mdf_parse_settings(struct mdf_buffer * mdf,
+enum pumas_return mdf_parse_settings(const struct pumas_physics * physics, struct mdf_buffer * mdf,
     const char * dedx_path, struct error_context * error_)
 {
         /* Initialisation of settings. */
@@ -6272,7 +6313,7 @@ enum pumas_return mdf_parse_settings(struct mdf_buffer * mdf,
                 goto clean_and_exit;
 
         /* Loop on the XML nodes. */
-        const int pad_size = sizeof(*(s_shared->data));
+        const int pad_size = sizeof(*(physics->data));
         mdf->left = 0;
         mdf->line = 1;
         mdf->depth = MDF_DEPTH_EXTERN;
@@ -6689,14 +6730,14 @@ enum pumas_return mdf_parse_kinetic(
  * @param error The error data.
  * @return On success `PUMAS_RETURN_SUCCESS` otherwise `PUMAS_ERROR`.
  */
-enum pumas_return mdf_parse_elements(
+enum pumas_return mdf_parse_elements(const struct pumas_physics * physics, 
     struct mdf_buffer * mdf, struct error_context * error_)
 {
         /* Loop on the XML nodes. */
-        const int m = s_shared->n_kinetics - s_shared->dcs_model_offset;
+        const int m = physics->n_kinetics - physics->dcs_model_offset;
         const int n =
             DCS_MODEL_ORDER_P + DCS_MODEL_ORDER_Q + 1 + DCS_SAMPLING_N;
-        const int pad_size = sizeof(*(s_shared->data));
+        const int pad_size = sizeof(*(physics->data));
         const int c_mem = memory_padded_size(
             m * n * (N_DEL_PROCESSES - 1) * sizeof(float), pad_size);
         rewind(mdf->fid);
@@ -6714,7 +6755,7 @@ enum pumas_return mdf_parse_elements(
                 if (node.key != MDF_KEY_ELEMENT)
                         continue;
                 else if ((node.head == 0) && (node.tail == 1)) {
-                        if (iel >= s_shared->n_elements)
+                        if (iel >= physics->n_elements)
                                 break;
                         else
                                 continue;
@@ -6722,21 +6763,21 @@ enum pumas_return mdf_parse_elements(
 
                 /* Set the element data. */
                 if (iel == 0) {
-                        char * tmp = (char *)s_shared->element +
-                            memory_padded_size(s_shared->n_elements *
-                                    sizeof(s_shared->element[0]),
+                        char * tmp = (char *)physics->element +
+                            memory_padded_size(physics->n_elements *
+                                    sizeof(physics->element[0]),
                                 pad_size);
-                        s_shared->element[0] = (struct atomic_element *)tmp;
+                        physics->element[0] = (struct atomic_element *)tmp;
                 } else {
                         const struct atomic_element * e =
-                            s_shared->element[iel - 1];
-                        s_shared->element[iel] =
+                            physics->element[iel - 1];
+                        physics->element[iel] =
                             (struct atomic_element *)((char *)(e) +
                                 sizeof(struct atomic_element) + c_mem +
                                 memory_padded_size(
                                     strlen(e->name) + 1, pad_size));
                 }
-                struct atomic_element * e = s_shared->element[iel];
+                struct atomic_element * e = physics->element[iel];
                 e->dcs_data = (float *)e->data;
                 e->name = (char *)(e->data) + c_mem;
                 memset(e->dcs_data, 0x0, c_mem);
@@ -6761,7 +6802,7 @@ enum pumas_return mdf_parse_elements(
 
                 /* Increment. */
                 iel++;
-                if ((node.tail == 1) && (iel >= s_shared->n_elements)) break;
+                if ((node.tail == 1) && (iel >= physics->n_elements)) break;
         }
 
         return error_->code;
@@ -6778,14 +6819,14 @@ enum pumas_return mdf_parse_elements(
  * by the `<table>` XML node. If path is not absolute, it specifies a relative
  * path to the directory where the MDF is located.
  */
-enum pumas_return mdf_parse_materials(
+enum pumas_return mdf_parse_materials(struct pumas_physics * physics, 
     struct mdf_buffer * mdf, struct error_context * error_)
 {
         /* Format the path directory name. */
         char * filename = NULL;
         int offset_dir, size_name;
         if (!mdf->dry_mode) {
-                if ((mdf_format_path(s_shared->dedx_path, s_shared->mdf_path,
+                if ((mdf_format_path(physics->dedx_path, physics->mdf_path,
                         &filename, &offset_dir, &size_name, error_)) !=
                     PUMAS_RETURN_SUCCESS)
                         return error_->code;
@@ -6798,10 +6839,10 @@ enum pumas_return mdf_parse_materials(
         mdf->depth = 0;
         struct mdf_node node;
         int imat = 0;
-        const int pad_size = sizeof(*(s_shared->data));
-        void * tmp_ptr = ((char *)s_shared->composition) +
+        const int pad_size = sizeof(*(physics->data));
+        void * tmp_ptr = ((char *)physics->composition) +
             memory_padded_size(
-                s_shared->n_materials * sizeof(struct material_component *),
+                physics->n_materials * sizeof(struct material_component *),
                 pad_size);
         struct material_component * data = tmp_ptr;
 
@@ -6814,10 +6855,10 @@ enum pumas_return mdf_parse_materials(
                 if (node.key == MDF_KEY_MATERIAL) {
                         if (node.head == 0) {
                                 /* This is a material closing. */
-                                s_shared->elements_in[imat] = mdf->elements_in;
+                                physics->elements_in[imat] = mdf->elements_in;
 
                                 /* Compute the relative electron density. */
-                                compute_ZoA(imat);
+                                compute_ZoA(physics, imat);
 
                                 /* Check for dry mode. */
                                 if (mdf->dry_mode) goto update_count;
@@ -6830,32 +6871,32 @@ enum pumas_return mdf_parse_materials(
                                             filename);
                                         break;
                                 }
-                                io_parse_dedx_file(fid, imat, filename, error_);
+                                io_parse_dedx_file(physics, fid, imat, filename, error_);
                                 fclose(fid);
                                 if (error_->code != PUMAS_RETURN_SUCCESS) break;
 
                         /* Update the material count. */
                         update_count:
                                 imat++;
-                                if (imat >= s_shared->n_materials -
-                                        s_shared->n_composites)
+                                if (imat >= physics->n_materials -
+                                        physics->n_composites)
                                         break;
                                 continue;
                         }
 
                         /* We have a new material opening. */
                         if (imat == 0) {
-                                s_shared->material_name[0] =
-                                    (char *)(s_shared->material_name +
-                                        s_shared->n_materials);
+                                physics->material_name[0] =
+                                    (char *)(physics->material_name +
+                                        physics->n_materials);
                         } else {
-                                s_shared->material_name[imat] =
-                                    s_shared->material_name[imat - 1] +
-                                    strlen(s_shared->material_name[imat - 1]) +
+                                physics->material_name[imat] =
+                                    physics->material_name[imat - 1] +
+                                    strlen(physics->material_name[imat - 1]) +
                                     1;
                         }
-                        strcpy(s_shared->material_name[imat], node.at1.name);
-                        s_shared->composition[imat] = data;
+                        strcpy(physics->material_name[imat], node.at1.name);
+                        physics->composition[imat] = data;
 
                         /* Format the energy loss filename. */
                         if (!mdf->dry_mode) {
@@ -6875,12 +6916,12 @@ enum pumas_return mdf_parse_materials(
                                 strcpy(filename + offset_dir, node.at2.file);
                         } else {
                                 int n = strlen(node.at2.file) + 1;
-                                s_shared->dedx_filename[imat] = allocate(n);
-                                if (s_shared->dedx_filename[imat] == NULL) {
+                                physics->dedx_filename[imat] = allocate(n);
+                                if (physics->dedx_filename[imat] == NULL) {
                                         ERROR_REGISTER_MEMORY();
                                         break;
                                 }
-                                memcpy(s_shared->dedx_filename[imat],
+                                memcpy(physics->dedx_filename[imat],
                                     node.at2.file, n);
                         }
                 }
@@ -6891,9 +6932,9 @@ enum pumas_return mdf_parse_materials(
                 /* Set the composition data. */
                 if (node.key == MDF_KEY_ATOMIC_COMPONENT) {
                         int i = mdf->elements_in - 1;
-                        int iel = element_index(node.at1.name);
+                        int iel = element_index(physics, node.at1.name);
                         if (iel < 0) return PUMAS_RETURN_UNKNOWN_ELEMENT;
-                        s_shared->composition[imat][i].element = iel;
+                        physics->composition[imat][i].element = iel;
 
                         double f;
                         if ((sscanf(node.at2.fraction, "%lf", &f) != 1) ||
@@ -6903,7 +6944,7 @@ enum pumas_return mdf_parse_materials(
                                     node.at2.fraction);
                                 break;
                         }
-                        s_shared->composition[imat][i].fraction = f;
+                        physics->composition[imat][i].fraction = f;
                         data++;
                 }
         }
@@ -6911,10 +6952,10 @@ enum pumas_return mdf_parse_materials(
         if (error_->code != PUMAS_RETURN_SUCCESS) {
                 /* Clear the filenames, whenever allocated. */
                 int i;
-                for (i = 0; i < s_shared->n_materials - s_shared->n_composites;
+                for (i = 0; i < physics->n_materials - physics->n_composites;
                      i++) {
-                        deallocate(s_shared->dedx_filename[imat]);
-                        s_shared->dedx_filename[imat] = NULL;
+                        deallocate(physics->dedx_filename[imat]);
+                        physics->dedx_filename[imat] = NULL;
                 }
         }
 
@@ -6931,7 +6972,7 @@ enum pumas_return mdf_parse_materials(
  * The composite materials properties are given as a linear combination
  * of the base material ones.
  */
-enum pumas_return mdf_parse_composites(
+enum pumas_return mdf_parse_composites(struct pumas_physics * physics, 
     struct mdf_buffer * mdf, struct error_context * error_)
 {
         /* Loop on the XML nodes. */
@@ -6942,16 +6983,16 @@ enum pumas_return mdf_parse_composites(
         struct mdf_node node;
         int icomp = 0;
         int elements_in = 0;
-        const int imat = s_shared->n_materials - s_shared->n_composites - 1;
+        const int imat = physics->n_materials - physics->n_composites - 1;
         struct material_component * data_el =
-            (struct material_component *)((char *)(s_shared
+            (struct material_component *)((char *)(physics
                                                        ->composition[imat]) +
-                s_shared->elements_in[imat] *
+                physics->elements_in[imat] *
                     sizeof(struct material_component));
-        const int pad_size = sizeof(*(s_shared->data));
-        void * tmp_ptr = ((char *)s_shared->composite) +
+        const int pad_size = sizeof(*(physics->data));
+        void * tmp_ptr = ((char *)physics->composite) +
             memory_padded_size(
-                s_shared->n_composites * sizeof(struct composite_material *),
+                physics->n_composites * sizeof(struct composite_material *),
                 pad_size);
         struct composite_material * data_ma = tmp_ptr;
 
@@ -6967,7 +7008,7 @@ enum pumas_return mdf_parse_composites(
                         if (node.head == 0) {
                                 /* This is a composite closing. */
                                 data_ma->n_components = mdf->materials_in;
-                                s_shared->elements_in[i0] = elements_in;
+                                physics->elements_in[i0] = elements_in;
                                 data_ma =
                                     (struct composite_material *)((char *)
                                                                       data_ma +
@@ -6978,17 +7019,17 @@ enum pumas_return mdf_parse_composites(
 
                                 /* update the composite material count. */
                                 icomp++;
-                                if (icomp >= s_shared->n_composites) break;
+                                if (icomp >= physics->n_composites) break;
                                 continue;
                         }
 
                         /* We have a new material opening. */
-                        s_shared->material_name[i0] =
-                            s_shared->material_name[i0 - 1] +
-                            strlen(s_shared->material_name[i0 - 1]) + 1;
-                        strcpy(s_shared->material_name[i0], node.at1.name);
-                        s_shared->composition[i0] = data_el;
-                        s_shared->composite[icomp] = data_ma;
+                        physics->material_name[i0] =
+                            physics->material_name[i0 - 1] +
+                            strlen(physics->material_name[i0 - 1]) + 1;
+                        strcpy(physics->material_name[i0], node.at1.name);
+                        physics->composition[i0] = data_el;
+                        physics->composite[icomp] = data_ma;
                         elements_in = 0;
                 }
 
@@ -6999,7 +7040,7 @@ enum pumas_return mdf_parse_composites(
                 if (node.key == MDF_KEY_COMPOSITE_COMPONENT) {
                         int i = mdf->materials_in - 1;
                         int ima = 0;
-                        if (material_index(node.at1.name, &ima, error_) !=
+                        if (material_index(physics, node.at1.name, &ima, error_) !=
                             PUMAS_RETURN_SUCCESS)
                                 break;
                         data_ma->component[i].material = ima;
@@ -7022,20 +7063,20 @@ enum pumas_return mdf_parse_composites(
                         data_ma->component[i].density = rho;
 
                         const int i0 = imat + icomp + 1;
-                        for (i = 0; i < s_shared->elements_in[ima]; i++) {
-                                int iel = s_shared->composition[ima][i].element;
+                        for (i = 0; i < physics->elements_in[ima]; i++) {
+                                int iel = physics->composition[ima][i].element;
                                 int j, n = elements_in;
                                 int already_listed = 0;
                                 for (j = 0; j < n; j++) {
                                         if (iel ==
-                                            s_shared->composition[i0][j]
+                                            physics->composition[i0][j]
                                                 .element) {
                                                 already_listed = 1;
                                                 break;
                                         }
                                 }
                                 if (already_listed != 0) continue;
-                                s_shared->composition[i0][elements_in++]
+                                physics->composition[i0][elements_in++]
                                     .element = iel;
                         }
                 }
@@ -7524,19 +7565,19 @@ enum pumas_return mdf_format_path(const char * directory, const char * mdf_path,
  * @return `PUMAS_ERROR` if any computation failled, `PUMAS_RETURN_SUCCESS`
  * otherwise.
  */
-enum pumas_return compute_composite(int material, struct error_context * error_)
+enum pumas_return compute_composite(struct pumas_physics * physics, int material, struct error_context * error_)
 {
-        compute_composite_weights(material);
-        compute_composite_tables(material);
-        compute_regularise_del(material);
+        compute_composite_weights(physics, material);
+        compute_composite_tables(physics, material);
+        compute_regularise_del(physics, material);
         int ikin;
-        for (ikin = 0; ikin < s_shared->n_kinetics; ikin++) {
+        for (ikin = 0; ikin < physics->n_kinetics; ikin++) {
                 const enum pumas_return rc =
-                    compute_coulomb_parameters(material, ikin, error_);
+                    compute_coulomb_parameters(physics, material, ikin, error_);
                 if (rc != PUMAS_RETURN_SUCCESS) return rc;
         }
-        compute_cel_integrals(material);
-        compute_csda_magnetic_transport(material);
+        compute_cel_integrals(physics, material);
+        compute_csda_magnetic_transport(physics, material);
         return PUMAS_RETURN_SUCCESS;
 }
 
@@ -7545,16 +7586,16 @@ enum pumas_return compute_composite(int material, struct error_context * error_)
  *
  * @param material The index of the material to tabulate.
  */
-void compute_cel_integrals(int material)
+void compute_cel_integrals(struct pumas_physics * physics, int material)
 {
-        compute_cel_grammage_integral(0, material);
-        compute_cel_grammage_integral(1, material);
-        compute_time_integrals(material);
-        compute_kinetic_integral(
-            table_get_NI_el(PUMAS_SCHEME_CSDA, material, 0));
-        compute_kinetic_integral(
-            table_get_NI_el(PUMAS_SCHEME_HYBRID, material, 0));
-        compute_kinetic_integral(table_get_NI_in(material, 0));
+        compute_cel_grammage_integral(physics, 0, material);
+        compute_cel_grammage_integral(physics, 1, material);
+        compute_time_integrals(physics, material);
+        compute_kinetic_integral(physics, 
+            table_get_NI_el(physics, PUMAS_SCHEME_CSDA, material, 0));
+        compute_kinetic_integral(physics, 
+            table_get_NI_el(physics, PUMAS_SCHEME_HYBRID, material, 0));
+        compute_kinetic_integral(physics, table_get_NI_in(physics, material, 0));
 }
 
 /**
@@ -7562,24 +7603,24 @@ void compute_cel_integrals(int material)
  *
  * @param material The material index of the composite to compute.
  */
-void compute_composite_weights(int material)
+void compute_composite_weights(struct pumas_physics * physics, int material)
 {
         /* Compute the effective mass number (normalisation). */
         const int icomp =
-            material - s_shared->n_materials + s_shared->n_composites;
+            material - physics->n_materials + physics->n_composites;
         int i;
         double M = 0.;
-        for (i = 0; i < s_shared->composite[icomp]->n_components; i++) {
+        for (i = 0; i < physics->composite[icomp]->n_components; i++) {
                 const struct composite_component * component =
-                    s_shared->composite[icomp]->component + i;
+                    physics->composite[icomp]->component + i;
                 const int imat = component->material;
                 int j;
                 double Mi_inv = 0.;
-                for (j = 0; j < s_shared->elements_in[imat]; j++) {
+                for (j = 0; j < physics->elements_in[imat]; j++) {
                         const struct material_component * component =
-                            s_shared->composition[imat] + j;
+                            physics->composition[imat] + j;
                         const struct atomic_element * element =
-                            s_shared->element[component->element];
+                            physics->element[component->element];
                         Mi_inv += component->fraction / element->A;
                 }
                 M += component->fraction * Mi_inv;
@@ -7587,34 +7628,34 @@ void compute_composite_weights(int material)
         M = 1. / M;
 
         /* Compute the materials and atomic elements weights. */
-        for (i = 0; i < s_shared->elements_in[material]; i++) {
+        for (i = 0; i < physics->elements_in[material]; i++) {
                 struct material_component * component =
-                    s_shared->composition[material] + i;
+                    physics->composition[material] + i;
                 component->fraction = 0.;
         }
 
-        for (i = 0; i < s_shared->composite[icomp]->n_components; i++) {
+        for (i = 0; i < physics->composite[icomp]->n_components; i++) {
                 struct composite_component * component =
-                    s_shared->composite[icomp]->component + i;
+                    physics->composite[icomp]->component + i;
                 const int imat = component->material;
                 int j;
                 double Mi_inv = 0.;
-                for (j = 0; j < s_shared->elements_in[imat]; j++) {
+                for (j = 0; j < physics->elements_in[imat]; j++) {
                         const struct material_component * component =
-                            s_shared->composition[imat] + j;
+                            physics->composition[imat] + j;
                         const struct atomic_element * element =
-                            s_shared->element[component->element];
+                            physics->element[component->element];
                         Mi_inv += component->fraction / element->A;
                 }
                 component->weight = component->fraction * M * Mi_inv;
 
-                for (j = 0; j < s_shared->elements_in[imat]; j++) {
+                for (j = 0; j < physics->elements_in[imat]; j++) {
                         const struct material_component * cij =
-                            s_shared->composition[imat] + j;
+                            physics->composition[imat] + j;
                         int k;
-                        for (k = 0; k < s_shared->elements_in[material]; k++) {
+                        for (k = 0; k < physics->elements_in[material]; k++) {
                                 struct material_component * c =
-                                    s_shared->composition[material] + k;
+                                    physics->composition[material] + k;
                                 if (c->element == cij->element) {
                                         c->fraction +=
                                             component->weight * cij->fraction;
@@ -7625,7 +7666,7 @@ void compute_composite_weights(int material)
         }
 
         /* Compute the relative electron density. */
-        compute_ZoA(material);
+        compute_ZoA(physics, material);
 }
 
 /**
@@ -7636,27 +7677,27 @@ void compute_composite_weights(int material)
  * @return `PUMAS_ERROR` if any density is not strictly positive,
  * `PUMAS_RETURN_SUCCESS` otherwise.
  */
-enum pumas_return compute_composite_density(
+enum pumas_return compute_composite_density(struct pumas_physics * physics, 
     int material, struct error_context * error_)
 {
         const int icomp =
-            material - s_shared->n_materials + s_shared->n_composites;
+            material - physics->n_materials + physics->n_composites;
         int i;
         double rho_inv = 0., nrm = 0.;
-        for (i = 0; i < s_shared->composite[icomp]->n_components; i++) {
+        for (i = 0; i < physics->composite[icomp]->n_components; i++) {
                 const struct composite_component * component =
-                    s_shared->composite[icomp]->component + i;
+                    physics->composite[icomp]->component + i;
                 if (component->density <= 0.)
                         return ERROR_REGISTER_NEGATIVE_DENSITY(
-                            s_shared->material_name[component->material]);
+                            physics->material_name[component->material]);
                 rho_inv += component->fraction / component->density;
                 nrm += component->fraction;
         }
 
         if (rho_inv <= 0.)
                 return ERROR_REGISTER_NEGATIVE_DENSITY(
-                    s_shared->material_name[material]);
-        s_shared->composite[icomp]->density = nrm / rho_inv;
+                    physics->material_name[material]);
+        physics->composite[icomp]->density = nrm / rho_inv;
         return PUMAS_RETURN_SUCCESS;
 }
 
@@ -7665,71 +7706,71 @@ enum pumas_return compute_composite_density(
  *
  * @param material The matrial index of the composite to compute.
  */
-void compute_composite_tables(int material)
+void compute_composite_tables(struct pumas_physics * physics, int material)
 {
         const int icomp =
-            material - s_shared->n_materials + s_shared->n_composites;
+            material - physics->n_materials + physics->n_composites;
 
         /* Initialise to zero. */
         int i, row, k0 = 0;
-        for (i = 0; i < material; i++) k0 += s_shared->elements_in[i];
+        for (i = 0; i < material; i++) k0 += physics->elements_in[i];
         row = 0;
-        *table_get_T(PUMAS_SCHEME_CSDA, material, row) = 0.;
-        *table_get_T(PUMAS_SCHEME_HYBRID, material, row) = 0.;
-        *table_get_NI_in(material, row) = 0.;
-        for (row = 0; row < s_shared->n_kinetics; row++) {
-                *table_get_dE(PUMAS_SCHEME_CSDA, material, row) = 0.;
-                *table_get_dE(PUMAS_SCHEME_HYBRID, material, row) = 0.;
-                *table_get_CS(material, row) = 0.;
+        *table_get_T(physics, PUMAS_SCHEME_CSDA, material, row) = 0.;
+        *table_get_T(physics, PUMAS_SCHEME_HYBRID, material, row) = 0.;
+        *table_get_NI_in(physics, material, row) = 0.;
+        for (row = 0; row < physics->n_kinetics; row++) {
+                *table_get_dE(physics, PUMAS_SCHEME_CSDA, material, row) = 0.;
+                *table_get_dE(physics, PUMAS_SCHEME_HYBRID, material, row) = 0.;
+                *table_get_CS(physics, material, row) = 0.;
                 int k, ip;
-                for (k = 0; k < s_shared->elements_in[material]; k++)
+                for (k = 0; k < physics->elements_in[material]; k++)
                         for (ip = 0; ip < N_DEL_PROCESSES; ip++)
-                                *table_get_CSf(ip, k0 + k, row) = 0.;
+                                *table_get_CSf(physics, ip, k0 + k, row) = 0.;
         }
-        *table_get_Kt(material) = 0.;
-        *table_get_a_max(material) = 0.;
-        *table_get_b_max(PUMAS_SCHEME_CSDA, material) = 0.;
-        *table_get_b_max(PUMAS_SCHEME_HYBRID, material) = 0.;
+        *table_get_Kt(physics, material) = 0.;
+        *table_get_a_max(physics, material) = 0.;
+        *table_get_b_max(physics, PUMAS_SCHEME_CSDA, material) = 0.;
+        *table_get_b_max(physics, PUMAS_SCHEME_HYBRID, material) = 0.;
 
         /* End point statistics */
-        for (i = 0; i < s_shared->composite[icomp]->n_components; i++) {
+        for (i = 0; i < physics->composite[icomp]->n_components; i++) {
                 struct composite_component * component =
-                    s_shared->composite[icomp]->component + i;
+                    physics->composite[icomp]->component + i;
                 const int imat = component->material;
-                const double kt = *table_get_Kt(imat);
+                const double kt = *table_get_Kt(physics, imat);
 
                 /* Total cross section and energy loss. */
-                for (row = 0; row < s_shared->n_kinetics; row++) {
-                        *table_get_dE(0, material, row) +=
-                            *table_get_dE(0, imat, row) * component->weight;
-                        *table_get_dE(1, material, row) +=
-                            *table_get_dE(1, imat, row) * component->weight;
-                        const double k = *table_get_K(row);
+                for (row = 0; row < physics->n_kinetics; row++) {
+                        *table_get_dE(physics, 0, material, row) +=
+                            *table_get_dE(physics, 0, imat, row) * component->weight;
+                        *table_get_dE(physics, 1, material, row) +=
+                            *table_get_dE(physics, 1, imat, row) * component->weight;
+                        const double k = *table_get_K(physics, row);
                         const double cs = (k < kt) ?
                             0. :
-                            *table_get_CS(imat, row) * component->weight;
-                        *table_get_CS(material, row) += cs;
+                            *table_get_CS(physics, imat, row) * component->weight;
+                        *table_get_CS(physics, material, row) += cs;
                 }
 
                 /* Fractional contribution to the cross section. */
                 int j, j0 = 0;
-                for (j = 0; j < imat; j++) j0 += s_shared->elements_in[j];
+                for (j = 0; j < imat; j++) j0 += physics->elements_in[j];
 
-                for (row = 0; row < s_shared->n_kinetics; row++) {
-                        const double kinetic = *table_get_K(row);
+                for (row = 0; row < physics->n_kinetics; row++) {
+                        const double kinetic = *table_get_K(physics, row);
                         if (kinetic < kt) continue;
 
-                        const double cs_tot = *table_get_CS(imat, row);
+                        const double cs_tot = *table_get_CS(physics, imat, row);
                         double csf_last = 0.;
-                        for (j = 0; j < s_shared->elements_in[imat]; j++) {
+                        for (j = 0; j < physics->elements_in[imat]; j++) {
                                 /* Locate the element. */
                                 const struct material_component * cij =
-                                    s_shared->composition[imat] + j;
+                                    physics->composition[imat] + j;
                                 int k;
-                                for (k = 0; k < s_shared->elements_in[material];
+                                for (k = 0; k < physics->elements_in[material];
                                      k++) {
                                         struct material_component * c =
-                                            k + s_shared->composition[material];
+                                            k + physics->composition[material];
                                         if (c->element == cij->element) break;
                                 }
 
@@ -7737,8 +7778,8 @@ void compute_composite_tables(int material)
                                 int ip;
                                 for (ip = 0; ip < N_DEL_PROCESSES; ip++) {
                                         const double csf =
-                                            *table_get_CSf(ip, j0 + j, row);
-                                        *table_get_CSf(ip, k0 + k, row) +=
+                                            *table_get_CSf(physics, ip, j0 + j, row);
+                                        *table_get_CSf(physics, ip, k0 + k, row) +=
                                             cs_tot * (csf - csf_last) *
                                             component->weight;
                                         csf_last = csf;
@@ -7747,43 +7788,43 @@ void compute_composite_tables(int material)
                 }
 
                 /* Maximum tabulated energy loss parameters. */
-                *table_get_a_max(material) +=
-                    *table_get_a_max(imat) * component->weight;
-                *table_get_b_max(0, material) +=
-                    *table_get_b_max(0, imat) * component->weight;
-                *table_get_b_max(1, material) +=
-                    *table_get_b_max(1, imat) * component->weight;
+                *table_get_a_max(physics, material) +=
+                    *table_get_a_max(physics, imat) * component->weight;
+                *table_get_b_max(physics, 0, material) +=
+                    *table_get_b_max(physics, 0, imat) * component->weight;
+                *table_get_b_max(physics, 1, material) +=
+                    *table_get_b_max(physics, 1, imat) * component->weight;
         }
 
         /* Normalise the fractional contributions to the cross section. */
-        for (row = 0; row < s_shared->n_kinetics; row++) {
+        for (row = 0; row < physics->n_kinetics; row++) {
                 int k, ip;
-                const double cs = *table_get_CS(material, row);
+                const double cs = *table_get_CS(physics, material, row);
                 if (cs <= 0.) {
-                        for (k = 0; k < s_shared->elements_in[material]; k++)
+                        for (k = 0; k < physics->elements_in[material]; k++)
                                 for (ip = 0; ip < N_DEL_PROCESSES; ip++)
-                                        *table_get_CSf(ip, k0 + k, row) = 0.;
+                                        *table_get_CSf(physics, ip, k0 + k, row) = 0.;
                         continue;
                 }
 
                 double sum = 0.;
-                for (k = 0; k < s_shared->elements_in[material]; k++)
+                for (k = 0; k < physics->elements_in[material]; k++)
                         for (ip = 0; ip < N_DEL_PROCESSES; ip++) {
-                                sum += *table_get_CSf(ip, k0 + k, row);
+                                sum += *table_get_CSf(physics, ip, k0 + k, row);
                                 const double f = sum / cs;
-                                *table_get_CSf(ip, k0 + k, row) =
+                                *table_get_CSf(physics, ip, k0 + k, row) =
                                     (f > 1.) ? 1. : f;
                         }
 
                 /* Protect against rounding errors. */
-                k = s_shared->elements_in[material] - 1;
-                *table_get_CSf(N_DEL_PROCESSES - 1, k0 + k, row) = 1.;
+                k = physics->elements_in[material] - 1;
+                *table_get_CSf(physics, N_DEL_PROCESSES - 1, k0 + k, row) = 1.;
         }
 
         /* Weighted integrands */
-        for (row = 1; row < s_shared->n_kinetics; row++) {
-                *table_get_NI_in(material, row) = *table_get_CS(material, row) /
-                    *table_get_dE(PUMAS_SCHEME_HYBRID, material, row);
+        for (row = 1; row < physics->n_kinetics; row++) {
+                *table_get_NI_in(physics, material, row) = *table_get_CS(physics, material, row) /
+                    *table_get_dE(physics, PUMAS_SCHEME_HYBRID, material, row);
         }
 }
 
@@ -7795,18 +7836,18 @@ void compute_composite_tables(int material)
  * Compute a cumulative integral of the column by integrating over the kinetic
  * energy with a linear interpolation and a trapezoidal rule.
  */
-void compute_kinetic_integral(double * table)
+void compute_kinetic_integral(struct pumas_physics * physics, double * table)
 {
         double value = 0., dv;
         int i;
-        for (i = 1; i < s_shared->n_kinetics; i++) {
-                const double x0 = *table_get_K(i - 1);
-                const double x1 = *table_get_K(i);
+        for (i = 1; i < physics->n_kinetics; i++) {
+                const double x0 = *table_get_K(physics, i - 1);
+                const double x1 = *table_get_K(physics, i);
                 dv = 0.5 * (x1 - x0) * (table[i - 1] + table[i]);
                 table[i - 1] = value;
                 value += dv;
         }
-        table[s_shared->n_kinetics - 1] = value;
+        table[physics->n_kinetics - 1] = value;
 }
 
 /**
@@ -7817,7 +7858,7 @@ void compute_kinetic_integral(double * table)
  * Compute the proper time cumulative integrals over path length with a
  * trapezoidal rule.
  */
-void compute_time_integrals(int material)
+void compute_time_integrals(struct pumas_physics * physics, int material)
 {
         static double I0 = 0.;
         if (I0 == 0.) {
@@ -7825,39 +7866,39 @@ void compute_time_integrals(int material)
                  * using trapezes. */
                 const int n = 101;
                 int i;
-                const double dK = (*table_get_K(1)) / (n - 1);
+                const double dK = (*table_get_K(physics, 1)) / (n - 1);
                 double Ki = dK;
-                I0 = 0.5 / sqrt(Ki * (Ki + 2. * s_shared->mass));
+                I0 = 0.5 / sqrt(Ki * (Ki + 2. * physics->mass));
                 for (i = 2; i < n - 1; i++) {
                         Ki += dK;
-                        const double pi = sqrt(Ki * (Ki + 2. * s_shared->mass));
+                        const double pi = sqrt(Ki * (Ki + 2. * physics->mass));
                         I0 += 1. / pi;
                 }
                 Ki += dK;
-                I0 += 0.5 / sqrt(Ki * (Ki + 2. * s_shared->mass));
+                I0 += 0.5 / sqrt(Ki * (Ki + 2. * physics->mass));
                 I0 /= n - 1;
         }
 
         /* Compute the cumulative path integrals . */
-        double * const K = table_get_K(0);
-        double * const T0 = table_get_T(PUMAS_SCHEME_CSDA, material, 0);
-        double * const T1 = table_get_T(PUMAS_SCHEME_HYBRID, material, 0);
-        double * const X0 = table_get_X(PUMAS_SCHEME_CSDA, material, 0);
-        double * const X1 = table_get_X(PUMAS_SCHEME_HYBRID, material, 0);
+        double * const K = table_get_K(physics, 0);
+        double * const T0 = table_get_T(physics, PUMAS_SCHEME_CSDA, material, 0);
+        double * const T1 = table_get_T(physics, PUMAS_SCHEME_HYBRID, material, 0);
+        double * const X0 = table_get_X(physics, PUMAS_SCHEME_CSDA, material, 0);
+        double * const X1 = table_get_X(physics, PUMAS_SCHEME_HYBRID, material, 0);
 
         T0[0] = T1[0] = 0.;
-        T0[1] = I0 * X0[1] * s_shared->mass;
-        T1[1] = I0 * X1[1] * s_shared->mass;
+        T0[1] = I0 * X0[1] * physics->mass;
+        T1[1] = I0 * X1[1] * physics->mass;
         int i;
-        for (i = 2; i < s_shared->n_kinetics; i++) {
+        for (i = 2; i < physics->n_kinetics; i++) {
                 const double p0 =
-                    sqrt(K[i - 1] * (K[i - 1] + 2. * s_shared->mass));
-                const double p1 = sqrt(K[i] * (K[i] + 2. * s_shared->mass));
+                    sqrt(K[i - 1] * (K[i - 1] + 2. * physics->mass));
+                const double p1 = sqrt(K[i] * (K[i] + 2. * physics->mass));
                 const double psi = 1. / p0 + 1. / p1;
                 const double dy0 = 0.5 * (X0[i] - X0[i - 1]) * psi;
                 const double dy1 = 0.5 * (X1[i] - X1[i - 1]) * psi;
-                T0[i] = T0[i - 1] + dy0 * s_shared->mass;
-                T1[i] = T1[i - 1] + dy1 * s_shared->mass;
+                T0[i] = T0[i - 1] + dy0 * physics->mass;
+                T1[i] = T1[i - 1] + dy1 * physics->mass;
         }
 }
 
@@ -7870,17 +7911,17 @@ void compute_time_integrals(int material)
  * Compute the cumulative CSDA grammage integral from the energy loss
  * using a trapezoidal rule.
  */
-void compute_cel_grammage_integral(int scheme, int material)
+void compute_cel_grammage_integral(struct pumas_physics * physics, int scheme, int material)
 {
-        const double * const kinetic = table_get_K(0);
-        const double * const dEdX = table_get_dE(scheme, material, 0);
-        double * const table = table_get_X(scheme, material, 0);
+        const double * const kinetic = table_get_K(physics, 0);
+        const double * const dEdX = table_get_dE(physics, scheme, material, 0);
+        double * const table = table_get_X(physics, scheme, material, 0);
 
         /* Compute the cumulative integral. */
         int i;
         table[0] = 0.;
         double y0 = 1. / dEdX[1];
-        for (i = 1; i < s_shared->n_kinetics; i++) {
+        for (i = 1; i < physics->n_kinetics; i++) {
                 const double y1 = 1. / dEdX[i];
                 table[i] = table[i - 1] +
                     0.5 * (kinetic[i] - kinetic[i - 1]) * (y0 + y1);
@@ -7896,7 +7937,7 @@ void compute_cel_grammage_integral(int scheme, int material)
  * Compute the cumulative integrals for the momenta of the magnetic deflection
  * using a trapezoidal rule.
  */
-void compute_csda_magnetic_transport(int material)
+void compute_csda_magnetic_transport(struct pumas_physics * physics, int material)
 {
         double x[N_LARMOR_ORDERS];
         double dx[N_LARMOR_ORDERS];
@@ -7904,21 +7945,21 @@ void compute_csda_magnetic_transport(int material)
 
         /* The magnetic phase shift is proportional to the proper time integral.
          * We refer to this table. */
-        const double factor = LARMOR_FACTOR / s_shared->mass;
-        double * const T = table_get_T(PUMAS_SCHEME_CSDA, material, 0);
+        const double factor = LARMOR_FACTOR / physics->mass;
+        double * const T = table_get_T(physics, PUMAS_SCHEME_CSDA, material, 0);
 
         /* Compute the deflection starting from max energy down to 0 */
-        double * const X0 = table_get_X(PUMAS_SCHEME_CSDA, material, 0);
-        const int imax = s_shared->n_kinetics - 1;
+        double * const X0 = table_get_X(physics, PUMAS_SCHEME_CSDA, material, 0);
+        const int imax = physics->n_kinetics - 1;
         int i, j;
-        for (i = s_shared->n_kinetics - 2; i >= 1; i--) {
+        for (i = physics->n_kinetics - 2; i >= 1; i--) {
                 double dX0 = 0.5 * (X0[i + 1] - X0[i]);
                 double p1 = (T[imax] - T[i]) * factor;
                 double p2 = (T[imax] - T[i + 1]) * factor;
 
                 double f1 = 1., f2 = 1.;
                 for (j = 0; j < N_LARMOR_ORDERS; j++) {
-                        *table_get_Li(material, j, i + 1) = x[j];
+                        *table_get_Li(physics, material, j, i + 1) = x[j];
                         dx[j] = dX0 * (f1 + f2);
                         x[j] += dx[j];
                         f1 *= p1;
@@ -7928,9 +7969,9 @@ void compute_csda_magnetic_transport(int material)
 
         /* Extrapolate the end points */
         for (j = 0; j < N_LARMOR_ORDERS; j++) {
-                *table_get_Li(material, j, 1) = x[j];
+                *table_get_Li(physics, material, j, 1) = x[j];
                 double hx = (X0[1] - X0[0]) / (X0[2] - X0[1]);
-                *table_get_Li(material, j, 0) = x[j] + hx * dx[j];
+                *table_get_Li(physics, material, j, 0) = x[j] + hx * dx[j];
         }
 }
 
@@ -7941,11 +7982,11 @@ void compute_csda_magnetic_transport(int material)
  * @param row      The kinetic energy index to compute for.
  * @param error    The error data.
  *
- * At output the *row* of `s_shared::table_Mu0` and `s_shared::table_Ms1` are
+ * At output the *row* of `physics::table_Mu0` and `physics::table_Ms1` are
  * updated. This routine manages a temporary workspace memory buffer. Calling
  * it with a negative *material* index causes the workspace memory to be freed.
  */
-enum pumas_return compute_coulomb_parameters(
+enum pumas_return compute_coulomb_parameters(struct pumas_physics * physics, 
     int material, int row, struct error_context * error_)
 {
         /* Handle the memory for the temporary workspace. */
@@ -7956,16 +7997,16 @@ enum pumas_return compute_coulomb_parameters(
                 return PUMAS_RETURN_SUCCESS;
         } else if (workspace == NULL) {
                 const int work_size = sizeof(struct coulomb_workspace) +
-                    s_shared->max_components * sizeof(struct coulomb_data);
+                    physics->max_components * sizeof(struct coulomb_data);
                 workspace = allocate(work_size);
                 if (workspace == NULL) return ERROR_REGISTER_MEMORY();
         }
 
         /* Check the kinetic energy. */
-        const double kinetic = *table_get_K(row);
+        const double kinetic = *table_get_K(physics, row);
         if (kinetic <= 0.) {
-                *table_get_Mu0(material, row) = 0.;
-                *table_get_Ms1(material, row) = 0.;
+                *table_get_Mu0(physics, material, row) = 0.;
+                *table_get_Ms1(physics, material, row) = 0.;
                 return PUMAS_RETURN_SUCCESS;
         }
 
@@ -7976,24 +8017,24 @@ enum pumas_return compute_coulomb_parameters(
         double s_m_l = 0., s_m_h = 0.;
         int i;
         struct coulomb_data * data;
-        for (i = 0, data = workspace->data; i < s_shared->elements_in[material];
+        for (i = 0, data = workspace->data; i < physics->elements_in[material];
              i++, data++) {
                 double G[2];
                 const struct material_component * const component =
-                    &s_shared->composition[material][i];
+                    &physics->composition[material][i];
                 const struct atomic_element * const element =
-                    s_shared->element[component->element];
+                    physics->element[component->element];
                 double kinetic0;
-                coulomb_frame_parameters(
+                coulomb_frame_parameters(physics, 
                     kinetic, element->A, &kinetic0, data->fCM);
-                data->fspin = coulomb_spin_factor(kinetic0);
-                coulomb_screening_parameters(
+                data->fspin = coulomb_spin_factor(physics, kinetic0);
+                coulomb_screening_parameters(physics, 
                     NULL, kinetic0, component->element, data->screening);
                 coulomb_pole_decomposition(data->screening, data->a, data->b);
                 coulomb_transport_coefficients(
                     1., data->fspin, data->screening, data->a, data->b, G);
                 const double invlb = component->fraction /
-                    coulomb_wentzel_path(
+                    coulomb_wentzel_path(physics, 
                         kinetic0, element->Z, element->A, data->screening[0]);
 
                 invlb_m += invlb * G[0];
@@ -8034,7 +8075,7 @@ enum pumas_return compute_coulomb_parameters(
                 double mu_max = 4. * mu0;
                 if (mu_max > 1.) mu_max = 1.;
                 double mu_min = 0.25 * mu0;
-                double fmax = compute_cutoff_objective(mu_max, workspace);
+                double fmax = compute_cutoff_objective(physics, mu_max, workspace);
                 double fmin;
                 if (fmax > 0.) {
                         /* This shouldn't occur, but let's be safe and handle
@@ -8044,7 +8085,7 @@ enum pumas_return compute_coulomb_parameters(
                         mu_max = 1.;
                         fmax = -workspace->cs_h;
                 } else {
-                        fmin = compute_cutoff_objective(mu_min, workspace);
+                        fmin = compute_cutoff_objective(physics, mu_min, workspace);
                         if (fmin < 0.) {
                                 /* This might occur at high energies when the
                                  * nuclear screening becomes significant. */
@@ -8052,51 +8093,51 @@ enum pumas_return compute_coulomb_parameters(
                                 fmax = fmin;
                                 mu_min = 0.;
                                 fmin =
-                                    compute_cutoff_objective(mu_min, workspace);
+                                    compute_cutoff_objective(physics, mu_min, workspace);
                         }
                 }
                 if (mu_min < max_mu0) {
                         if (mu_max > max_mu0) mu_max = max_mu0;
-                        if (math_find_root(compute_cutoff_objective, mu_min,
+                        if (math_find_root(compute_cutoff_objective, physics, mu_min,
                                 mu_max, &fmin, &fmax, 1E-06 * mu0, 1E-06, 100,
                                 workspace, &mubest) == 0)
                                 mu0 = mubest;
                 }
                 if (mu0 > max_mu0) mu0 = max_mu0;
                 lb_h =
-                    compute_cutoff_objective(mu0, workspace) + workspace->cs_h;
+                    compute_cutoff_objective(physics, mu0, workspace) + workspace->cs_h;
                 if (lb_h <= 1. / EHS_PATH_MAX)
                         lb_h = EHS_PATH_MAX;
                 else
                         lb_h = 1. / lb_h;
         } else
                 lb_h = lb_m;
-        *table_get_Mu0(material, row) = mu0;
-        *table_get_Lb(material, row) =
-            lb_h * kinetic * (kinetic + 2. * s_shared->mass);
-        *table_get_NI_el(PUMAS_SCHEME_CSDA, material, row) =
-            1. / (*table_get_dE(PUMAS_SCHEME_CSDA, material, row) * lb_h);
-        *table_get_NI_el(PUMAS_SCHEME_HYBRID, material, row) =
-            1. / (*table_get_dE(PUMAS_SCHEME_HYBRID, material, row) * lb_h);
+        *table_get_Mu0(physics, material, row) = mu0;
+        *table_get_Lb(physics, material, row) =
+            lb_h * kinetic * (kinetic + 2. * physics->mass);
+        *table_get_NI_el(physics, PUMAS_SCHEME_CSDA, material, row) =
+            1. / (*table_get_dE(physics, PUMAS_SCHEME_CSDA, material, row) * lb_h);
+        *table_get_NI_el(physics, PUMAS_SCHEME_HYBRID, material, row) =
+            1. / (*table_get_dE(physics, PUMAS_SCHEME_HYBRID, material, row) * lb_h);
 
         /* Compute the 1st moment of the soft scattering. */
-        const int n0 = s_shared->n_materials - s_shared->n_composites;
+        const int n0 = physics->n_materials - physics->n_composites;
         if (material < n0) {
                 /* We have a base material. */
                 static double * ms1_table = NULL;
                 if (material == 0) {
                         /* Precompute the per element soft scattering terms. */
                         enum pumas_return rc;
-                        if ((rc = compute_coulomb_soft(row, &ms1_table,
+                        if ((rc = compute_coulomb_soft(physics, row, &ms1_table,
                                  error_)) != PUMAS_RETURN_SUCCESS)
                                 return rc;
                 }
 
                 double invlb1 = 0.;
                 struct material_component * component =
-                    s_shared->composition[material];
+                    physics->composition[material];
                 for (i = 0, data = workspace->data;
-                     i < s_shared->elements_in[material];
+                     i < physics->elements_in[material];
                      i++, data++, component++) {
                         /* Screened nucleus contribution to the transport. */
                         double G[2];
@@ -8108,16 +8149,16 @@ enum pumas_return compute_coulomb_parameters(
 
                         /* Other precomputed soft scattering terms. */
                         const int iel = component->element;
-                        invlb1 += *table_get_ms1(iel, row, ms1_table) *
+                        invlb1 += *table_get_ms1(physics, iel, row, ms1_table) *
                             component->fraction;
                 }
-                *table_get_Ms1(material, row) = invlb1;
+                *table_get_Ms1(physics, material, row) = invlb1;
         } else {
                 /* We have a composite material. Let's loop on the base
                  * material components.
                  */
                 const struct composite_material * composite =
-                    s_shared->composite[material - n0];
+                    physics->composite[material - n0];
                 double invlb1 = 0.;
                 int icomp;
                 for (icomp = 0; icomp < composite->n_components; icomp++) {
@@ -8125,32 +8166,32 @@ enum pumas_return compute_coulomb_parameters(
                             composite->component + icomp;
                         const int imat = c->material;
                         struct material_component * component =
-                            s_shared->composition[imat];
+                            physics->composition[imat];
 
                         /* Compute the variation of the Coulomb scattering. */
-                        const double mu0b = *table_get_Mu0(imat, row);
+                        const double mu0b = *table_get_Mu0(physics, imat, row);
                         double delta_invlb1 = 0.;
                         for (i = 0, data = workspace->data;
-                             i < s_shared->elements_in[imat];
+                             i < physics->elements_in[imat];
                              i++, data++, component++) {
                                 /* Compute the scattering parameters for the
                                  * base material.
                                  */
                                 double G[2];
                                 const struct atomic_element * const element =
-                                    s_shared->element[component->element];
+                                    physics->element[component->element];
                                 double kinetic0;
-                                coulomb_frame_parameters(
+                                coulomb_frame_parameters(physics, 
                                     kinetic, element->A, &kinetic0, data->fCM);
-                                data->fspin = coulomb_spin_factor(kinetic0);
-                                coulomb_screening_parameters(NULL, kinetic0,
+                                data->fspin = coulomb_spin_factor(physics, kinetic0);
+                                coulomb_screening_parameters(physics, NULL, kinetic0,
                                     component->element, data->screening);
                                 coulomb_pole_decomposition(
                                     data->screening, data->a, data->b);
                                 coulomb_transport_coefficients(1., data->fspin,
                                     data->screening, data->a, data->b, G);
                                 const double invlb = component->fraction /
-                                    coulomb_wentzel_path(kinetic0, element->Z,
+                                    coulomb_wentzel_path(physics, kinetic0, element->Z,
                                         element->A, data->screening[0]);
 
                                 /* Variation of the screened nucleus
@@ -8171,10 +8212,10 @@ enum pumas_return compute_coulomb_parameters(
                         }
 
                         /* Base material soft scattering. */
-                        invlb1 += (*table_get_Ms1(imat, row) + delta_invlb1) *
+                        invlb1 += (*table_get_Ms1(physics, imat, row) + delta_invlb1) *
                             c->weight;
                 }
-                *table_get_Ms1(material, row) = invlb1;
+                *table_get_Ms1(physics, material, row) = invlb1;
         }
 
         return PUMAS_RETURN_SUCCESS;
@@ -8196,7 +8237,7 @@ enum pumas_return compute_coulomb_parameters(
  * **Note** This routine handles a static dynamically allocated table. If the
  * *row* index is negative the table is freed.
  */
-enum pumas_return compute_coulomb_soft(
+enum pumas_return compute_coulomb_soft(struct pumas_physics * physics, 
     int row, double ** data, struct error_context * error_)
 {
         static double * ms1_table = NULL;
@@ -8210,25 +8251,25 @@ enum pumas_return compute_coulomb_soft(
 
         /* Allocate the temporary table. */
         if (ms1_table == NULL) {
-                ms1_table = allocate(s_shared->n_elements *
-                    s_shared->n_kinetics * sizeof(double));
+                ms1_table = allocate(physics->n_elements *
+                    physics->n_kinetics * sizeof(double));
                 if (ms1_table == NULL) return ERROR_REGISTER_MEMORY();
         }
 
         /* Loop over atomic elements. */
-        const double kinetic = *table_get_K(row);
+        const double kinetic = *table_get_K(physics, row);
         int iel;
-        for (iel = 0; iel < s_shared->n_elements; iel++) {
-                struct atomic_element * element = s_shared->element[iel];
+        for (iel = 0; iel < physics->n_elements; iel++) {
+                struct atomic_element * element = physics->element[iel];
                 double invlb1 = 0.;
 
                 /* Electron shells contribution to the transverse transport. */
-                invlb1 = transverse_transport_ionisation(element, kinetic);
+                invlb1 = transverse_transport_ionisation(physics, element, kinetic);
 
                 /* Photonuclear contribution to the transverse transport. */
-                invlb1 += transverse_transport_photonuclear(element, kinetic);
+                invlb1 += transverse_transport_photonuclear(physics, element, kinetic);
 
-                *table_get_ms1(iel, row, ms1_table) = invlb1;
+                *table_get_ms1(physics, iel, row, ms1_table) = invlb1;
         }
 
         *data = ms1_table;
@@ -8246,14 +8287,14 @@ enum pumas_return compute_coulomb_soft(
  * This is a wrapper for the root solver. It provides the objective function
  * to solve for.
  */
-double compute_cutoff_objective(double mu, void * parameters)
+double compute_cutoff_objective(const struct pumas_physics * physics, double mu, void * parameters)
 {
         /* Unpack the workspace. */
         struct coulomb_workspace * workspace = parameters;
 
         /* Compute the restricted cross section. */
         double cs_tot = 0.;
-        int i, n = s_shared->elements_in[workspace->material];
+        int i, n = physics->elements_in[workspace->material];
         struct coulomb_data * data;
         for (i = 0, data = workspace->data; i < n; i++, data++) {
                 cs_tot += data->invlambda *
@@ -8278,7 +8319,7 @@ double compute_cutoff_objective(double mu, void * parameters)
  * **Note** This routine handles a static dynamically allocated table. If the
  * *row* index is negative the table is freed.
  */
-double * compute_cel_and_del(int row)
+double * compute_cel_and_del(struct pumas_physics * physics, int row)
 {
         static double * cel_table = NULL;
 
@@ -8289,24 +8330,24 @@ double * compute_cel_and_del(int row)
 
         /* Allocate the temporary table. */
         if (cel_table == NULL) {
-                cel_table = allocate(N_DEL_PROCESSES * s_shared->n_elements *
-                    s_shared->n_kinetics * sizeof(double));
+                cel_table = allocate(N_DEL_PROCESSES * physics->n_elements *
+                    physics->n_kinetics * sizeof(double));
                 if (cel_table == NULL) return NULL;
         }
 
         /* Loop over atomic elements. */
-        const double kinetic = *table_get_K(row);
+        const double kinetic = *table_get_K(physics, row);
         int iel;
-        for (iel = 0; iel < s_shared->n_elements; iel++) {
-                const struct atomic_element * element = s_shared->element[iel];
+        for (iel = 0; iel < physics->n_elements; iel++) {
+                const struct atomic_element * element = physics->element[iel];
 
                 /* Loop over processes. */
                 int ip;
                 for (ip = 0; ip < N_DEL_PROCESSES; ip++) {
-                        *table_get_CSn(ip, iel, row) = compute_dcs_integral(
+                        *table_get_CSn(physics, ip, iel, row) = compute_dcs_integral(physics, 
                             0, element, kinetic, dcs_get(ip), X_FRACTION, 180);
-                        *table_get_cel(ip, iel, row, cel_table) =
-                            compute_dcs_integral(1, element, kinetic,
+                        *table_get_cel(physics, ip, iel, row, cel_table) =
+                            compute_dcs_integral(physics, 1, element, kinetic,
                                 dcs_get(ip), X_FRACTION, 180);
                 }
         }
@@ -8320,15 +8361,15 @@ double * compute_cel_and_del(int row)
  *
  * @param material The index of the propagation material.
  */
-void compute_regularise_del(int material)
+void compute_regularise_del(struct pumas_physics * physics, int material)
 {
         /* Find the kinetic threshold above which the total cross-section is
          * not null. */
         int it;
         double cs0;
-        for (it = 1; it < s_shared->n_kinetics; it++)
-                if ((cs0 = *table_get_CS(material, it)) != 0) break;
-        *table_get_Kt(material) = *table_get_K(it);
+        for (it = 1; it < physics->n_kinetics; it++)
+                if ((cs0 = *table_get_CS(physics, material, it)) != 0) break;
+        *table_get_Kt(physics, material) = *table_get_K(physics, it);
 
         /*
          * Regularise the cross section and the total number of interaction
@@ -8336,10 +8377,10 @@ void compute_regularise_del(int material)
          */
         int row;
         for (row = 1; row < it; row++) {
-                *table_get_CS(material, row) = cs0;
+                *table_get_CS(physics, material, row) = cs0;
                 const double dEdX =
-                    *table_get_dE(PUMAS_SCHEME_HYBRID, material, row);
-                *table_get_NI_in(material, row) = cs0 / dEdX;
+                    *table_get_dE(physics, PUMAS_SCHEME_HYBRID, material, row);
+                *table_get_NI_in(physics, material, row) = cs0 / dEdX;
         }
 
         if (material > 0)
@@ -8348,17 +8389,17 @@ once. */
 
         /* Find the kinetic threshold per process and atomic element. */
         int iel, ip;
-        for (iel = 0; iel < s_shared->n_elements; iel++) {
-                const struct atomic_element * element = s_shared->element[iel];
+        for (iel = 0; iel < physics->n_elements; iel++) {
+                const struct atomic_element * element = physics->element[iel];
                 for (ip = 0; ip < N_DEL_PROCESSES; ip++) {
                         for (row = 0; row < it; row++)
-                                *table_get_Xt(ip, iel, row) = 1.;
+                                *table_get_Xt(physics, ip, iel, row) = 1.;
                         dcs_function_t * dcs_func = dcs_get(ip);
-                        for (row = it; row < s_shared->n_kinetics; row++) {
-                                const double k = *table_get_K(row);
+                        for (row = it; row < physics->n_kinetics; row++) {
+                                const double k = *table_get_K(physics, row);
                                 double x = X_FRACTION;
                                 while ((x < 1.) &&
-                                    (dcs_func(element, k, k * x) <= 0.))
+                                    (dcs_func(physics, element, k, k * x) <= 0.))
                                         x *= 2;
                                 if (x >= 1.)
                                         x = 1.;
@@ -8376,11 +8417,11 @@ once. */
                                                         x0 -= 0.5 * dx;
                                                 }
                                                 if ((x - x0) <= eps) break;
-                                                dcs = dcs_func(
+                                                dcs = dcs_func(physics,
                                                     element, k, k * x0);
                                         }
                                 }
-                                *table_get_Xt(ip, iel, row) = x;
+                                *table_get_Xt(physics, ip, iel, row) = x;
                         }
                 }
         }
@@ -8403,17 +8444,17 @@ once. */
  * than *xlow*. Else, the restricted energy loss is computed, for losses
  * larger than *xlow*
  */
-double compute_dcs_integral(int mode, const struct atomic_element * element,
+double compute_dcs_integral(struct pumas_physics * physics, int mode, const struct atomic_element * element,
     double kinetic, dcs_function_t * dcs, double xlow, int nint)
 {
 
         /* Let us use the analytical form for ionisation when radiative
          * corrections can be neglected.
          */
-        const double m1 = s_shared->mass - ELECTRON_MASS;
+        const double m1 = physics->mass - ELECTRON_MASS;
         if ((dcs == &dcs_ionisation) &&
             (kinetic <= 0.5 * m1 * m1 / ELECTRON_MASS))
-                return dcs_ionisation_integrate(mode, element, kinetic, xlow);
+                return dcs_ionisation_integrate(physics, mode, element, kinetic, xlow);
 
         /* We integrate over the recoil energy using a logarithmic sampling. */
         double dcsint = 0.;
@@ -8423,11 +8464,11 @@ double compute_dcs_integral(int mode, const struct atomic_element * element,
         double xi, wi;
         while (math_gauss_quad(0, &xi, &wi) == 0) { /* Iterations. */
                 const double qi = exp(xi);
-                double y = dcs(element, kinetic, qi) * qi;
+                double y = dcs(physics, element, kinetic, qi) * qi;
                 if (mode != 0) y *= qi;
                 dcsint += y * wi;
         }
-        dcsint /= kinetic + s_shared->mass;
+        dcsint /= kinetic + physics->mass;
 
         return dcsint;
 }
@@ -8437,19 +8478,19 @@ double compute_dcs_integral(int mode, const struct atomic_element * element,
  *
  * @param material The material index.
  */
-void compute_ZoA(int material)
+void compute_ZoA(struct pumas_physics * physics, int material)
 {
         int i;
         double ZoA = 0.;
-        for (i = 0; i < s_shared->elements_in[material]; i++) {
+        for (i = 0; i < physics->elements_in[material]; i++) {
 
                 const struct material_component * const c =
-                    s_shared->composition[material] + i;
+                    physics->composition[material] + i;
                 const struct atomic_element * const e =
-                    s_shared->element[c->element];
+                    physics->element[c->element];
                 ZoA += e->Z / e->A * c->fraction;
         }
-        s_shared->material_ZoA[material] = ZoA;
+        physics->material_ZoA[material] = ZoA;
 }
 
 /**
@@ -8462,7 +8503,7 @@ void compute_ZoA(int material)
  *
  * The DCS is also tabulated at specific values for the ziggurat algorithm.
  */
-enum pumas_return compute_dcs_model(dcs_function_t * dcs_func,
+enum pumas_return compute_dcs_model(struct pumas_physics * physics, dcs_function_t * dcs_func,
     struct atomic_element * element, struct error_context * error_)
 {
         /* Manage temporary storage. */
@@ -8490,8 +8531,8 @@ enum pumas_return compute_dcs_model(dcs_function_t * dcs_func,
 
         /*  Loop over the kinetic energy values. */
         const int index = dcs_get_index(dcs_func);
-        const int nkeff = s_shared->n_kinetics - s_shared->dcs_model_offset;
-        float * const coeff = table_get_dcs_coeff(element, index, 0);
+        const int nkeff = physics->n_kinetics - physics->dcs_model_offset;
+        float * const coeff = table_get_dcs_coeff(physics, element, index, 0);
         const double x0 = log(X_FRACTION);
         const double dx =
             log(DCS_MODEL_MAX_FRACTION / X_FRACTION) / (m - 1 - DCS_SAMPLING_N);
@@ -8499,13 +8540,13 @@ enum pumas_return compute_dcs_model(dcs_function_t * dcs_func,
         float * c;
         for (i = 0, c = coeff; i < nkeff; i++, c += n + DCS_SAMPLING_N) {
                 /* Prepare the fit values using a log sampling. */
-                const double K = *table_get_K(i + s_shared->dcs_model_offset);
+                const double K = *table_get_K(physics, i + physics->dcs_model_offset);
                 int j, first = 1, j0 = -1, j1 = -1;
                 for (j = 0; j < m - DCS_SAMPLING_N; j++) {
                         const double nu = exp(x0 + j * dx);
                         x[j] = nu;
-                        const double dcs = dcs_func(element, K, nu * K) * K /
-                            (K + s_shared->mass);
+                        const double dcs = dcs_func(physics, element, K, nu * K) * K /
+                            (K + physics->mass);
                         if (dcs > 0.) {
                                 y[j] = dcs;
                                 if (first) {
@@ -8530,8 +8571,8 @@ enum pumas_return compute_dcs_model(dcs_function_t * dcs_func,
                 /* Patch a gcc warning here. With -O2 j < m != j-m < 0 ... */
                 {
                         x[j] = nu;
-                        const double tmp = dcs_func(element, K, nu * K) * K /
-                            (K + s_shared->mass);
+                        const double tmp = dcs_func(physics, element, K, nu * K) * K /
+                            (K + physics->mass);
                         c[j + n + DCS_SAMPLING_N - m] = (float)tmp;
                         if (nu <= x[j1]) {
                                 y[j] = tmp;
@@ -8604,12 +8645,12 @@ int dcs_get_index(dcs_function_t * dcs_func)
  * The differential cross-section is computed following the PDG:
  * http://pdg.lbl.gov/2014/AtomicNuclearProperties/adndt.pdf.
  */
-double dcs_bremsstrahlung(
+double dcs_bremsstrahlung(const struct pumas_physics * physics, 
     const struct atomic_element * element, double K, double q)
 {
         const double Z = element->Z;
         const double A = element->A;
-        const double mu = s_shared->mass;
+        const double mu = physics->mass;
         const double me = ELECTRON_MASS;
         const double sqrte = 1.648721271;
         const double phie_factor = mu / (me * me * sqrte);
@@ -8653,7 +8694,7 @@ double dcs_bremsstrahlung(
  * The differential cross section is computed following R.P. Kokoulin's
  * formulae taken from the Geant4 Physics Reference Manual.
  */
-double dcs_pair_production(
+double dcs_pair_production(const struct pumas_physics * physics, 
     const struct atomic_element * element, double K, double q)
 {
 /*
@@ -8670,11 +8711,11 @@ double dcs_pair_production(
         if (q <= 4. * ELECTRON_MASS) return 0.;
         const double sqrte = 1.6487212707;
         const double Z13 = pow(element->Z, 1. / 3.);
-        if (q >= K + s_shared->mass * (1. - 0.75 * sqrte * Z13)) return 0.;
+        if (q >= K + physics->mass * (1. - 0.75 * sqrte * Z13)) return 0.;
 
         /*  Precompute some constant factors for the integration. */
-        const double nu = q / (K + s_shared->mass);
-        const double r = s_shared->mass / ELECTRON_MASS;
+        const double nu = q / (K + physics->mass);
+        const double r = physics->mass / ELECTRON_MASS;
         const double beta = 0.5 * nu * nu / (1. - nu);
         const double xi_factor = 0.5 * r * r * beta;
         const double A = (element->Z == 1.) ? 202.4 : 183.;
@@ -8683,9 +8724,9 @@ double dcs_pair_production(
         const double cLe = 2.25 * Z13 * Z13 / (r * r);
 
         /*  Compute the bound for the integral. */
-        const double gamma = 1. + K / s_shared->mass;
+        const double gamma = 1. + K / physics->mass;
         const double x0 = 4. * ELECTRON_MASS / q;
-        const double x1 = 6. / (gamma * (gamma - q / s_shared->mass));
+        const double x1 = 6. / (gamma * (gamma - q / physics->mass));
         const double argmin =
             (x0 + 2. * (1. - x0) * x1) / (1. + (1. - x1) * sqrt(1. - x0));
         if ((argmin >= 1.) || (argmin <= 0.)) return 0.;
@@ -8770,7 +8811,7 @@ double dcs_pair_production(
 
         /* Gather the results and return the macroscopic DCS. */
         const double dcs = 1.0807718E-07 * element->Z * (element->Z + zeta) *
-            (K + s_shared->mass - q) * I / (element->A * q);
+            (K + physics->mass - q) * I / (element->A * q);
         return (dcs < 0.) ? 0. : dcs;
 
 #undef N_GQ
@@ -8891,9 +8932,9 @@ double dcs_photonuclear_r_whitlow(double x, double Q2)
  * References:
  *      Dutta et al., Phys.Rev. D63 (2001) 094020 [arXiv:hep-ph/0012350].
  */
-double dcs_photonuclear_d2(double A, double K, double q, double Q2)
+double dcs_photonuclear_d2(const struct pumas_physics * physics, double A, double K, double q, double Q2)
 {
-        const double ml = s_shared->mass;
+        const double ml = physics->mass;
         const double cf = 1.5676209E-08 / A;
         const double M = 0.931494;
         const double E = K + ml;
@@ -8927,7 +8968,7 @@ double dcs_photonuclear_d2(double A, double K, double q, double Q2)
  * References:
  *      Dutta et al., Phys.Rev. D63 (2001) 094020 [arXiv:hep-ph/0012350].
  */
-double dcs_photonuclear(
+double dcs_photonuclear(const struct pumas_physics * physics, 
     const struct atomic_element * element, double K, double q)
 {
 /*
@@ -8948,7 +8989,7 @@ double dcs_photonuclear(
         if (dcs_photonuclear_check(K, q)) return 0.;
 
         const double A = element->A;
-        const double ml = s_shared->mass;
+        const double ml = physics->mass;
         const double M = 0.931494;
         const double mpi = 0.134977;
         const double E = K + ml;
@@ -8975,7 +9016,7 @@ double dcs_photonuclear(
         int i;
         for (i = 0; i < N_GQ; i++) {
                 const double Q2 = exp(pQ2c + 0.5 * dpQ2 * xGQ[i]);
-                ds += dcs_photonuclear_d2(A, K, q, Q2) * Q2 * wGQ[i];
+                ds += dcs_photonuclear_d2(physics, A, K, q, Q2) * Q2 * wGQ[i];
         }
 
         if (ds < 0.) ds = 0.;
@@ -9015,14 +9056,14 @@ int dcs_photonuclear_check(double K, double q)
  * for DELs. In addition a radiative correction is applied according to
  * Sokalski et al., Phys.Rev.D64 (2001) 074015 (MUM).
  */
-double dcs_ionisation(const struct atomic_element * element, double K, double q)
+double dcs_ionisation(const struct pumas_physics * physics, const struct atomic_element * element, double K, double q)
 {
         const double Z = element->Z;
         const double A = element->A;
-        const double P2 = K * (K + 2. * s_shared->mass);
-        const double E = K + s_shared->mass;
+        const double P2 = K * (K + 2. * physics->mass);
+        const double E = K + physics->mass;
         const double Wmax = 2. * ELECTRON_MASS * P2 /
-            (s_shared->mass * s_shared->mass +
+            (physics->mass * physics->mass +
                 ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
         if ((Wmax < X_FRACTION * K) || (q > Wmax)) return 0.;
         const double Wmin = 0.62 * element->I;
@@ -9037,11 +9078,11 @@ double dcs_ionisation(const struct atomic_element * element, double K, double q)
 
         /* Radiative correction. */
         double Delta = 0.;
-        const double m1 = s_shared->mass - ELECTRON_MASS;
+        const double m1 = physics->mass - ELECTRON_MASS;
         if (K >= 0.5 * m1 * m1 / ELECTRON_MASS) {
                 const double L1 = log(1. + 2. * q / ELECTRON_MASS);
                 Delta = 1.16141E-03 * L1 *
-                    (log(4. * E * (E - q) / (s_shared->mass * s_shared->mass)) -
+                    (log(4. * E * (E - q) / (physics->mass * physics->mass)) -
                         L1);
         }
 
@@ -9062,15 +9103,15 @@ double dcs_ionisation(const struct atomic_element * element, double K, double q)
  * than *xlow*. Else, the restricted energy loss is computed, for losses
  * larger than *xlow*
  */
-double dcs_ionisation_integrate(
+double dcs_ionisation_integrate(const struct pumas_physics * physics, 
     int mode, const struct atomic_element * element, double K, double xlow)
 {
         const double Z = element->Z;
         const double A = element->A;
-        const double P2 = K * (K + 2. * s_shared->mass);
-        const double E = K + s_shared->mass;
+        const double P2 = K * (K + 2. * physics->mass);
+        const double E = K + physics->mass;
         const double Wmax = 2. * ELECTRON_MASS * P2 /
-            (s_shared->mass * s_shared->mass +
+            (physics->mass * physics->mass +
                 ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
         if (Wmax < X_FRACTION * K) return 0.;
         double Wmin = 0.62 * element->I;
@@ -9097,13 +9138,13 @@ double dcs_ionisation_integrate(
         return 1.535336E-05 * Z / A * I;
 }
 
-double dcs_ionisation_randomise(struct pumas_context * context,
+double dcs_ionisation_randomise(const struct pumas_physics * physics, struct pumas_context * context,
     const struct atomic_element * element, double K, double xlow)
 {
-        const double P2 = K * (K + 2. * s_shared->mass);
-        const double E = K + s_shared->mass;
+        const double P2 = K * (K + 2. * physics->mass);
+        const double E = K + physics->mass;
         const double Wmax = 2. * ELECTRON_MASS * P2 /
-            (s_shared->mass * s_shared->mass +
+            (physics->mass * physics->mass +
                 ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
         if (Wmax < X_FRACTION * K) return K;
         double Wmin = 0.62 * element->I;
@@ -9152,44 +9193,44 @@ double dcs_ionisation_randomise(struct pumas_context * context,
  * checking whether an approximate model can be used or not. In addition it
  * applies a Jacobian weight factor for changing from nu = q / E to x = q / K.
  */
-double dcs_evaluate(struct pumas_context * context, dcs_function_t * dcs_func,
+double dcs_evaluate(const struct pumas_physics * physics, struct pumas_context * context, dcs_function_t * dcs_func,
     const struct atomic_element * element, double K, double q)
 {
         /* Compute the Jacobian factor. */
-        const double wj = K / (K + s_shared->mass);
+        const double wj = K / (K + physics->mass);
 
         /* Check if the process has a valid tabulated model. */
         if (dcs_func == dcs_ionisation)
-                return dcs_func(element, K, q) * wj;
+                return dcs_func(physics, element, K, q) * wj;
         else if ((dcs_func == dcs_photonuclear) && dcs_photonuclear_check(K, q))
                 return 0.;
 
         /* Check if the exact computation should be used. */
-        const double min_k = s_shared ?
-            *table_get_K(s_shared->dcs_model_offset) :
+        const double min_k = physics ?
+            *table_get_K(physics, physics->dcs_model_offset) :
             DCS_MODEL_MIN_KINETIC;
-        if (!s_shared || (K <= min_k) || (q < X_FRACTION * K) ||
+        if (!physics || (K <= min_k) || (q < X_FRACTION * K) ||
             (q > DCS_MODEL_MAX_FRACTION * K))
-                return dcs_func(element, K, q) * wj;
+                return dcs_func(physics, element, K, q) * wj;
 
         /* Get the coefficients of the polynomial approximation. */
         const int index = dcs_get_index(dcs_func);
-        const int offset = s_shared->dcs_model_offset;
+        const int offset = physics->dcs_model_offset;
         const int n = DCS_MODEL_ORDER_P + DCS_MODEL_ORDER_Q + 1;
-        const float * const coeff = table_get_dcs_coeff(element, index, 0);
-        const int imax = s_shared->n_kinetics - 1;
+        const float * const coeff = table_get_dcs_coeff(physics, element, index, 0);
+        const int imax = physics->n_kinetics - 1;
         const float *c0, *c1;
         int i0;
         float h1;
-        const double Kmax = *table_get_K(imax);
+        const double Kmax = *table_get_K(physics, imax);
         if ((K >= Kmax) ||
-            ((i0 = table_index(context, table_get_K(0), K)) >= imax)) {
+            ((i0 = table_index(physics, context, table_get_K(physics, 0), K)) >= imax)) {
                 /*  Rescale and use the last tabulated value. */
                 h1 = 0.;
                 c0 = c1 = coeff + (imax - offset) * (n + DCS_SAMPLING_N);
         } else {
-                const float K0 = (float)(*table_get_K(i0));
-                const float K1 = (float)(*table_get_K(i0 + 1));
+                const float K0 = (float)(*table_get_K(physics, i0));
+                const float K1 = (float)(*table_get_K(physics, i0 + 1));
                 h1 = (float)((K - K0) / (K1 - K0));
                 c0 = coeff + (i0 - offset) * (n + DCS_SAMPLING_N);
                 c1 = c0 + n + DCS_SAMPLING_N;
@@ -9306,17 +9347,17 @@ polar_function_t * polar_get(int process)
  * @param kf      The final kinetic energy.
  * @return The cosine of the polar angle.
  */
-double polar_bremsstrahlung(
+double polar_bremsstrahlung(const struct pumas_physics * physics, 
     struct pumas_context * context, double ki, double kf)
 {
-        const double e = ki + s_shared->mass;
+        const double e = ki + physics->mass;
         const double q = ki - kf;
         double rmax2 = e / q - 1.;
         rmax2 = (rmax2 > 1.) ? 1. : rmax2 * rmax2;
         double r = context->random(context) * rmax2 / (1. + rmax2);
         r = sqrt(r / (1. - r));
 
-        return cos(r * s_shared->mass * q / (e * (kf + s_shared->mass)));
+        return cos(r * physics->mass * q / (e * (kf + physics->mass)));
 }
 
 /**
@@ -9329,10 +9370,10 @@ double polar_bremsstrahlung(
  *
  * The polar angle is sampled assuming a virtual Bremsstrahlung event.
  */
-double polar_pair_production(
+double polar_pair_production(const struct pumas_physics * physics, 
     struct pumas_context * context, double ki, double kf)
 {
-        return polar_bremsstrahlung(context, ki, kf);
+        return polar_bremsstrahlung(physics, context, ki, kf);
 }
 
 /**
@@ -9343,12 +9384,12 @@ double polar_pair_production(
  * @param kf      The final kinetic energy.
  * @return The cosine of the polar angle.
  */
-double polar_photonuclear(struct pumas_context * context, double ki, double kf)
+double polar_photonuclear(const struct pumas_physics * physics, struct pumas_context * context, double ki, double kf)
 {
         const double q = ki - kf;
-        const double e = ki + s_shared->mass;
+        const double e = ki + physics->mass;
         const double y = q / e;
-        const double tmin = s_shared->mass * s_shared->mass * y * y / (1. - y);
+        const double tmin = physics->mass * physics->mass * y * y / (1. - y);
         const double tmax = 1.87914 * q;
         const double m02 = 0.4;
         const double q2 = q * q;
@@ -9360,8 +9401,8 @@ double polar_photonuclear(struct pumas_context * context, double ki, double kf)
         const double ct = 1. -
             (tp - tmin) /
                 (2. *
-                        (e * (kf + s_shared->mass) -
-                            s_shared->mass * s_shared->mass) -
+                        (e * (kf + physics->mass) -
+                            physics->mass * physics->mass) -
                     tmin);
 
         if (ct < 0.)
@@ -9384,14 +9425,14 @@ double polar_photonuclear(struct pumas_context * context, double ki, double kf)
  * electron is initially at rest. See for example appendix A of Fernandez-Varea
  * et al., NIMB 229 (2005) 185-218.
  */
-double polar_ionisation(struct pumas_context * context, double ki, double kf)
+double polar_ionisation(const struct pumas_physics * physics, struct pumas_context * context, double ki, double kf)
 {
         if (kf > ki) {
                 const double tmp = ki;
                 ki = kf, kf = tmp;
         }
-        const double p02 = ki * (ki + 2. * s_shared->mass);
-        const double p12 = kf * (kf + 2. * s_shared->mass);
+        const double p02 = ki * (ki + 2. * physics->mass);
+        const double p12 = kf * (kf + 2. * physics->mass);
         const double ke = ki - kf;
         const double pe2 = ke * (ke + 2. * ELECTRON_MASS);
         return 0.5 * (p02 + p12 - pe2) / sqrt(p02 * p12);
@@ -9422,18 +9463,18 @@ double polar_ionisation(struct pumas_context * context, double ki, double kf)
  * *fb_p*. Otherwise these values must be `NULL`. The relative tolerance is
  * relative to min(xa, xb).
  */
-int math_find_root(double (*f)(double x, void * params), double xa, double xb,
+int math_find_root(double (*f)(const struct pumas_physics * physics, double x, void * params), const struct pumas_physics * physics, double xa, double xb,
     const double * fa_p, const double * fb_p, double xtol, double rtol,
     int max_iter, void * params, double * x0)
 {
         /*  Check the initial values. */
         double fa, fb;
         if (fa_p == NULL)
-                fa = (*f)(xa, params);
+                fa = (*f)(physics, xa, params);
         else
                 fa = *fa_p;
         if (fb_p == NULL)
-                fb = (*f)(xb, params);
+                fb = (*f)(physics, xb, params);
         else
                 fb = *fb_p;
         if (fa * fb > 0) {
@@ -9459,7 +9500,7 @@ int math_find_root(double (*f)(double x, void * params), double xa, double xb,
         for (i = 0; i < max_iter; i++) {
                 double dm = 0.5 * (xb - xa);
                 const double xm = xa + dm;
-                const double fm = (*f)(xm, params);
+                const double fm = (*f)(physics, xm, params);
                 double sgn = (fb > fa) ? 1. : -1.;
                 double dn = sgn * dm * fm / sqrt(fm * fm - fa * fb);
                 sgn = (dn > 0.) ? 1. : -1.;
@@ -9467,7 +9508,7 @@ int math_find_root(double (*f)(double x, void * params), double xa, double xb,
                 dm = fabs(dm) - 0.5 * tol;
                 if (dn < dm) dm = dn;
                 xn = xm - sgn * dm;
-                const double fn = (*f)(xn, params);
+                const double fn = (*f)(physics, xn, params);
                 if (fn * fm < 0.0) {
                         xa = xn;
                         fa = fn;
@@ -9937,18 +9978,18 @@ void math_svdsol(int m, int n, double * b, double * u, double * w, double * v,
  */
 
 /** Tabulation mode initialisation, without loading the energy loss tables. */
-enum pumas_return pumas_tabulation_initialise(
+enum pumas_return pumas_physics_initialise_tabulation(struct pumas_physics ** physics,
     enum pumas_particle particle, const char * mdf_path)
 {
-        return _initialise(particle, mdf_path, NULL, 1);
+        return _initialise(physics, particle, mdf_path, NULL, 1);
 }
 
 /* The density effect for the electronic energy loss. */
-static void electronic_density_effect(
-    const struct pumas_tabulation_material * m, double kinetic, double * delta)
+static void electronic_density_effect(const struct pumas_physics * physics, 
+    const struct pumas_physics_material * m, double kinetic, double * delta)
 {
         const double c = 2. * log(10.);
-        const double r = kinetic / s_shared->mass;
+        const double r = kinetic / physics->mass;
         const double x = 0.5 * log10(r * (r + 2.));
         if (x < m->x0)
                 *delta = m->delta0 > 0. ?
@@ -9961,30 +10002,30 @@ static void electronic_density_effect(
 }
 
 /* The average energy loss from atomic electrons. */
-static double electronic_energy_loss(
-    const struct pumas_tabulation_material * m, double kinetic, double * delta)
+static double electronic_energy_loss(const struct pumas_physics * physics, 
+    const struct pumas_physics_material * m, double kinetic, double * delta)
 {
         /* Kinematic factors. */
-        const double E = kinetic + s_shared->mass;
-        const double P2 = kinetic * (kinetic + 2. * s_shared->mass);
+        const double E = kinetic + physics->mass;
+        const double P2 = kinetic * (kinetic + 2. * physics->mass);
         const double beta2 = P2 / (E * E);
 
         /* Electronic Bremsstrahlung correction. */
-        const double r = ELECTRON_MASS / s_shared->mass;
+        const double r = ELECTRON_MASS / physics->mass;
         const double Qmax =
-            2. * r * P2 / (s_shared->mass * (1. + r * r) + 2. * r * E);
+            2. * r * P2 / (physics->mass * (1. + r * r) + 2. * r * E);
         const double lQ = log(2. * Qmax / ELECTRON_MASS);
         const double Delta =
-            5.8070487E-04 * (log(2. * E / s_shared->mass) - lQ / 3.) * lQ * lQ;
+            5.8070487E-04 * (log(2. * E / physics->mass) - lQ / 3.) * lQ * lQ;
 
         /* Density effect. */
-        electronic_density_effect(m, kinetic, delta);
+        electronic_density_effect(physics, m, kinetic, delta);
 
         /* Bethe-Bloch equation. */
-        return 0.307075E-04 * s_shared->material_ZoA[m->index] *
+        return 0.307075E-04 * physics->material_ZoA[m->index] *
             (0.5 / beta2 *
                     (log(2. * ELECTRON_MASS * P2 * Qmax /
-                         (s_shared->mass * s_shared->mass * m->I * m->I)) -
+                         (physics->mass * physics->mass * m->I * m->I)) -
                         *delta) -
                 1. + 0.125 * Qmax * Qmax / P2 + Delta);
 }
@@ -9992,16 +10033,16 @@ static double electronic_energy_loss(
 /* Container for atomic element tabulation data */
 struct tabulation_element {
         /* The API proxy */
-        struct pumas_tabulation_element api;
+        struct pumas_physics_element api;
         /* Placeholder for tabulation data */
         double data[];
 };
 
-static void tabulate_element(
+static void tabulate_element(struct pumas_physics * physics, 
     struct tabulation_element * data, int n_kinetics, double * kinetic)
 {
         const struct atomic_element * element =
-            s_shared->element[data->api.index];
+            physics->element[data->api.index];
 
         /* Loop over the kinetic energy values. */
         double * v;
@@ -10013,7 +10054,7 @@ static void tabulate_element(
                 const int n =
                     (int)(-1E+02 * log10(x)); /* 100 pts per decade. */
                 for (ip = 0; ip < N_DEL_PROCESSES - 1; ip++, v++)
-                        *v = compute_dcs_integral(
+                        *v = compute_dcs_integral(physics, 
                             1, element, k, dcs_get(ip), x, n);
         }
 }
@@ -10022,11 +10063,11 @@ static void tabulate_element(
  * Create a new energy loss table for an element and add it to the stack of
  * temporary data.
  */
-static struct pumas_tabulation_element * tabulation_element_create(
-    struct pumas_tabulation_data * data, int element)
+static struct pumas_physics_element * tabulation_element_create(
+    struct pumas_physics_tabulation_data * data, int element)
 {
         /* Allocate memory for the new element. */
-        struct pumas_tabulation_element * e = allocate(
+        struct pumas_physics_element * e = allocate(
             sizeof(struct tabulation_element) +
             3 * data->n_kinetics * sizeof(double));
         if (e == NULL) return NULL;
@@ -10046,16 +10087,16 @@ static struct pumas_tabulation_element * tabulation_element_create(
  * Get the energy loss table for an element from the temporary data and
  * put it on top of the stack.
  */
-static struct pumas_tabulation_element * tabulation_element_get(
-    struct pumas_tabulation_data * data, int element)
+static struct pumas_physics_element * tabulation_element_get(
+    struct pumas_physics_tabulation_data * data, int element)
 {
-        struct pumas_tabulation_element * e;
+        struct pumas_physics_element * e;
         for (e = data->elements; e != NULL; e = e->prev) {
                 if (e->index == element) {
-                        struct pumas_tabulation_element * next = e->next;
+                        struct pumas_physics_element * next = e->next;
                         if (next != NULL) {
                                 /* Put the element on top of the stack. */
-                                struct pumas_tabulation_element * prev =
+                                struct pumas_physics_element * prev =
                                     e->prev;
                                 if (prev != NULL) prev->next = next;
                                 next->prev = prev;
@@ -10075,20 +10116,22 @@ static struct pumas_tabulation_element * tabulation_element_get(
 /**
  * Tabulate the energy loss for the given material and kinetic energies.
  */
-enum pumas_return pumas_tabulation_tabulate(struct pumas_tabulation_data * data)
+enum pumas_return pumas_physics_tabulate(
+    struct pumas_physics * physics,
+    struct pumas_physics_tabulation_data * data)
 {
-        struct pumas_tabulation_material * m = &data->material;
+        struct pumas_physics_material * m = &data->material;
 
         /* Compute the mean excitation energy, if not provided. */
         if (m->I <= 0.) {
                 double lnI = 0., Z = 0.;
                 struct material_component * component;
                 int iel;
-                for (iel = 0, component = s_shared->composition[m->index];
-                     iel < s_shared->elements_in[m->index];
+                for (iel = 0, component = physics->composition[m->index];
+                     iel < physics->elements_in[m->index];
                      iel++, component++) {
                         struct atomic_element * e =
-                            s_shared->element[component->element];
+                            physics->element[component->element];
                         const double nZ = component->fraction * e->Z / e->A;
                         lnI += nZ * log(e->I);
                         Z += nZ;
@@ -10101,9 +10144,9 @@ enum pumas_return pumas_tabulation_tabulate(struct pumas_tabulation_data * data)
                 /* Use the Sternheimer and Peierls recipee. */
                 m->k = 3.;
                 const double hwp = 28.816E-09 *
-                    sqrt(m->density * 1E-03 * s_shared->material_ZoA[m->index]);
+                    sqrt(m->density * 1E-03 * physics->material_ZoA[m->index]);
                 m->Cbar = 2. * log(m->I / hwp);
-                if (m->state == PUMAS_TABULATION_STATE_GAZ) {
+                if (m->state == PUMAS_PHYSICS_STATE_GAZ) {
                         if (m->Cbar < 10.) {
                                 m->x0 = 1.6, m->x1 = 4.;
                         } else if (m->Cbar < 10.5) {
@@ -10146,20 +10189,20 @@ enum pumas_return pumas_tabulation_tabulate(struct pumas_tabulation_data * data)
          */
         struct material_component * component;
         int iel;
-        for (iel = 0, component = s_shared->composition[m->index];
-             iel < s_shared->elements_in[m->index]; iel++, component++) {
+        for (iel = 0, component = physics->composition[m->index];
+             iel < physics->elements_in[m->index]; iel++, component++) {
                 /*
                  * Get the requested element's data and put them on top of
                  * the stack for further usage.
                  */
-                struct pumas_tabulation_element * e =
+                struct pumas_physics_element * e =
                     tabulation_element_get(data, component->element);
 
                 if (e == NULL) {
                         /* Create and tabulate the new element. */
                         e = tabulation_element_create(data, component->element);
                         if (e == NULL) return PUMAS_RETURN_MEMORY_ERROR;
-                        tabulate_element((struct tabulation_element *)e,
+                        tabulate_element(physics, (struct tabulation_element *)e,
                             data->n_kinetics, data->kinetic);
                 }
 
@@ -10169,7 +10212,7 @@ enum pumas_return pumas_tabulation_tabulate(struct pumas_tabulation_data * data)
 
         /* Check and open the output file. */
         int n_d = (data->outdir == NULL) ? 0 : strlen(data->outdir) + 1;
-        int n_f = strlen(s_shared->dedx_filename[m->index]) + 1;
+        int n_f = strlen(physics->dedx_filename[m->index]) + 1;
         char * path = reallocate(data->path, n_d + n_f);
         if (path == NULL) return PUMAS_RETURN_MEMORY_ERROR;
         data->path = path;
@@ -10177,7 +10220,7 @@ enum pumas_return pumas_tabulation_tabulate(struct pumas_tabulation_data * data)
                 memcpy(path, data->outdir, n_d);
                 path[n_d - 1] = '/';
         }
-        memcpy(path + n_d, s_shared->dedx_filename[m->index], n_f);
+        memcpy(path + n_d, physics->dedx_filename[m->index], n_f);
 
         FILE * stream;
         if (data->overwrite == 0) {
@@ -10193,13 +10236,13 @@ enum pumas_return pumas_tabulation_tabulate(struct pumas_tabulation_data * data)
 
         /* Print the header. */
         const char * type =
-            (s_shared->particle == PUMAS_PARTICLE_MUON) ? "Muon" : "Tau";
+            (physics->particle == PUMAS_PARTICLE_MUON) ? "Muon" : "Tau";
         fprintf(stream, " Incident particle is a %s with M = %.5lf MeV\n", type,
-            (double)(s_shared->mass * 1E+03));
+            (double)(physics->mass * 1E+03));
         fprintf(stream, " Index = %d: %s\n", m->index,
-            s_shared->material_name[m->index]);
+            physics->material_name[m->index]);
         fprintf(stream, "      Absorber with <Z/A> = %.5lf\n",
-            s_shared->material_ZoA[m->index]);
+            physics->material_ZoA[m->index]);
         fprintf(stream,
             " Sternheimer coef:  a     k=m_s   x_0    x_1    "
             "I[eV]   Cbar  delta0\n");
@@ -10222,7 +10265,7 @@ enum pumas_return pumas_tabulation_tabulate(struct pumas_tabulation_data * data)
         for (i = 0; i < data->n_kinetics; i++) {
                 /* Compute the electronic energy loss. */
                 double delta;
-                double elec = electronic_energy_loss(
+                double elec = electronic_energy_loss(physics, 
                     m, data->kinetic[i], &delta);
 
                 double brad[N_DEL_PROCESSES - 1];
@@ -10230,7 +10273,7 @@ enum pumas_return pumas_tabulation_tabulate(struct pumas_tabulation_data * data)
                 struct tabulation_element * e;
                 int iel;
                 for (iel = 0, e = (struct tabulation_element *)data->elements;
-                     iel < s_shared->elements_in[m->index];
+                     iel < physics->elements_in[m->index];
                      iel++, e = (struct tabulation_element *)e->api.prev) {
                         int j;
                         for (j = 0; j < N_DEL_PROCESSES - 1; j++)
@@ -10249,8 +10292,8 @@ enum pumas_return pumas_tabulation_tabulate(struct pumas_tabulation_data * data)
                 dedx_last = dedx;
 
                 const double p = sqrt(data->kinetic[i] *
-                    (data->kinetic[i] + 2. * s_shared->mass));
-                const double beta = p / (data->kinetic[i] + s_shared->mass);
+                    (data->kinetic[i] + 2. * physics->mass));
+                const double beta = p / (data->kinetic[i] + physics->mass);
                 const double MeV = 1E+03;
                 const double cmgs = 1E+04;
                 fprintf(stream,
@@ -10270,11 +10313,12 @@ enum pumas_return pumas_tabulation_tabulate(struct pumas_tabulation_data * data)
 /**
  * Clear the temporary memory used for the tabulation of materials.
  */
-void pumas_tabulation_clear(struct pumas_tabulation_data * data)
+void pumas_physics_tabulation_clear(
+    struct pumas_physics_tabulation_data * data)
 {
-        struct pumas_tabulation_element * e;
+        struct pumas_physics_element * e;
         for (e = data->elements; e != NULL;) {
-                struct pumas_tabulation_element * prev = e->prev;
+                struct pumas_physics_element * prev = e->prev;
                 deallocate(e);
                 e = prev;
         }

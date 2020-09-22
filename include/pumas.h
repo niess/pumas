@@ -121,7 +121,9 @@ enum pumas_return {
         PUMAS_RETURN_INCOMPLETE_FILE,
         /** Some index is out of validity range. */
         PUMAS_RETURN_INDEX_ERROR,
-        /** The library is not/already initialised. */
+        /** The Physics is not/already initialised or a NULL pointer was
+         *  provided.
+         */
         PUMAS_RETURN_INITIALISATION_ERROR,
         /** An internal library error occured. */
         PUMAS_RETURN_INTERNAL_ERROR,
@@ -477,25 +479,31 @@ struct pumas_context {
 };
 
 /**
- * Initialise the PUMAS library.
+ * Opaque handle for Physics tables
+ */
+struct pumas_physics;
+
+/**
+ * Initialise the Physics.
  *
+ * @param physics      Handle for the Physics tables.
  * @param particle     The type of the particle to transport.
  * @param mdf_path     The path to a Material Description File (MDF), or `NULL`.
  * @param dedx_path    The path to the energy loss tabulation(s), or `NULL`.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * Initialise the library from a MDF and a set of energy loss tabulations. Load
+ * Initialise the Physics from a MDF and a set of energy loss tabulations. Load
  * the materials data and precompute various properties. *mdf_path* and/or
  * *dedx_path* can be set to `NULL`. If so the corresponding path is read from
  * the `PUMAS_MDF` or `PUMAS_DEDX` environment variable.
  *
- * Call `pumas_finalise` in order to unload the library and release all
- * alocated memory.
+ * Call `pumas_physics_finalise` in order to unload the Physics and release the
+ * corresponding alocated memory.
  *
  * **Warnings** : this function is not thread safe. Trying to (re-)initialise an
- * already initialised library will generate an error. `pumas_finalise` must
- * be called first.
+ * already initialised Physics will generate an error. `pumas_physics_finalise`
+ * must be called first.
  *
  * __Error codes__
  *
@@ -506,7 +514,7 @@ struct pumas_context {
  *     PUMAS_RETURN_INCOMPLETE_FILE         There are missing entries in
  * the MDF.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The library is already initialised.
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is already initialised.
  *
  *     PUMAS_RETURN_IO_ERROR                A file couldn't be read.
  *
@@ -529,71 +537,78 @@ struct pumas_context {
  *
  *     PUMAS_RETURN_UNKNOWN_PARTICLE        The given type is not supported.
  */
-PUMAS_API enum pumas_return pumas_initialise(enum pumas_particle particle,
+PUMAS_API enum pumas_return pumas_physics_initialise(
+    struct pumas_physics ** physics, enum pumas_particle particle,
     const char * mdf_path, const char * dedx_path);
 
 /**
- * Finalise the PUMAS library.
+ * Finalise the Physics.
  *
- * Finalise the library and free the shared memory. Call `pumas_initialise` in
- * order to reload the library.
+ * @param physics      Handle for the Physics tables.
  *
- * **Warnings** : This function is not thread safe. Finalising the library
+ * Finalise the Physics and free the shared memory. Call
+ * `pumas_physics_initialise` in order to reload the Physics.
+ *
+ * **Warnings** : This function is not thread safe. Finalising the Physics
  * doesn't release the memory allocated for any `pumas_context`.
  */
-PUMAS_API void pumas_finalise(void);
+PUMAS_API void pumas_physics_finalise(struct pumas_physics ** physics);
 
 /**
- * Dump the PUMAS library configuration to a stream.
+ * Dump the Physics configuration to a stream.
  *
+ * @param physics   Handle for the Physics tables.
  * @param stream    The stream where to dump.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * Dump the current library configuration to a stream as a binary object. Note
- * that only globally shared data are dumped, i.e. material properties and
- * tables as read from a MDF. Simulation contexts, media, recorders, ect ...
- * are not. This binary dump allows for a fast initialisation of the library
- * in subsequent uses.
+ * Dump the Physics tables to a stream as a binary object. Note that only
+ * globally shared data are dumped, i.e. material properties and tables as read
+ * from a MDF. Simulation contexts, media, recorders, ect. ... are not. This
+ * binary dump allows for a fast initialisation of the Physics in subsequent
+ * uses.
  *
  * **Warnings** : The binary dump is raw formated, hence *a priori* platform
  * dependent.
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics isn't initialised.
  *
  *     PUMAS_RETURN_PATH_ERROR              The output stream in invalid (null).
  *
  *     PUMAS_RETURN_IO_ERROR                Couldn't write to the stream.
  */
-PUMAS_API enum pumas_return pumas_dump(FILE * stream);
+PUMAS_API enum pumas_return pumas_physics_dump(
+    const struct pumas_physics * physics, FILE * stream);
 
 /**
- * Load the configuration from a binary dump.
+ * Load the Physics from a binary dump.
  *
- * @param stream    The stream where to dump.
+ * @param physics   Handle for the Physics tables.
+ * @param stream    The stream to load from.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * Load the library configuration from a binary dump and initialise accordingly.
+ * Load the Physics tables from a binary dump and initialise accordingly.
  *
  * **Warnings** : The binary dump is raw formated, hence *a priori* platform
- * dependent. Trying to (re-)initialise an already initialised library will
- * generate an error. `pumas_finalise` must be called first.
+ * dependent. Trying to (re-)initialise an already initialised Physics will
+ * generate an error. `pumas_physics_finalise` must be called first.
  *
  * __Error codes__
  *
  *     PUMAS_RETURN_FORMAT_ERROR            The binary dump is not compatible
  * with the current version.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The library is already initialised.
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is not initialised.
  *
  *     PUMAS_RETURN_PATH_ERROR              The input stream in invalid (null).
  *
  *     PUMAS_RETURN_IO_ERROR                Couldn't read from the stream.
  */
-PUMAS_API enum pumas_return pumas_load(FILE * stream);
+PUMAS_API enum pumas_return pumas_physics_load(
+    struct pumas_physics ** physics, FILE * stream);
 
 /**
  * Transport a particle according to the configured `pumas_context`.
@@ -617,7 +632,7 @@ PUMAS_API enum pumas_return pumas_load(FILE * stream);
  *     PUMAS_RETURN_DENSITY_ERROR           A null or negative density was
  * encountered.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initalised.
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is not initalised.
  *
  *     PUMAS_RETURN_MEDIUM_ERROR            No propagation medium.
  *
@@ -627,13 +642,14 @@ PUMAS_API enum pumas_return pumas_load(FILE * stream);
 
  *     PUMAS_RETURN_VALUE_ERROR             State or context is `NULL`.
  */
-PUMAS_API enum pumas_return pumas_transport(struct pumas_context * context,
-    struct pumas_state * state, enum pumas_event * event,
-    struct pumas_medium * media[2]);
+PUMAS_API enum pumas_return pumas_context_transport(
+    struct pumas_context * context, struct pumas_state * state,
+    enum pumas_event * event, struct pumas_medium * media[2]);
 
 /**
- * Print a summary of the current library configuration.
+ * Print a summary of the Physics configuration.
  *
+ * @param physics       Handle for the Physics tables.
  * @param stream        A stream where the summary will be formated to.
  * @param tabulation    The tabulation separator or `NULL`.
  * @param newline       The newline separator or `NULL`.
@@ -652,12 +668,13 @@ PUMAS_API enum pumas_return pumas_transport(struct pumas_context * context,
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initalised.
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is not initalised.
  *
  *     PUMAS_RETURN_IO_ERROR                Couldn't write to *stream*.
  */
-PUMAS_API enum pumas_return pumas_print(
-    FILE * stream, const char * tabulation, const char * newline);
+PUMAS_API enum pumas_return pumas_physics_print(
+    const struct pumas_physics * physics, FILE * stream,
+    const char * tabulation, const char * newline);
 
 /**
  * Get the version tag of the library.
@@ -672,6 +689,7 @@ PUMAS_API int pumas_tag();
 /**
  * Get info on the transported particle.
  *
+ * @param physics       Handle for the Physics tables.
  * @param particle      The type of the transported particle or `NULL`.
  * @param lifetime      The type of the transported particle, in m, or `NULL`.
  * @param mass          The mass of the transported particle, in GeV, or `NULL`.
@@ -683,10 +701,11 @@ PUMAS_API int pumas_tag();
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initalised.
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is not initalised.
  */
-PUMAS_API enum pumas_return pumas_particle(
-    enum pumas_particle * particle, double * lifetime, double * mass);
+PUMAS_API enum pumas_return pumas_physics_particle(
+    const struct pumas_physics * physics, enum pumas_particle * particle,
+    double * lifetime, double * mass);
 
 /**
  * Return a string describing a PUMAS library function.
@@ -763,14 +782,16 @@ PUMAS_API enum pumas_return pumas_error_raise(void);
 /**
  * Create a simulation context.
  *
- * @param extra_memory    The size of the user extra memory, if any is claimed.
  * @param context         A handle for the simulation context.
+ * @param physics         Handle for the physics tables.
+ * @param extra_memory    The size of the user extra memory, if any is claimed.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
  * Create a new simulation context with a default configuration. Call
  * `pumas_context_destroy` in order to release all the memory allocated for
- * the context.
+ * the context. Note that Physics tables must have been initialised / loaded
+ * first.
  *
  * If `extra_memory` is strictly positive the context will be extended by
  * `extra_memory` bytes for user usage. This memory can then be accessed with
@@ -778,12 +799,13 @@ PUMAS_API enum pumas_return pumas_error_raise(void);
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics isn't initialised.
  *
  *     PUMAS_RETURN_MEMORY_ERROR            Couldn't allocate memory.
  */
 PUMAS_API enum pumas_return pumas_context_create(
-    struct pumas_context ** context, int extra_memory);
+    struct pumas_context ** context, const struct pumas_physics * physics,
+    int extra_memory);
 
 /**
  * Destroy a simulation context.
@@ -797,9 +819,22 @@ PUMAS_API enum pumas_return pumas_context_create(
 PUMAS_API void pumas_context_destroy(struct pumas_context ** context);
 
 /**
- * Compute the total grammage that a particle can travel assuming continuous
+ * Get the Physics used by a simulation context.
+ *
+ * @param context The simulation context.
+ * @return A handle for the Physics tables or `NULL`.
+ *
+ * The set of Physics tables used by a `pumas_context` cannot be changed.
+ * Instead a new context must be created if different Physics is needed.
+ */
+PUMAS_API const struct pumas_physics * pumas_context_physics_get(
+    const struct pumas_context * context);
+
+/**
+ * Get the total grammage that a particle can travel assuming continuous
  * energy loss.
  *
+ * @param physics     Handle for the Physics tables.
  * @param scheme      The energy loss scheme.
  * @param material    The material index.
  * @param kinetic     The initial kinetic energy, in GeV.
@@ -816,15 +851,16 @@ PUMAS_API void pumas_context_destroy(struct pumas_context ** context);
  *     PUMAS_RETURN_INDEX_ERROR             The scheme of material index is
  * not valid.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is not initialised.
  */
-PUMAS_API enum pumas_return pumas_property_grammage(
-    enum pumas_scheme scheme, int material, double kinetic, double * grammage);
+PUMAS_API enum pumas_return pumas_physics_property_grammage(
+    const struct pumas_physics * physics, enum pumas_scheme scheme,
+    int material, double kinetic, double * grammage);
 
 /**
- * Compute the normalised total proper time spent assuming continuous
- * energy loss.
+ * Get the normalised total proper time spent assuming continuous energy loss.
  *
+ * @param physics     Handle for the Physics tables.
  * @param scheme      The energy loss scheme.
  * @param material    The material index.
  * @param kinetic     The initial kinetic energy, in GeV.
@@ -841,15 +877,17 @@ PUMAS_API enum pumas_return pumas_property_grammage(
  *     PUMAS_RETURN_INDEX_ERROR             The scheme of material index is
  * not valid.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is not initialised.
  */
-PUMAS_API enum pumas_return pumas_property_proper_time(
-    enum pumas_scheme scheme, int material, double kinetic, double * time);
+PUMAS_API enum pumas_return pumas_physics_property_proper_time(
+    const struct pumas_physics * physics, enum pumas_scheme scheme,
+    int material, double kinetic, double * time);
 
 /**
- * Compute the normalised rotation angle due to a uniform magnetic field for
+ * Get the normalised rotation angle due to a uniform magnetic field for
  * a CSDA particle.
  *
+ * @param physics     Handle for the Physics tables.
  * @param material    The material index.
  * @param kinetic     The initial kinetic energy, in GeV.
  * @param angle       The normalised rotation angle in rad kg/m^(3)/T.
@@ -863,15 +901,17 @@ PUMAS_API enum pumas_return pumas_property_proper_time(
  *
  *     PUMAS_RETURN_INDEX_ERROR             The material index is not valid.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is not initialised.
  */
-PUMAS_API enum pumas_return pumas_property_magnetic_rotation(
-    int material, double kinetic, double * angle);
+PUMAS_API enum pumas_return pumas_physics_property_magnetic_rotation(
+    const struct pumas_physics * physics, int material, double kinetic,
+    double * angle);
 
 /**
- * Compute the minimum kinetic energy required for travelling over a given
+ * Get the minimum kinetic energy required for travelling over a given
  * `grammage`, assuming continuous energy loss.
  *
+ * @param physics     Handle for the Physics tables.
  * @param scheme      The energy loss scheme
  * @param material    The material index.
  * @param grammage    The requested grammage, in kg/m^(2).
@@ -887,14 +927,16 @@ PUMAS_API enum pumas_return pumas_property_magnetic_rotation(
  *     PUMAS_RETURN_INDEX_ERROR             The scheme of material index is
  * not valid.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is not initialised.
  */
-PUMAS_API enum pumas_return pumas_property_kinetic_energy(
-    enum pumas_scheme scheme, int material, double grammage, double * kinetic);
+PUMAS_API enum pumas_return pumas_physics_property_kinetic_energy(
+    const struct pumas_physics * physics, enum pumas_scheme scheme,
+    int material, double grammage, double * kinetic);
 
 /**
- * Compute the average energy loss per unit weight of material.
+ * Get the average energy loss per unit weight of material.
  *
+ * @param physics     Handle for the Physics tables.
  * @param scheme      The energy loss scheme
  * @param material    The material index.
  * @param kinetic     The kinetic energy, in GeV.
@@ -910,15 +952,17 @@ PUMAS_API enum pumas_return pumas_property_kinetic_energy(
  *     PUMAS_RETURN_INDEX_ERROR             The scheme of material index is
  * not valid.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is not initialised.
  */
-PUMAS_API enum pumas_return pumas_property_energy_loss(
-    enum pumas_scheme scheme, int material, double kinetic, double * dedx);
+PUMAS_API enum pumas_return pumas_physics_property_energy_loss(
+    const struct pumas_physics * physics, enum pumas_scheme scheme,
+    int material, double kinetic, double * dedx);
 
 /**
- * Compute the Multiple SCattering (MSC) 1^(st) transport path length for a
+ * Get the Multiple SCattering (MSC) 1^(st) transport path length for a
  * unit weight.
  *
+ * @param physics     Handle for the Physics tables.
  * @param material    The material index.
  * @param kinetic     The kinetic energy, in GeV.
  * @param length      The computed MSC length in kg/m^(2).
@@ -933,16 +977,18 @@ PUMAS_API enum pumas_return pumas_property_energy_loss(
  *
  *     PUMAS_RETURN_INDEX_ERROR             The material index is not valid.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is not initialised.
  *
  *     PUMAS_RETURN_VALUE_ERROR             The MSC path length is infinite.
  */
-PUMAS_API enum pumas_return pumas_property_scattering_length(
-    int material, double kinetic, double * length);
+PUMAS_API enum pumas_return pumas_physics_property_scattering_length(
+    const struct pumas_physics * physics, int material, double kinetic,
+    double * length);
 
 /**
- * The macroscopic total inelastic cross-section.
+ * Get the macroscopic total inelastic cross-section.
  *
+ * @param physics          Handle for the Physics tables.
  * @param material         The material index.
  * @param kinetic          The kinetic energy, in GeV.
  * @param cross_section    The computed cross-section value.
@@ -957,16 +1003,18 @@ PUMAS_API enum pumas_return pumas_property_scattering_length(
  *
  *     PUMAS_RETURN_INDEX_ERROR             The material index is not valid.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is not initialised.
  */
-PUMAS_API enum pumas_return pumas_property_cross_section(
-    int material, double kinetic, double * cross_section);
+PUMAS_API enum pumas_return pumas_physics_property_cross_section(
+    const struct pumas_physics * physics, int material, double kinetic,
+    double * cross_section);
 
 /**
- * The name of a material.
+ * The name of a material given its index.
  *
- * @param index The material index.
- * @param material The corresponding material name.
+ * @param physics    Handle for the Physics tables.
+ * @param index      The material index.
+ * @param material   The corresponding material name.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
@@ -976,14 +1024,15 @@ PUMAS_API enum pumas_return pumas_property_cross_section(
  *
  *     PUMAS_RETURN_INDEX_ERROR               The provided index isn't valid.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR      The library isn't initialised.
+ *     PUMAS_RETURN_INITIALISATION_ERROR      The Physics is not initialised.
  */
-PUMAS_API enum pumas_return pumas_material_name(
-    int index, const char ** material);
+PUMAS_API enum pumas_return pumas_physics_material_name(
+    const struct pumas_physics * physics, int index, const char ** material);
 
 /**
- * The index of a material.
+ * The index of a material given its name.
  *
+ * @param physics     Handle for the Physics tables.
  * @param material    The material name.
  * @param index       The corresponding index.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
@@ -994,33 +1043,38 @@ PUMAS_API enum pumas_return pumas_material_name(
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR      The library isn't initialised.
+ *     PUMAS_RETURN_INITIALISATION_ERROR      The Physics is not initialised.
  *
  *     PUMAS_RETURN_UNKNOWN_MATERIAL          The material isn't defined.
  */
-PUMAS_API enum pumas_return pumas_material_index(
-    const char * material, int * index);
+PUMAS_API enum pumas_return pumas_physics_material_index(
+    const struct pumas_physics * physics, const char * material, int * index);
 
 /**
  * The total number of materials.
  *
+ * @param physics    Handle for the Physics tables.
  * @return The total number of known materials, basic plus composite.
  */
-PUMAS_API int pumas_material_length(void);
+PUMAS_API int pumas_physics_material_length(
+    const struct pumas_physics * physics);
 
 /**
  * The number of composite materials.
  *
+ * @param physics    Handle for the Physics tables.
  * @return The number of composite materials.
  */
-PUMAS_API int pumas_composite_length(void);
+PUMAS_API int pumas_physics_composite_length(
+    const struct pumas_physics * physics);
 
 /**
  * Update the properties of a composite material.
  *
- * @param material  The composite material index.
- * @param fractions The vector of mass fractions of the base materials
- *                  components.
+ * @param physics    Handle for the Physics tables.
+ * @param material   The composite material index.
+ * @param fractions  The vector of mass fractions of the base materials
+ *                   components.
  * @param densities  The vector of densities of the base materials components.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
@@ -1036,16 +1090,18 @@ PUMAS_API int pumas_composite_length(void);
  *
  *     PUMAS_RETURN_INDEX_ERROR               The provided index isn't valid.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR      The library isn't initialised.
+ *     PUMAS_RETURN_INITIALISATION_ERROR      The Physics is not initialised.
  *
  *     PUMAS_RETURN_MEMORY_ERROR              Couldn't allocate memory.
  */
-PUMAS_API enum pumas_return pumas_composite_update(
-    int material, const double * fractions, const double * densities);
+PUMAS_API enum pumas_return pumas_physics_composite_update(
+    struct pumas_physics * physics, int material, const double * fractions,
+    const double * densities);
 
 /**
  * Get the properties of a composite material.
  *
+ * @param physics    Handle for the Physics tables.
  * @param index      The composite material index.
  * @param density    The composite material reference density.
  * @param components The number of base material components of the composite.
@@ -1063,14 +1119,16 @@ PUMAS_API enum pumas_return pumas_composite_update(
  *
  *     PUMAS_RETURN_INDEX_ERROR               The provided index isn't valid.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR      The library isn't initialised.
+ *     PUMAS_RETURN_INITIALISATION_ERROR      The Physics isn't initialised.
  */
-PUMAS_API enum pumas_return pumas_composite_properties(int index,
-    double * density, int * components, double * fractions, double * densities);
+PUMAS_API enum pumas_return pumas_physics_composite_properties(
+    const struct pumas_physics * physics, int index, double * density,
+    int * components, double * fractions, double * densities);
 
 /**
- * Accessor to the tabulated shared data.
+ * Accessor to the tabulated Physics data.
  *
+ * @param physics     Handle for the Physics tables.
  * @param property    The column index of a property of interest.
  * @param scheme      The energy loss scheme.
  * @param material    The material index.
@@ -1091,21 +1149,24 @@ PUMAS_API enum pumas_return pumas_composite_properties(int index,
  *     PUMAS_RETURN_INDEX_ERROR             Some input index is not valid
  * (property, material or scheme).
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics isn't initialised.
  */
-PUMAS_API enum pumas_return pumas_table_value(enum pumas_property property,
+PUMAS_API enum pumas_return pumas_physics_table_value(
+    const struct pumas_physics * physics, enum pumas_property property,
     enum pumas_scheme scheme, int material, int row, double * value);
 
 /**
  * The depth, i.e. number of kinetic values, of the tabulated data.
  *
+ * @param physics    Handle for the Physics tables.
  * @return The number of rows in data tables.
  */
-PUMAS_API int pumas_table_length(void);
+PUMAS_API int pumas_physics_table_length(const struct pumas_physics * physics);
 
 /**
  * Compute the table row index for a given property and its value.
  *
+ * @param physics     Handle for the Physics tables.
  * @param property    The column index of the property.
  * @param scheme      The energy loss scheme.
  * @param material    The material index.
@@ -1127,12 +1188,13 @@ PUMAS_API int pumas_table_length(void);
  *     PUMAS_RETURN_INDEX_ERROR             Some input index is not valid
  * (property, material or scheme).
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The library isn't initialised.
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics isn't initialised.
  *
  *     PUMAS_RETURN_VALUE_ERROR             The provided value is out of the
  * table.
  */
-PUMAS_API enum pumas_return pumas_table_index(enum pumas_property property,
+PUMAS_API enum pumas_return pumas_physics_table_index(
+    const struct pumas_physics * physics, enum pumas_property property,
     enum pumas_scheme scheme, int material, double value, int * index);
 
 /**
@@ -1252,17 +1314,17 @@ typedef void pumas_deallocate_cb(void * ptr);
 PUMAS_API void pumas_memory_deallocator(pumas_deallocate_cb * deallocator);
 
 /** Physical states of materials. */
-enum pumas_tabulation_state {
+enum pumas_physics_state {
         /** Undefined physical state. */
-        PUMAS_TABULATION_STATE_UNKNOWN = 0,
+        PUMAS_PHYSICS_STATE_UNKNOWN = 0,
         /** Solid physical state. */
-        PUMAS_TABULATION_STATE_SOLID,
+        PUMAS_PHYSICS_STATE_SOLID,
         /** Liquid physical state. */
-        PUMAS_TABULATION_STATE_LIQUID,
+        PUMAS_PHYSICS_STATE_LIQUID,
         /** Gaz physical state. */
-        PUMAS_TABULATION_STATE_GAZ,
+        PUMAS_PHYSICS_STATE_GAZ,
         /** The number of physical states. */
-        PUMAS_TABULATION_N_STATES
+        PUMAS_PHYSICS_N_STATES
 };
 
 /**
@@ -1271,11 +1333,11 @@ enum pumas_tabulation_state {
  * This structure is a proxy exposing some data of an atomic element within
  * the material last processed by `pumas_tabulation_tabulate`.
  */
-struct pumas_tabulation_element {
+struct pumas_physics_element {
         /** Linked list pointer to the previous element. */
-        struct pumas_tabulation_element * prev;
+        struct pumas_physics_element * prev;
         /** Linked list pointer to the next element. */
-        struct pumas_tabulation_element * next;
+        struct pumas_physics_element * next;
         /** The element index. */
         int index;
         /** The mass fraction of the element in the current material. */
@@ -1286,15 +1348,15 @@ struct pumas_tabulation_element {
  * Description of a base material to tabulate.
  *
  * This structure allows to specify the physical properties of a base material
- * in order to tabulate its energy loss using the `pumas_tabulation_tabulate`
+ * in order to tabulate its energy loss using the `pumas_physics_tabulate`
  * function.
  *
  * **Note** that the material index *must* be set, e.g. using the
- * `pumas_material_index` function. If the Sternheimer coefficients are not
- * explicitly provided there are computed from the density using the
+ * `pumas_physics_material_index` function. If the Sternheimer coefficients are
+ * not explicitly provided there are computed from the density using the
  * Sternheimer and Peierls recipe.
  */
-struct pumas_tabulation_material {
+struct pumas_physics_material {
         /** The material index. */
         int index;
         /** The material density. */
@@ -1302,7 +1364,7 @@ struct pumas_tabulation_material {
         /** The mean excitation energy. */
         double I;
         /** The material state. */
-        enum pumas_tabulation_state state;
+        enum pumas_physics_state state;
         /** Sternheimer *a* Coefficient. */
         double a;
         /** Sternheimer *k* Coefficient. */
@@ -1321,9 +1383,9 @@ struct pumas_tabulation_material {
  * Handle for tabulation data.
  *
  * This structure gathers data required for tabulating the energy loss of
- * materials with the `pumas_tabulation_tabulate` function.
+ * materials with the `pumas_physics_tabulate` function.
  */
-struct pumas_tabulation_data {
+struct pumas_physics_tabulation_data {
         /** The number of kinetic energy values to tabulate. */
         int n_kinetics;
         /** Array of kinetic energy values to tabulate. */
@@ -1333,26 +1395,27 @@ struct pumas_tabulation_data {
         /** Path to a directory where the tabulation should be written. */
         char * outdir;
         /** Properties of the material to tabulate */
-        struct pumas_tabulation_material material;
+        struct pumas_physics_material material;
         /** Path to the energy loss file of the last tabulated material. */
         char * path;
         /** List of atomic elements contained in the tabulated material(s). */
-        struct pumas_tabulation_element * elements;
+        struct pumas_physics_element * elements;
 };
 
 /**
  * Tabulate the energy loss for the given material and set of energies.
  *
- * @param data    The tabulation settings.
+ * @param physics    Handle for the Physics tables.
+ * @param data       The tabulation settings.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
  * This function allows to generate an energy loss file for a given material and
- * a set of kinetic energy values. **Note** that the library must have been
- * initialised with the `pumas_tabulation_initialise` function. The material
- * atomic composition is specified by the MDF loaded at initialisation.
- * Additional Physical properties can be specified by filling the input *data*
- * structure.
+ * a set of kinetic energy values. **Note** that the Physics must have been
+ * initialised with the `pumas_physics_initialise_tabulation` function. The
+ * material atomic composition is specified by the MDF provided at
+ * initialisation. Additional Physical properties can be specified by filling
+ * the input *data* structure.
  *
  * __Warnings__
  *
@@ -1367,8 +1430,9 @@ struct pumas_tabulation_data {
  *     PUMAS_RETURN_PATH_ERROR      The output file could not be created.
  *
  */
-PUMAS_API enum pumas_return pumas_tabulation_tabulate(
-    struct pumas_tabulation_data * data);
+PUMAS_API enum pumas_return pumas_physics_tabulate(
+    struct pumas_physics * physics,
+    struct pumas_physics_tabulation_data * data);
 
 /**
  * Clear the temporary memory used for the tabulation of materials.
@@ -1376,36 +1440,38 @@ PUMAS_API enum pumas_return pumas_tabulation_tabulate(
  * @param data    The tabulation data.
  *
  * This function allows to clear any temporary memory allocated by the
- * `pumas_tabulation_tabulate` function.
+ * `pumas_phsyics_tabulate` function.
  *
  * __Warnings__
  *
  * This function is **not** thread safe.
  */
-PUMAS_API void pumas_tabulation_clear(struct pumas_tabulation_data * data);
+PUMAS_API void pumas_physics_tabulation_clear(
+    struct pumas_physics_tabulation_data * data);
 
 /**
- * Initialise the PUMAS library in tabulation mode.
+ * Initialise the Physics in tabulation mode.
  *
+ * @param physics      Handle for the Physics tables.
  * @param particle     The type of the particle to transport.
  * @param mdf_path     The path to a Material Description File (MDF) or `NULL`.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * Initialise the PUMAS library in reduced mode using a MDF. The materials data
+ * Initialise the Physics tables in reduced mode using a MDF. The materials data
  * are not loaded. This mode is not suitable for particle's transport. It is
  * meant for pre-computation of the material tables using the
- * `pumas_tabulation_tabulate` function. **Note** that *mdf_path* can be `NULL`
+ * `pumas_physics_tabulate` function. **Note** that *mdf_path* can be `NULL`
  * Then it is read from the `PUMAS_MDF` environment variable.
  *
- * Call `pumas_finalise` in order to unload the library and release allocated
- * memory. **Note** that in addition any temporary memory allocated by
- * `pumas_tabulation_tabulate` must be explictly freed by calling the
- * `pumas_tabulation_clear` function.
+ * Call `pumas_physics_finalise` in order to unload the Physics and release
+ * allocated memory. **Note** that in addition any temporary memory allocated by
+ * `pumas_physics_tabulate` must be explictly freed by calling the
+ * `pumas_physics_tabulation_clear` function.
  *
  * **Warnings** : this function is not thread safe. Trying to (re-)initialise an
- * already initialised library will generate an error. `pumas_finalise` must
- * be called first.
+ * already initialised Physics will generate an error. `pumas_physics_finalise`
+ * must be called first.
  *
  * __Error codes__
  *
@@ -1416,7 +1482,7 @@ PUMAS_API void pumas_tabulation_clear(struct pumas_tabulation_data * data);
  *     PUMAS_RETURN_INCOMPLETE_FILE         There are missing entries in
  * the MDF.
  *
- *     PUMAS_RETURN_INITIALISATION_ERROR    The library is already initialised.
+ *     PUMAS_RETURN_INITIALISATION_ERROR    The Physics is already initialised.
  *
  *     PUMAS_RETURN_IO_ERROR                A file couldn't be read.
  *
@@ -1437,8 +1503,9 @@ PUMAS_API void pumas_tabulation_clear(struct pumas_tabulation_data * data);
  *
  *     PUMAS_RETURN_UNKNOWN_PARTICLE        The given type is not supported.
  */
-PUMAS_API enum pumas_return pumas_tabulation_initialise(
-    enum pumas_particle particle, const char * mdf_path);
+PUMAS_API enum pumas_return pumas_physics_initialise_tabulation(
+    struct pumas_physics ** physics, enum pumas_particle particle,
+    const char * mdf_path);
 
 #ifdef __cplusplus
 }

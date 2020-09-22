@@ -49,14 +49,15 @@
 /* Altitude at which the primary flux is sampled */
 #define PRIMARY_ALTITUDE 1E+03
 
-/* A handle for the PUMAS simulation context */
+/* Handles for PUMAS Physics and simulation context */
+static struct pumas_physics * physics = NULL;
 static struct pumas_context * context = NULL;
 
 /* Gracefully exit to the OS */
 static int exit_gracefully(int rc)
 {
         pumas_context_destroy(&context);
-        pumas_finalise();
+        pumas_physics_finalise(&physics);
         exit(rc);
 }
 
@@ -238,15 +239,17 @@ int main(int narg, char * argv[])
                 perror(dump_file);
                 exit_gracefully(EXIT_FAILURE);
         }
-        pumas_load(fid);
+        pumas_physics_load(&physics, fid);
         fclose(fid);
 
         /* Map the PUMAS material indices */
-        pumas_material_index("StandardRock", &media[0].material);
-        pumas_material_index("Air", &media[1].material);
+        pumas_physics_material_index(
+            physics, "StandardRock", &media[0].material);
+        pumas_physics_material_index(
+            physics, "Air", &media[1].material);
 
         /* Create a new PUMAS simulation context */
-        pumas_context_create(&context, 0);
+        pumas_context_create(&context, physics, 0);
 
         /* Configure the context for a backward transport */
         context->forward = 0;
@@ -308,7 +311,8 @@ int main(int narg, char * argv[])
                         }
                         enum pumas_event event;
                         struct pumas_medium * medium[2];
-                        pumas_transport(context, &state, &event, medium);
+                        pumas_context_transport(
+                            context, &state, &event, medium);
 
                         /* Check if the muon has exit the simulation area */
                         if (event == PUMAS_EVENT_MEDIUM) {

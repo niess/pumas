@@ -39,7 +39,7 @@
 /* Load PUMAS materials from a binary dump, if available, or from a MDF file
  * otherwise. On success, dump the shared data as a binary object
  */
-static enum pumas_return load_pumas_materials(
+static enum pumas_return load_pumas_materials(struct pumas_physics ** physics,
     const char * mdf, const char * dedx, const char * dump)
 {
         const enum pumas_particle particle = PUMAS_PARTICLE_MUON;
@@ -48,7 +48,7 @@ static enum pumas_return load_pumas_materials(
         pumas_error_catch(1);
         FILE * stream = fopen(dump, "rb");
         if (stream != NULL) {
-                pumas_load(stream);
+                pumas_physics_load(physics, stream);
                 fclose(stream);
                 return pumas_error_raise();
         }
@@ -56,7 +56,7 @@ static enum pumas_return load_pumas_materials(
 
         /* If no binary dump, initialise from the MDF and dump */
         enum pumas_return rc;
-        if ((rc = pumas_initialise(particle, mdf, dedx)) !=
+        if ((rc = pumas_physics_initialise(physics, particle, mdf, dedx)) !=
             PUMAS_RETURN_SUCCESS)
                 return rc;
 
@@ -71,7 +71,7 @@ static enum pumas_return load_pumas_materials(
         }
 
         pumas_error_catch(1);
-        pumas_dump(stream);
+        pumas_physics_dump(*physics, stream);
         fclose(stream);
         return pumas_error_raise();
 }
@@ -99,9 +99,11 @@ int main(int narg, char * argv[])
         pumas_error_handler_set(&print_error);
 
         /* Load and pre-compute the given material data */
-        enum pumas_return rc = load_pumas_materials(argv[1], argv[2], argv[3]);
+        struct pumas_physics * physics;
+        enum pumas_return rc = load_pumas_materials(
+            &physics, argv[1], argv[2], argv[3]);
 
         /* Finalise PUMAS and return to the OS */
-        pumas_finalise();
+        pumas_physics_finalise(&physics);
         exit((rc == PUMAS_RETURN_SUCCESS) ? EXIT_SUCCESS : EXIT_FAILURE);
 }
