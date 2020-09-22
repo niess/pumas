@@ -57,7 +57,7 @@ static struct pumas_context * context = NULL;
 static int exit_gracefully(int rc)
 {
         pumas_context_destroy(&context);
-        pumas_physics_finalise(&physics);
+        pumas_physics_destroy(&physics);
         exit(rc);
 }
 

@@ -57,7 +57,7 @@ static struct pumas_context * context = NULL;
 static int exit_gracefully(int rc)
 {
         pumas_context_destroy(&context);
-        pumas_physics_finalise(&physics);
+        pumas_physics_destroy(&physics);
         exit(rc);
 }
 
@@ -172,7 +172,7 @@ int main(int narg, char * argv[])
         /* Initialise PUMAS from a Material Description File (MDF). This can
          * a few seconds, depending on the number of materials in the MDF.
          */
-        pumas_physics_initialise(&physics, PUMAS_PARTICLE_MUON,
+        pumas_physics_create(&physics, PUMAS_PARTICLE_MUON,
             "materials/mdf/standard.xml", "materials/dedx/muon");
 
         /* Map the PUMAS material index */

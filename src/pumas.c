@@ -1044,7 +1044,7 @@ void pumas_memory_deallocator(pumas_deallocate_cb * deallocator)
 static enum pumas_return _initialise(struct pumas_physics ** physics_ptr, enum pumas_particle particle,
     const char * mdf_path, const char * dedx_path, int dry_mode)
 {
-        ERROR_INITIALISE(pumas_physics_initialise);
+        ERROR_INITIALISE(pumas_physics_create);
         if (physics_ptr != NULL)
                 *physics_ptr = NULL;
 
@@ -1354,7 +1354,7 @@ clean_and_exit:
 }
 
 /* The standard API initialisation. */
-enum pumas_return pumas_physics_initialise(
+enum pumas_return pumas_physics_create(
     struct pumas_physics ** physics, enum pumas_particle particle,
     const char * mdf_path, const char * dedx_path)
 {
@@ -1477,7 +1477,7 @@ error:
 #undef BINARY_DUMP_TAG
 }
 
-void pumas_physics_finalise(struct pumas_physics ** physics_ptr)
+void pumas_physics_destroy(struct pumas_physics ** physics_ptr)
 {
         if ((physics_ptr == NULL) || (*physics_ptr == NULL)) return;
 
@@ -1498,8 +1498,8 @@ const char * pumas_error_function(pumas_function_t * caller)
         if (caller == (pumas_function_t *)function) return #function;
 
         /* Library functions with an error code. */
-        TOSTRING(pumas_physics_initialise)
-        TOSTRING(pumas_physics_initialise_tabulation)
+        TOSTRING(pumas_physics_create)
+        TOSTRING(pumas_physics_create_tabulation)
         TOSTRING(pumas_physics_dump)
         TOSTRING(pumas_physics_load)
         TOSTRING(pumas_physics_tabulate)
@@ -1524,7 +1524,7 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_physics_table_index)
 
         /* Other library functions. */
-        TOSTRING(pumas_physics_finalise)
+        TOSTRING(pumas_physics_destroy)
         TOSTRING(pumas_physics_tabulation_clear)
         TOSTRING(pumas_context_destroy)
         TOSTRING(pumas_context_physics_get)
@@ -9978,7 +9978,7 @@ void math_svdsol(int m, int n, double * b, double * u, double * w, double * v,
  */
 
 /** Tabulation mode initialisation, without loading the energy loss tables. */
-enum pumas_return pumas_physics_initialise_tabulation(struct pumas_physics ** physics,
+enum pumas_return pumas_physics_create_tabulation(struct pumas_physics ** physics,
     enum pumas_particle particle, const char * mdf_path)
 {
         return _initialise(physics, particle, mdf_path, NULL, 1);
@@ -10314,6 +10314,7 @@ enum pumas_return pumas_physics_tabulate(
  * Clear the temporary memory used for the tabulation of materials.
  */
 void pumas_physics_tabulation_clear(
+    const struct pumas_physics * physics,
     struct pumas_physics_tabulation_data * data)
 {
         struct pumas_physics_element * e;

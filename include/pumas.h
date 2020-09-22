@@ -498,11 +498,11 @@ struct pumas_physics;
  * *dedx_path* can be set to `NULL`. If so the corresponding path is read from
  * the `PUMAS_MDF` or `PUMAS_DEDX` environment variable.
  *
- * Call `pumas_physics_finalise` in order to unload the Physics and release the
+ * Call `pumas_physics_destroy` in order to unload the Physics and release the
  * corresponding alocated memory.
  *
  * **Warnings** : this function is not thread safe. Trying to (re-)initialise an
- * already initialised Physics will generate an error. `pumas_physics_finalise`
+ * already initialised Physics will generate an error. `pumas_physics_destroy`
  * must be called first.
  *
  * __Error codes__
@@ -537,7 +537,7 @@ struct pumas_physics;
  *
  *     PUMAS_RETURN_UNKNOWN_PARTICLE        The given type is not supported.
  */
-PUMAS_API enum pumas_return pumas_physics_initialise(
+PUMAS_API enum pumas_return pumas_physics_create(
     struct pumas_physics ** physics, enum pumas_particle particle,
     const char * mdf_path, const char * dedx_path);
 
@@ -547,12 +547,12 @@ PUMAS_API enum pumas_return pumas_physics_initialise(
  * @param physics      Handle for the Physics tables.
  *
  * Finalise the Physics and free the shared memory. Call
- * `pumas_physics_initialise` in order to reload the Physics.
+ * `pumas_physics_create` in order to reload the Physics.
  *
  * **Warnings** : This function is not thread safe. Finalising the Physics
  * doesn't release the memory allocated for any `pumas_context`.
  */
-PUMAS_API void pumas_physics_finalise(struct pumas_physics ** physics);
+PUMAS_API void pumas_physics_destroy(struct pumas_physics ** physics);
 
 /**
  * Dump the Physics configuration to a stream.
@@ -594,7 +594,7 @@ PUMAS_API enum pumas_return pumas_physics_dump(
  *
  * **Warnings** : The binary dump is raw formated, hence *a priori* platform
  * dependent. Trying to (re-)initialise an already initialised Physics will
- * generate an error. `pumas_physics_finalise` must be called first.
+ * generate an error. `pumas_physics_destroy` must be called first.
  *
  * __Error codes__
  *
@@ -1412,7 +1412,7 @@ struct pumas_physics_tabulation_data {
  *
  * This function allows to generate an energy loss file for a given material and
  * a set of kinetic energy values. **Note** that the Physics must have been
- * initialised with the `pumas_physics_initialise_tabulation` function. The
+ * initialised with the `pumas_physics_create_tabulation` function. The
  * material atomic composition is specified by the MDF provided at
  * initialisation. Additional Physical properties can be specified by filling
  * the input *data* structure.
@@ -1440,13 +1440,14 @@ PUMAS_API enum pumas_return pumas_physics_tabulate(
  * @param data    The tabulation data.
  *
  * This function allows to clear any temporary memory allocated by the
- * `pumas_phsyics_tabulate` function.
+ * `pumas_physics_tabulate` function.
  *
  * __Warnings__
  *
  * This function is **not** thread safe.
  */
 PUMAS_API void pumas_physics_tabulation_clear(
+    const struct pumas_physics * physics,
     struct pumas_physics_tabulation_data * data);
 
 /**
@@ -1464,13 +1465,13 @@ PUMAS_API void pumas_physics_tabulation_clear(
  * `pumas_physics_tabulate` function. **Note** that *mdf_path* can be `NULL`
  * Then it is read from the `PUMAS_MDF` environment variable.
  *
- * Call `pumas_physics_finalise` in order to unload the Physics and release
+ * Call `pumas_physics_destroy` in order to unload the Physics and release
  * allocated memory. **Note** that in addition any temporary memory allocated by
  * `pumas_physics_tabulate` must be explictly freed by calling the
  * `pumas_physics_tabulation_clear` function.
  *
  * **Warnings** : this function is not thread safe. Trying to (re-)initialise an
- * already initialised Physics will generate an error. `pumas_physics_finalise`
+ * already initialised Physics will generate an error. `pumas_physics_destroy`
  * must be called first.
  *
  * __Error codes__
@@ -1503,7 +1504,7 @@ PUMAS_API void pumas_physics_tabulation_clear(
  *
  *     PUMAS_RETURN_UNKNOWN_PARTICLE        The given type is not supported.
  */
-PUMAS_API enum pumas_return pumas_physics_initialise_tabulation(
+PUMAS_API enum pumas_return pumas_physics_create_tabulation(
     struct pumas_physics ** physics, enum pumas_particle particle,
     const char * mdf_path);
 

@@ -56,7 +56,7 @@ static enum pumas_return load_pumas_materials(struct pumas_physics ** physics,
 
         /* If no binary dump, initialise from the MDF and dump */
         enum pumas_return rc;
-        if ((rc = pumas_physics_initialise(physics, particle, mdf, dedx)) !=
+        if ((rc = pumas_physics_create(physics, particle, mdf, dedx)) !=
             PUMAS_RETURN_SUCCESS)
                 return rc;
 
@@ -104,6 +104,6 @@ int main(int narg, char * argv[])
             &physics, argv[1], argv[2], argv[3]);
 
         /* Finalise PUMAS and return to the OS */
-        pumas_physics_finalise(&physics);
+        pumas_physics_destroy(&physics);
         exit((rc == PUMAS_RETURN_SUCCESS) ? EXIT_SUCCESS : EXIT_FAILURE);
 }
