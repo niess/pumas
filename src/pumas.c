@@ -2443,6 +2443,7 @@ enum pumas_return pumas_physics_table_index(
 /**
  * Total grammage for a deterministic CEL as function of initial kinetic energy.
  *
+ * @param Physics  Handle for physics tables.
  * @param context  The simulation context.
  * @param scheme   The energy loss scheme.
  * @param material The index of the propagation material.
@@ -2475,6 +2476,7 @@ double cel_grammage(const struct pumas_physics * physics,
 /**
  * Total grammage for a deterministic CEL as function of total proper time.
  *
+ * @param Physics  Handle for physics tables.
  * @param context  The simulation context.
  * @param scheme   The energy loss scheme.
  * @param material The index of the propagation material.
@@ -2512,6 +2514,7 @@ double cel_grammage_as_time(const struct pumas_physics * physics,
 /**
  * Total proper time for a deterministic CEL in a homogeneous medium.
  *
+ * @param Physics  Handle for physics tables.
  * @param context  The simulation context.
  * @param scheme   The energy loss scheme.
  * @param material The index of the propagation material.
@@ -2546,6 +2549,7 @@ double cel_proper_time(const struct pumas_physics * physics,
  * The initial kinetic energy for a given total grammage assuming a determistic
  * CEL.
  *
+ * @param Physics  Handle for physics tables.
  * @param context  The simulation context.
  * @param scheme   The energy loss scheme.
  * @param material The index of the propagation material.
@@ -2581,6 +2585,7 @@ double cel_kinetic_energy(const struct pumas_physics * physics,
 /**
  * The average CEL.
  *
+ * @param Physics  Handle for physics tables.
  * @param context  The simulation context.
  * @param scheme   The energy loss scheme.
  * @param material The index of the propagation material.
@@ -2609,6 +2614,7 @@ double cel_energy_loss(const struct pumas_physics * physics,
 /**
  * The normalised magnetic rotation angle for a deterministic CEL.
  *
+ * @param Physics  Handle for physics tables.
  * @param context  The simulation context.
  * @param material The index of the material in which the
  *                 particle travels.
@@ -2643,6 +2649,7 @@ double cel_magnetic_rotation(const struct pumas_physics * physics,
 /**
  * The total cross section for inelastic DELs.
  *
+ * @param Physics  Handle for physics tables.
  * @param context  The simulation context.
  * @param material The index of the propagation material.
  * @param kinetic  The initial kinetic energy.
@@ -2667,6 +2674,7 @@ double del_cross_section(const struct pumas_physics * physics,
 /**
  * Total number of interaction lengths for a deterministic CEL.
  *
+ * @param Physics  Handle for physics tables.
  * @param context  The simulation context.
  * @param material The index of the propagation material.
  * @param kinetic  The initial kinetic energy.
@@ -2699,6 +2707,7 @@ double del_interaction_length(const struct pumas_physics * physics,
 /**
  * Initial kinetic energy for a given number of interaction lengths.
  *
+ * @param Physics  Handle for physics tables.
  * @param context  The simulation context.
  * @param material The index of the propagation material.
  * @param nI       The number of interaction lengths.
@@ -2733,6 +2742,7 @@ double del_kinetic_from_interaction_length(const struct pumas_physics * physics,
 /**
  * Total number of EHS interaction lengths for a deterministic CEL.
  *
+ * @param Physics  Handle for physics tables.
  * @param context  The simulation context.
  * @param scheme   The energy loss scheme.
  * @param material The index of the propagation material.
@@ -2765,6 +2775,7 @@ double ehs_interaction_length(const struct pumas_physics * physics,
 /**
  * Initial kinetic energy for a total number of EHS interaction lengths.
  *
+ * @param Physics  Handle for physics tables.
  * @param context  The simulation context.
  * @param scheme   The energy loss scheme.
  * @param material The index of the propagation material.
@@ -2802,6 +2813,7 @@ double ehs_kinetic_from_interaction_length(const struct pumas_physics * physics,
 /**
  * Interpolation of the Multiple SCattering (MSC) parameters.
  *
+ * @param Physics  Handle for physics tables.
  * @param context  The simulation context.
  * @param material The propagation material.
  * @param kinetic  The kinetic energy.
@@ -2844,6 +2856,7 @@ void table_get_msc(const struct pumas_physics * physics,
 /**
  * Interpolate an arbitrary tabulated property.
  *
+ * @param Physics Handle for physics tables.
  * @param context The simulation context.
  * @param table_X Table of x values.
  * @param table_Y Table of y values.
@@ -2871,6 +2884,7 @@ double table_interpolate(const struct pumas_physics * physics,
 /**
  * Find the index closest to `value`, from below.
  *
+ * @param Physics Handle for physics tables.
  * @param context The simulation context.
  * @param table   The tabulated values.
  * @param value   The value to bracket.
@@ -2953,6 +2967,7 @@ void table_bracket(const double * table, double value, int * p1, int * p2)
 /**
  * Encapsulation of the kinetic energy table.
  *
+ * @param Physics  Handle for physics tables.
  * @param row The kinetic energy row index.
  * @return A pointer to the table element.
  */
@@ -2964,6 +2979,7 @@ double * table_get_K(const struct pumas_physics * physics, int row)
 /**
  * Encapsulation of the total grammage table.
  *
+ * @param Physics  Handle for physics tables.
  * @param scheme   The energy loss scheme.
  * @param material The material index.
  * @param row      The kinetic energy row index.
@@ -2981,6 +2997,7 @@ double * table_get_X(
 /**
  * Encapsulation of the proper time table.
  *
+ * @param Physics  Handle for physics tables.
  * @param scheme   The energy loss scheme.
  * @param material The material index.
  * @param row      The kinetic energy row index.
@@ -2998,6 +3015,7 @@ double * table_get_T(
 /**
  * Encapsulation of the dE/dX table.
  *
+ * @param Physics  Handle for physics tables.
  * @param scheme   The energy loss scheme.
  * @param material The material index.
  * @param row      The kinetic energy row index.
@@ -3015,6 +3033,7 @@ double * table_get_dE(
 /**
  * Encapsulation of the number of EHS interaction lengths.
  *
+ * @param Physics  Handle for physics tables.
  * @param material The material index.
  * @param row      The kinetic energy row index.
  * @return A pointer to the table element.
@@ -3032,6 +3051,7 @@ double * table_get_NI_el(
 /**
  * Encapsulation of the number of interaction lengths for inelastic DELs.
  *
+ * @param Physics  Handle for physics tables.
  * @param material The material index.
  * @param row      The kinetic energy row index.
  * @return A pointer to the table element.
@@ -3045,6 +3065,7 @@ double * table_get_NI_in(
 /**
  * Encapsulation of the cross section table, for inelastic DELs.
  *
+ * @param Physics  Handle for physics tables.
  * @param material The material index.
  * @param row      The kinetic energy row index.
  * @return A pointer to the table element.
@@ -3058,6 +3079,7 @@ double * table_get_CS(
 /**
  * Encapsulation of the fractional cross-sections table, for inelastic DELs.
  *
+ * @param Physics   Handle for physics tables.
  * @param process   The process index.
  * @param component The component index.
  * @param row       The kinetic energy row index.
@@ -3075,6 +3097,7 @@ double * table_get_CSf(
 /**
  * Encapsulation of the cross-sections normalisation table.
  *
+ * @param Physics Handle for physics tables.
  * @param process The process index.
  * @param element The element index.
  * @param row     The kinetic energy row index.
@@ -3091,6 +3114,7 @@ double * table_get_CSn(
 /**
  * Encapsulation of the fractional lower threshold for inelastic DELs.
  *
+ * @param Physics Handle for physics tables.
  * @param process The process index.
  * @param element The element index.
  * @param row     The kinetic energy row index.
@@ -3107,6 +3131,7 @@ double * table_get_Xt(
 /**
  * Encapsulation of the lower kinetic threshold for inelatic DELs.
  *
+ * @param Physics  Handle for physics tables.
  * @param material The material index.
  * @return A pointer to the table element.
  */
@@ -3118,6 +3143,7 @@ double * table_get_Kt(const struct pumas_physics * physics, int material)
 /**
  * Encapsulation of the temporary average CEL table, element wise.
  *
+ * @param Physics  Handle for physics tables.
  * @param property The index of the tabulated property.
  * @param process  The process index.
  * @param element  The element index.
@@ -3141,6 +3167,7 @@ double * table_get_cel(const struct pumas_physics * physics, int process,
  * Encapsulation of the magnetic deflection table, when using CSDA in a
  * homogeneous medium of infinite extension.
  *
+ * @param Physics  Handle for physics tables.
  * @param material The material index.
  * @param order    The order of the Taylor expansion.
  * @param row      The kinetic row index.
@@ -3156,6 +3183,7 @@ double * table_get_Li(
 /**
  * Encapsulation of the last tabulated ionisation dE/dX.
  *
+ * @param Physics  Handle for physics tables.
  * @param material The material index.
  * @return A pointer to the table element.
  */
@@ -3167,6 +3195,7 @@ double * table_get_a_max(const struct pumas_physics * physics, int material)
 /**
  * Encapsulation of the last tabulated radiative dE/dX parameter.
  *
+ * @param Physics  Handle for physics tables.
  * @param scheme   The energy loss scheme.
  * @param material The material index.
  * @return A pointer to the table element.
@@ -3181,6 +3210,7 @@ double * table_get_b_max(
 /**
  * Encapsulation of the angular cutoff for Coulomb scattering.
  *
+ * @param Physics  Handle for physics tables.
  * @param material The material index.
  * @param row      The kinetic energy row index.
  * @return A pointer to the table element.
@@ -3194,6 +3224,7 @@ double * table_get_Mu0(
 /**
  * Encapsulation of the interaction length for EHS events.
  *
+ * @param Physics  Handle for physics tables.
  * @param material The material index.
  * @param row      The kinetic energy row index.
  * @return A pointer to the table element.
@@ -3207,8 +3238,9 @@ double * table_get_Lb(
 /*!
  * Encapsulation of the Multiple SCattering (MSC) 1st transport path length.
  *
- * @param [in] material The material index.
- * @param [in] row      The kinetic energy row index.
+ * @param Physics  Handle for physics tables.
+ * @param material The material index.
+ * @param row      The kinetic energy row index.
  * @return A pointer to the table element.
  */
 double * table_get_Ms1(
@@ -3220,9 +3252,10 @@ double * table_get_Ms1(
 /*!
  * Encapsulation of the temporary MSC 1st transport path length, element wise.
  *
- * @param [in] element  The material index.
- * @param [in] row      The kinetic energy row index.
- * @param [in] table    The temporary table.
+ * @param Physics  Handle for physics tables.
+ * @param element  The material index.
+ * @param row      The kinetic energy row index.
+ * @param table    The temporary table.
  * @return A pointer to the table element.
  */
 double * table_get_ms1(
@@ -3234,6 +3267,7 @@ double * table_get_ms1(
 /**
  * Encapsulation of the polynomial coefficients of the DCS model.
  *
+ * @param Physics Handle for physics tables.
  * @param element The element index.
  * @param process The process index.
  * @param row     The kinetic energy row index.
@@ -3253,6 +3287,7 @@ float * table_get_dcs_coeff(const struct pumas_physics * physics,
 /**
  * Encapsulation of the tabulated DCS values.
  *
+ * @param Physics Handle for physics tables.
  * @param element The element index.
  * @param process The process index.
  * @param row     The kinetic energy row index.
@@ -3275,6 +3310,7 @@ float * table_get_dcs_value(const struct pumas_physics * physics,
 /**
  * CSDA propagation routine for a uniform and infinite medium.
  *
+ * @param Physics      Handle for physics tables.
  * @param context      The simulation context.
  * @param state        The initial/final state.
  * @param medium_index The index of the propagation medium.
@@ -3450,6 +3486,7 @@ enum pumas_event transport_with_csda(const struct pumas_physics * physics,
 /**
  * Apply the magnetic deflection in CSDA scheme and uniform medium.
  *
+ * @param Physics      Handle for physics tables.
  * @param context      The simulation context.
  * @param state        The final state.
  * @param medium       The propagation medium.
@@ -3574,6 +3611,7 @@ enum pumas_return transport_csda_deflect(const struct pumas_physics * physics,
 /**
  * Compute the total magnetic transport within CSDA, for a uniform medium.
  *
+ * @param Physics  Handle for physics tables.
  * @param context  The simulation context.
  * @param material The index of the propagation material.
  * @param density  The material density.
@@ -3670,6 +3708,7 @@ enum pumas_return csda_magnetic_transport(const struct pumas_physics * physics,
 /**
  * Propagation in arbitrary media.
  *
+ * @param Physics         Handle for physics tables.
  * @param context         The simulation context.
  * @param state           The initial/final state.
  * @param medium_ptr      The initial/final propagation medium.
@@ -4035,6 +4074,7 @@ double transport_set_locals(struct pumas_medium * medium,
 /**
  * Prepare the various limits for a MC propagation.
  *
+ * @param Physics      Handle for physics tables.
  * @param context      The simulation context.
  * @param material     The index of the propagation material.
  * @param ki           The kinetic energy.
@@ -4156,6 +4196,7 @@ void transport_limit(const struct pumas_physics * physics,
 /**
  * Apply an inelastic DEL during the Monte-Carlo propagation.
  *
+ * @param Physics  Handle for physics tables.
  * @param context  The simulation context.
  * @param material The index of the propagation material.
  * @param state    The initial/final state.
@@ -4205,6 +4246,7 @@ void transport_do_del(const struct pumas_physics * physics,
  * Apply an Elastic Hard Scattering (EHS) event during the Monte-Carlo
  * propagation.
  *
+ * @param Physics  Handle for physics tables.
  * @param context  The simulation context.
  * @param material The index of the propagation material.
  * @param state    The initial/final state.
@@ -4304,6 +4346,7 @@ void transport_do_ehs(const struct pumas_physics * physics,
 /**
  * Objective function for solving the Coulomb scattering angle.
  *
+ * @param Physics    Handle for physics tables.
  * @param mu         The proposed Coulomb scattering angular parameter.
  * @param parameters A pointer to the scattering workspace.
  * @return The difference between the current and expected restricted cross-
@@ -4331,6 +4374,7 @@ double transport_hard_coulomb_objective(
 /**
  * Randomise an inelastic DEL in forward MC.
  *
+ * @param Physics  Handle for physics tables.
  * @param context  The simulation context.
  * @param state    The initial/final state.
  * @param material The index of the propagation material.
@@ -4450,6 +4494,7 @@ polar_function_t * del_randomise_forward(const struct pumas_physics * physics,
 /**
  * Randomise an inelastic DEL in backward MC.
  *
+ * @param Physics  Handle for physics tables.
  * @param context  The simulation context.
  * @param state    The initial/final state.
  * @param material The index of the propagation material.
@@ -4565,6 +4610,7 @@ void del_randomise_power_law(struct pumas_context * context, double alpha,
 /**
  * Randomise the DEL using a ziggurat like algorithm.
  *
+ * @param Physics Handle for physics tables.
  * @param context The simulation context.
  * @param alpha   The power law exponent.
  * @param xmin    The minimum fractional energy transfer.
@@ -4641,6 +4687,7 @@ void del_randomise_ziggurat(const struct pumas_physics * physics,
 /**
  * Randomise the target element and the sub-process for a DEL.
  *
+ * @param Physics  Handle for physics tables.
  * @param context  The simulation context.
  * @param material The index of the propagation material.
  * @param state    The initial/final state.
@@ -4795,6 +4842,7 @@ target_found:
 /**
  * Perform a Monte-Carlo transport step in a single medium.
  *
+ * @param Physics            Handle for physics tables.
  * @param context            The simulation context.
  * @param state              The initial/final state.
  * @param straight           Flag for a straight step.
@@ -5400,6 +5448,7 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
 /**
  * Apply a stochastic CEL on a MC step.
  *
+ * @param Physics  Handle for physics tables.
  * @param context  The simulation context.
  * @param state    The particle Monte-Carlo state.
  * @param material The target material.
@@ -5466,6 +5515,7 @@ static void step_fluctuate(const struct pumas_physics * physics,
 /**
  * Squared standard deviation of the stochastic CEL.
  *
+ * @param Physics  Handle for physics tables.
  * @param material The target material.
  * @param kinetic  The projectile kinetic energy.
  * @return The squared standard deviation.
@@ -5580,7 +5630,8 @@ void step_rotate_direction(struct pumas_context * context,
 /**
  * Find the table index of an element given its name.
  *
- * @param name The element name.
+ * @param Physics  Handle for physics tables.
+ * @param name     The element name.
  * @return The element index or `-1` if it wasn't found.
  */
 int element_index(const struct pumas_physics * physics, const char * name)
@@ -5598,9 +5649,9 @@ int element_index(const struct pumas_physics * physics, const char * name)
 /**
  * Find the table index of a material given its name.
  *
- * @param name   The material name.
- * @param name   The material index.
- * @param error_ The error data.
+ * @param Physics  Handle for physics tables.
+ * @param name     The material name.
+ * @param error_   The error data.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned.
  */
@@ -5625,6 +5676,7 @@ static enum pumas_return material_index(const struct pumas_physics * physics,
 /**
  * Compute the atomic and nuclear screening parameters.
  *
+ * @param Physics   Handle for physics tables.
  * @param context   The simulation context.
  * @param kinetic   The kinetic energy.
  * @param element   The scatterer atomic element.
@@ -5685,6 +5737,7 @@ void coulomb_screening_parameters(const struct pumas_physics * physics,
  * Compute the Coulomb mean free path assuming a Wentzel DCS with only atomic
  * screening.
  *
+ * @param Physics   Handle for physics tables.
  * @param kinetic   The kinetic energy.
  * @param Z         The atomic number of the target element.
  * @param A         The atomic mass of the target element.
@@ -5702,6 +5755,7 @@ double coulomb_wentzel_path(const struct pumas_physics * physics,
 /**
  * Encapsulation of the interaction length for EHS.
  *
+ * @param Physics  Handle for physics tables.
  * @param context  The simulation context.
  * @param material The propagation material.
  * @param kinetic  The kinetic energy.
@@ -5732,6 +5786,7 @@ double coulomb_ehs_length(const struct pumas_physics * physics,
 /**
  * Compute the spin factor to the Coulomb DCS.
  *
+ * @param Physics Handle for physics tables.
  * @param kinetic The kinetic energy.
  * @return The spin factor.
  */
@@ -5745,6 +5800,7 @@ double coulomb_spin_factor(const struct pumas_physics * physics, double kinetic)
  * Compute the parameters of the CM to the Lab frame transform for the
  * Coulomb DCS.
  *
+ * @param Physics    Handle for physics tables.
  * @param kinetic    The kinetic energy.
  * @param Ma         The target mass, in atomic unit.
  * @param kinetic0   The CM kinetic energy.
@@ -5909,6 +5965,7 @@ void coulomb_transport_coefficients(double mu, double fspin, double * screening,
  * The 1st transport coefficient for multiple scattering on electronic
  * shells.
  *
+ * @param Physics Handle for physics tables.
  * @param element The target atomic element.
  * @param kinetic The projectile initiale kinetic energy.
  * @return The inverse of the electronic 1st transport path length in kg/m^2.
@@ -5946,6 +6003,7 @@ double transverse_transport_ionisation(const struct pumas_physics * physics,
  * The 1st transport coefficient for multiple scattering in soft photonuclear
  * events.
  *
+ * @param Physics Handle for physics tables.
  * @param element The target atomic element.
  * @param kinetic The projectile initial kinetic energy.
  * @return The inverse of the photonuclear 1st transport path length in kg/m^2.
@@ -6139,6 +6197,7 @@ static enum pumas_return error_raise(struct error_context * error_)
 /**
  * Parse a dE/dX file.
  *
+ * @param Physics     Handle for physics tables.
  * @param fid         The file handle.
  * @param material    The material index.
  * @param filename    The name of the curent file.
@@ -6208,6 +6267,7 @@ enum pumas_return io_parse_dedx_file(struct pumas_physics * physics, FILE * fid,
 /**
  * Parse a row of a dE/dX file.
  *
+ * @param Physics  Handle for physics tables.
  * @param buffer   The read buffer containing the row data.
  * @param material The index of the material.
  * @param row      The index of the parsed row.
@@ -6418,6 +6478,7 @@ enum pumas_return io_read_line(FILE * fid, char ** buf, const char * filename,
 /**
  * Parse the global settings from a MDF.
  *
+ * @param Physics      Handle for physics tables.
  * @param mdf          The MDF handle.
  * @param dedx_path    The path to the energy loss table(s).
  * @param error_       The error data.
@@ -6874,8 +6935,9 @@ enum pumas_return mdf_parse_kinetic(
 /**
  * Parse the atomic elements from a MDF.
  *
- * @param mdf   The MDF handle.
- * @param error The error data.
+ * @param Physics   Handle for physics tables.
+ * @param mdf       The MDF handle.
+ * @param error     The error data.
  * @return On success `PUMAS_RETURN_SUCCESS` otherwise `PUMAS_ERROR`.
  */
 enum pumas_return mdf_parse_elements(const struct pumas_physics * physics,
@@ -6959,6 +7021,7 @@ enum pumas_return mdf_parse_elements(const struct pumas_physics * physics,
 /**
  * Parse the base materials from a MDF.
  *
+ * @param Physics   Handle for physics tables.
  * @param mdf       The MDF handle.
  * @param error_    The error data
  * @return On success `PUMAS_RETURN_SUCCESS` otherwise `PUMAS_ERROR`.
@@ -7115,7 +7178,8 @@ enum pumas_return mdf_parse_materials(struct pumas_physics * physics,
 /**
  * Parse the composite materials from a MDF.
  *
- * @param mdf The MDF handle.
+ * @param Physics   Handle for physics tables.
+ * @param mdf       The MDF handle.
  * @return On success `PUMAS_RETURN_SUCCESS` otherwise an error code.
  *
  * The composite materials properties are given as a linear combination
@@ -7711,6 +7775,7 @@ enum pumas_return mdf_format_path(const char * directory, const char * mdf_path,
  * Precompute the integrals for a deterministic CEL and TT parameters, for
  * composite materials.
  *
+ * @param Physics  Handle for physics tables.
  * @param material The composite material index.
  * @param error_   The error data.
  * @return `PUMAS_ERROR` if any computation failled, `PUMAS_RETURN_SUCCESS`
@@ -7736,6 +7801,7 @@ enum pumas_return compute_composite(
 /**
  * Compute various cumulative integrals for a deterministic CEL.
  *
+ * @param Physics  Handle for physics tables.
  * @param material The index of the material to tabulate.
  */
 void compute_cel_integrals(struct pumas_physics * physics, int material)
@@ -7754,6 +7820,7 @@ void compute_cel_integrals(struct pumas_physics * physics, int material)
 /**
  * Computation of mixture weights for composite materials.
  *
+ * @param Physics  Handle for physics tables.
  * @param material The material index of the composite to compute.
  */
 void compute_composite_weights(struct pumas_physics * physics, int material)
@@ -7825,6 +7892,7 @@ void compute_composite_weights(struct pumas_physics * physics, int material)
 /**
  * Compute the density of a composite material.
  *
+ * @param Physics  Handle for physics tables.
  * @param material The material index of the composite material.
  * @param error    The error data.
  * @return `PUMAS_ERROR` if any density is not strictly positive,
@@ -7857,6 +7925,7 @@ enum pumas_return compute_composite_density(
 /**
  * Computation of tabulated properties for composite materials.
  *
+ * @param Physics  Handle for physics tables.
  * @param material The matrial index of the composite to compute.
  */
 void compute_composite_tables(struct pumas_physics * physics, int material)
@@ -7988,7 +8057,8 @@ void compute_composite_tables(struct pumas_physics * physics, int material)
 /**
  * Compute the cumulative integral of a table column.
  *
- * @param table The table column to process.
+ * @param Physics   Handle for physics tables.
+ * @param table     The table column to process.
  *
  * Compute a cumulative integral of the column by integrating over the kinetic
  * energy with a linear interpolation and a trapezoidal rule.
@@ -8010,7 +8080,8 @@ void compute_kinetic_integral(struct pumas_physics * physics, double * table)
 /**
  * Compute cumulative integrals for the proper time.
  *
- * @param table The table column to process.
+ * @param Physics   Handle for physics tables.
+ * @param table     The table column to process.
  *
  * Compute the proper time cumulative integrals over path length with a
  * trapezoidal rule.
@@ -8066,6 +8137,7 @@ void compute_time_integrals(struct pumas_physics * physics, int material)
 /**
  * Compute the CSDA grammage range from the energy loss.
  *
+ * @param Physics   Handle for physics tables.
  *  @param scheme   The index of the simulation scheme.
  *  @param material The index of the material to process.
  *
@@ -8094,7 +8166,8 @@ void compute_cel_grammage_integral(
 /**
  * Compute the cumulative integrals of the magnetic transport.
  *
- * @param imed The index of the material to tabulate.
+ * @param Physics   Handle for physics tables.
+ * @param imed      The index of the material to tabulate.
  *
  * Compute the cumulative integrals for the momenta of the magnetic deflection
  * using a trapezoidal rule.
@@ -8142,6 +8215,7 @@ void compute_csda_magnetic_transport(
 /**
  * Compute and tabulate the multiple scattering parameters.
  *
+ * @param Physics  Handle for physics tables.
  * @param material The target material.
  * @param row      The kinetic energy index to compute for.
  * @param error    The error data.
@@ -8394,9 +8468,10 @@ enum pumas_return compute_coulomb_parameters(struct pumas_physics * physics,
 /**
  * Tabulate the multiple scattering per element.
  *
- * @param row     The row index for the kinetic value.
- * @param data    The tabulated data.
- * @param error_  The error data.
+ * @param Physics   Handle for physics tables.
+ * @param row       The row index for the kinetic value.
+ * @param data      The tabulated data.
+ * @param error_    The error data.
  * @return On success `PUMAS_RETRUN_SUCCESS` otherwise an error code.
  *
  * Because this step is time consuming, the multiple scattering 1st path
@@ -8451,6 +8526,7 @@ enum pumas_return compute_coulomb_soft(struct pumas_physics * physics, int row,
 /**
  * Objective function for solving the soft scattering cut-off angle.
  *
+ * @param Physics    Handle for physics tables.
  * @param mu         The proposed cutoff angular parameter.
  * @param parameters A pointer to the temporary workspace.
  * @return The difference between the current and expected restricted cross
@@ -8482,8 +8558,9 @@ double compute_cutoff_objective(
 /**
  * Tabulate the deterministic CEL and DEL cross-sections per element.
  *
- * @param row the row index for the kinetic value.
- * @return The tabulated data.
+ * @param Physics   Handle for physics tables.
+ * @param row       The row index for the kinetic value.
+ * @return          The tabulated data.
  *
  * Because this step is time consuming, the CEL integration is precomputed per
  * element at initialisation using a temporary buffer. These temporary tables
@@ -8604,6 +8681,7 @@ once. */
 /**
  * Compute integrals of DCSs.
  *
+ * @param Physics Handle for physics tables.
  * @param forward The MC flow direction.
  * @param mode    Flag to select the integration mode.
  * @param element The target atomic element.
@@ -8652,6 +8730,7 @@ double compute_dcs_integral(struct pumas_physics * physics, int mode,
 /**
  * Compute or update the relative electron density of a material.
  *
+ * @param Physics  Handle for physics tables.
  * @param material The material index.
  */
 void compute_ZoA(struct pumas_physics * physics, int material)
@@ -8673,6 +8752,7 @@ void compute_ZoA(struct pumas_physics * physics, int material)
  * Compute the coefficients of the polynomial approximation to an
  * inelastic DCS.
  *
+ * @param Physics  Handle for physics tables.
  * @param dcs_func The DCS function.
  * @param element  The target atomic element.
  * @param error_   The error data.
@@ -8817,6 +8897,7 @@ int dcs_get_index(dcs_function_t * dcs_func)
 /**
  * The Bremsstrahlung differential cross section.
  *
+ * @param Physics Handle for physics tables.
  * @param element The target atomic element.
  * @param K       The projectile initial kinetic energy.
  * @param q       The kinetic energy lost to the photon.
@@ -8866,6 +8947,7 @@ double dcs_bremsstrahlung(const struct pumas_physics * physics,
 /**
  * The Pair production differential cross section.
  *
+ * @param Physics Handle for physics tables.
  * @param element The target atomic element.
  * @param K       The projectile initial kinetic energy.
  * @param q       The kinetic energy lost to the e+e- pair.
@@ -9103,6 +9185,7 @@ double dcs_photonuclear_r_whitlow(double x, double Q2)
 /** The doubly differential cross sections d^2S/(dq*dQ2) for photonuclear
  * interactions.
  *
+ * @param Physics Handle for physics tables.
  * @param A       The target atomic weight.
  * @param K       The projectile initial kinetic energy.
  * @param q       The kinetic energy lost to the photon.
@@ -9138,6 +9221,7 @@ double dcs_photonuclear_d2(const struct pumas_physics * physics, double A,
 /**
  * The Photonuclear differential cross section.
  *
+ * @param Physics Handle for physics tables.
  * @param element The target atomic element.
  * @param K       The projectile initial kinetic energy.
  * @param q       The kinetic energy lost to the photon.
@@ -9227,6 +9311,7 @@ int dcs_photonuclear_check(double K, double q)
 /**
  * The ionisation differential cross section.
  *
+ * @param Physics Handle for physics tables.
  * @param element The target atomic element.
  * @param K       The projectile initial kinetic energy.
  * @param q       The kinetic energy lost to the photon.
@@ -9274,6 +9359,7 @@ double dcs_ionisation(const struct pumas_physics * physics,
 /**
  * The analytical form for the partial integral of the ionisation DCS.
  *
+ * @param Physics Handle for physics tables.
  * @param mode    Flag to select the integration mode.
  * @param element The target atomic element.
  * @param K       The projectile initial kinetic energy.
@@ -9365,6 +9451,7 @@ double dcs_ionisation_randomise(const struct pumas_physics * physics,
 /**
  * Encapsulation for the evaluation of DCS.
  *
+ * @param Physics  Handle for physics tables.
  * @param context  The simulation context.
  * @param dcs_func The DCS function to evaluate.
  * @param element  The target atomic element.
@@ -9527,6 +9614,7 @@ polar_function_t * polar_get(int process)
 /**
  * Sample the polar angle in a Bremsstrahlung event.
  *
+ * @param Physics Handle for physics tables.
  * @param context The simulation context.
  * @param ki      The initial kinetic energy.
  * @param kf      The final kinetic energy.
@@ -9548,6 +9636,7 @@ double polar_bremsstrahlung(const struct pumas_physics * physics,
 /**
  * Sample the polar angle in a Pair Production event.
  *
+ * @param Physics Handle for physics tables.
  * @param context The simulation context.
  * @param ki      The initial kinetic energy.
  * @param kf      The final kinetic energy.
@@ -9564,6 +9653,7 @@ double polar_pair_production(const struct pumas_physics * physics,
 /**
  * Sample the polar angle in a photonuclear event.
  *
+ * @param Physics Handle for physics tables.
  * @param context The simulation context.
  * @param ki      The initial kinetic energy.
  * @param kf      The final kinetic energy.
@@ -9600,6 +9690,7 @@ double polar_photonuclear(const struct pumas_physics * physics,
 /**
  * Sample the polar angle in an ionisation event.
  *
+ * @param Physics Handle for physics tables.
  * @param context The simulation context.
  * @param ki      The initial kinetic energy.
  * @param kf      The final kinetic energy.
@@ -9630,16 +9721,17 @@ double polar_ionisation(const struct pumas_physics * physics,
 /**
  * Root solver for a function of a scalar variable.
  *
- * @param f      The objective function to resolve.
- * @param xa     The lower bound of the search interval.
- * @param xb     The upper bound of the search interval.
- * @param fa_p   The initial value at *a* if already computed.
- * @param fb_p   The initial value at *b* if already computed.
- * @param xtol   The absolute tolerance on the root value.
- * @param rtol   The absolute tolerance on the root value.
- * @param params A handle for passing additional parameters to the
- *               objective function.
- * @param x0     An estimate of the root over `[xa; xb]`.
+ * @param Physics Handle for physics tables.
+ * @param f       The objective function to resolve.
+ * @param xa      The lower bound of the search interval.
+ * @param xb      The upper bound of the search interval.
+ * @param fa_p    The initial value at *a* if already computed.
+ * @param fb_p    The initial value at *b* if already computed.
+ * @param xtol    The absolute tolerance on the root value.
+ * @param rtol    The absolute tolerance on the root value.
+ * @param params  A handle for passing additional parameters to the
+ *                objective function.
+ * @param x0      An estimate of the root over `[xa; xb]`.
  * @return On success `0` is returned. Otherwise a negative number.
  *
  * The root is searched for over `[xa; xb]` using Ridder's method

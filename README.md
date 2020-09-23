@@ -7,12 +7,12 @@
 ## Description
 
 PUMAS performs the transport of relativistic &mu; or &tau; in both forward
-and backward Monte-Carlo. The library is written in C99 with the Standard
+and backward Monte Carlo. The library is written in C99 with the Standard
 Library as sole dependency. PUMAS is thread safe by design. The library also
 allows to generate muons or taus energy loss tables in the
 [PDG](http://pdg.lbl.gov/2016/AtomicNuclearProperties/index.html)
 format. These tables, or those provided by the PDG, are needed as input for the
-PUMAS library initialisation.
+Physics.
 
 ## Installation
 
@@ -26,10 +26,10 @@ can be found on the [wiki](https://github.com/niess/pumas/wiki/Installation).
 
 A compilation of materials for PUMAS is hosted on GitHub as a separate project,
 [pumas-materials](https://github.com/niess/pumas-materials). These tables have
-been generated with the PUMAS library. For muons, one can also use the whole set
+been generated with the PUMAS library. For muons one can also use the whole set
 of tabulations provided online by the
 [PDG](http://pdg.lbl.gov/2019/AtomicNuclearProperties/index.html).  Note however
-that those are slightly less accurate than PUMAS ones, above 100 TeV.
+that those are slightly less accurate than PUMAS ones above 100 TeV.
 
 ## Documentation
 
@@ -48,4 +48,4 @@ git clone https://gitub.com/niess/pumas-materials materials
 The PUMAS library is  under the **GNU LGPLv3** license. See the provided
 [LICENSE](LICENSE) and [COPYING.LESSER](COPYING.LESSER) files. The
 [examples](examples) however have a separate public domain license allowing them
-to be copied without restrictions.
+to be copied without any restriction.
