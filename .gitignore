@@ -17,3 +17,4 @@ wiki
 
 # Ignore temporary build(s)
 build*
+!.github/workflows/build*

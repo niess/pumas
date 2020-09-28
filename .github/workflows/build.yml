@@ -1,0 +1,64 @@
+name: Build
+on:
+  push:
+    paths:
+    - '.github/workflows/build.yml'
+    - 'CMakeLists.txt'
+    - 'examples/**'
+    - 'include/**'
+    - 'Makefile'
+    - 'src/**'
+
+jobs:
+  Unix:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        include:
+        - os: ubuntu-latest
+          OS_TAG: Linux
+          BUILD_OPTS: -DCMAKE_BUILD_TYPE=Test -DPUMAS_BUILD_TEST=true
+        - os: macos-latest
+          OS_TAG: OSX
+          BUILD_OPTS: -DCMAKE_BUILD_TYPE=Release -DPUMAS_BUILD_EXAMPLES=true
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - if: matrix.OS_TAG == 'Linux'
+      name: Install lcov
+      run: |
+        sudo apt-get install -y lcov
+
+    - name: Build
+      run: |
+        mkdir build
+        cd build
+        cmake ${{ matrix.BUILD_OPTS }} ..
+        make
+
+    - if: matrix.OS_TAG == 'Linux'
+      name: Test
+      run: |
+        cd build
+        make test
+
+    - if: matrix.OS_TAG == 'Linux'
+      name: Coverage
+      uses: codecov/codecov-action@v1
+
+    - if: matrix.OS_TAG == 'OSX'
+      uses: actions/checkout@v2
+      with:
+        repository: niess/pumas-materials
+        path: materials
+
+    - if: matrix.OS_TAG == 'OSX'
+      name: Examples
+      run: |
+        ./build/pumas-example-load materials/mdf/standard.xml \
+                                   materials/dedx/muon \
+                                   materials/dump
+        ./build/pumas-example-straight 10 10 1
+        ./build/pumas-example-geometry 10 10 1
