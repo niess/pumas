@@ -158,7 +158,7 @@ START_TEST(test_api_error)
         CHECK_STRING(pumas_recorder_clear);
         CHECK_STRING(pumas_recorder_create);
         CHECK_STRING(pumas_recorder_destroy);
-        CHECK_STRING(pumas_tag);
+        CHECK_STRING(pumas_version);
 #undef CHECK_STRING
 
         /* Check the NULL case */
@@ -168,9 +168,9 @@ START_TEST(test_api_error)
 END_TEST
 
 /* Test the version tag */
-START_TEST(test_api_tag)
+START_TEST(test_api_version)
 {
-        const int tag = pumas_tag();
+        const int tag = pumas_version();
         ck_assert_int_eq(tag, 100 * PUMAS_VERSION);
 }
 END_TEST
@@ -1112,7 +1112,7 @@ static double air_locals(struct pumas_medium * medium,
         return 1E-02 * lambda;
 }
 
-static void geometry_medium(struct pumas_context * context,
+static enum pumas_step geometry_medium(struct pumas_context * context,
     struct pumas_state * state, struct pumas_medium ** medium_ptr,
     double * step_ptr)
 {
@@ -1120,7 +1120,9 @@ static void geometry_medium(struct pumas_context * context,
         memcpy(geometry.last_position, state->position,
             sizeof geometry.last_position);
 
-        if ((medium_ptr == NULL) && (step_ptr == NULL)) return;
+        if ((medium_ptr == NULL) && (step_ptr == NULL)) {
+                return PUMAS_STEP_APPROXIMATE;
+        }
 
         if (step_ptr == NULL) {
                 /* This is a pure location call. Let us check that the
@@ -1156,13 +1158,13 @@ static void geometry_medium(struct pumas_context * context,
         if (geometry.uniform) {
                 if (medium_ptr != NULL) *medium_ptr = media;
                 if (step_ptr != NULL) *step_ptr = 0.;
-                return;
+                return PUMAS_STEP_APPROXIMATE;
         } else {
                 if (medium_ptr != NULL) *medium_ptr = NULL;
                 const double z = state->position[2];
                 if (z < -0.5 * TEST_ROCK_DEPTH) {
                         if (step_ptr != NULL) *step_ptr = 0.;
-                        return;
+                        return PUMAS_STEP_APPROXIMATE;
                 } else if (z < 0.5 * TEST_ROCK_DEPTH) {
                         if (medium_ptr != NULL) *medium_ptr = media;
 
@@ -1170,7 +1172,7 @@ static void geometry_medium(struct pumas_context * context,
                         const double dz2 = 0.5 * TEST_ROCK_DEPTH - z;
                         const double dz = dz1 < dz2 ? dz1 : dz2;
                         if (step_ptr != NULL) *step_ptr = dz > 0. ? dz : 1E-03;
-                        return;
+                        return PUMAS_STEP_APPROXIMATE;
                 } else if (z < TEST_MAX_ALTITUDE) {
                         if (medium_ptr != NULL) *medium_ptr = media + 1;
 
@@ -1178,7 +1180,7 @@ static void geometry_medium(struct pumas_context * context,
                         const double uz = state->direction[2] * sgn;
                         if (fabs(uz) < 1E-03) {
                                 if (step_ptr != NULL) *step_ptr = 1E+03;
-                                return;
+                                return PUMAS_STEP_APPROXIMATE;
                         }
 
                         double s;
@@ -1187,10 +1189,10 @@ static void geometry_medium(struct pumas_context * context,
                         else
                                 s = (0.5 * TEST_ROCK_DEPTH - z) / uz;
                         if (step_ptr != NULL) *step_ptr = s > 0. ? s : 1E-03;
-                        return;
+                        return PUMAS_STEP_APPROXIMATE;
                 } else {
                         if (step_ptr != NULL) *step_ptr = 0.;
-                        return;
+                        return PUMAS_STEP_APPROXIMATE;
                 }
         }
 }
@@ -4573,7 +4575,7 @@ Suite * create_suite(void)
         suite_add_tcase(suite, tc_api);
         tcase_set_timeout(tc_api, timeout);
         tcase_add_test(tc_api, test_api_error);
-        tcase_add_test(tc_api, test_api_tag);
+        tcase_add_test(tc_api, test_api_version);
         tcase_add_test(tc_api, test_api_init);
         tcase_add_test(tc_api, test_api_memory);
         tcase_add_test(tc_api, test_api_material);

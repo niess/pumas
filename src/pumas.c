@@ -1587,7 +1587,7 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_context_physics_get)
         TOSTRING(pumas_recorder_clear)
         TOSTRING(pumas_recorder_destroy)
-        TOSTRING(pumas_tag)
+        TOSTRING(pumas_version)
         TOSTRING(pumas_error_function)
         TOSTRING(pumas_error_handler_set)
         TOSTRING(pumas_error_handler_get)
@@ -1847,7 +1847,7 @@ error:
             PUMAS_RETURN_IO_ERROR, "could not write to stream");
 }
 
-int pumas_tag() { return 100 * PUMAS_VERSION; }
+int pumas_version() { return 100 * PUMAS_VERSION; }
 
 /* Public library functions: recorder handling. */
 enum pumas_return pumas_recorder_create(

@@ -686,14 +686,14 @@ PUMAS_API enum pumas_return pumas_physics_print(
     const char * tabulation, const char * newline);
 
 /**
- * Get the version tag of the library.
+ * Get the version of the PUMAS library.
  *
- * @return The library tag encoded on an `int`.
+ * @return The library version encoded on an `int`.
  *
- * The library tag is encoded on an `int` as tag = 10^(3)*V+S, with V the
- * version index and S the subversion index.
+ * The library version is encoded on an `int` as 100*(MAJOR.MINOR). E.g.
+ * PUMAS version `0.15` would yield `15`.
  */
-PUMAS_API int pumas_tag();
+PUMAS_API int pumas_version();
 
 /**
  * Get info on the transported particle.
