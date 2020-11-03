@@ -2,6 +2,7 @@ name: Build
 on:
   push:
     paths:
+    - '.codecov.yml'
     - '.github/workflows/build.yml'
     - 'CMakeLists.txt'
     - 'examples/**'
