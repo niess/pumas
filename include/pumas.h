@@ -351,6 +351,14 @@ struct pumas_recorder {
         void * user_data;
 };
 
+/** Return codes for the `pumas_medium_cb` callback. */
+enum pumas_step {
+        /** An approximate geometric step is proposed */
+        PUMAS_STEP_APPROXIMATE = 0,
+        /** An exact geometric step is provided */
+        PUMAS_STEP_EXACT
+};
+
 /**
  * Callback for locating the propagation medium of a `pumas_state`.
  *
@@ -359,6 +367,9 @@ struct pumas_recorder {
  * @param medium    A pointer to store the medium or `NULL` if not requested.
  * @param step      The proposed step size or zero or less for an infinite
  *                    medium. If not requested this points to `NULL`.
+ * @return If the proposed step size is guaranteed to lie on the boundary of
+ * the current medium then `PUMAS_STEP_EXACT` can be returned otherwise
+ * `PUMAS_STEP_APPROXIMATE` must be returned.
  *
  * If *step* is not `NULL`, this callback must propose a Monte-Carlo stepping
  * distance, in m, consistent with the geometry. Note that returning zero or
@@ -368,8 +379,9 @@ struct pumas_recorder {
  * **Warning** : it is an error to return zero or less for any state if the
  * extension is finite.
  */
-typedef void pumas_medium_cb(struct pumas_context * context,
-    struct pumas_state * state, struct pumas_medium ** medium, double * step);
+typedef enum pumas_step pumas_medium_cb(
+    struct pumas_context * context, struct pumas_state * state,
+    struct pumas_medium ** medium, double * step);
 
 /**
  * Generic function pointer.

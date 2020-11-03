@@ -90,7 +90,7 @@ static double locals_rock(struct pumas_medium * medium,
 static struct pumas_medium medium = { 0, &locals_rock };
 
 /* A basic medium callback providing an infinite single medium */
-static void medium1(struct pumas_context * context,
+static enum pumas_step medium1(struct pumas_context * context,
     struct pumas_state * state, struct pumas_medium ** medium_ptr,
     double * step_ptr)
 {
@@ -101,6 +101,8 @@ static void medium1(struct pumas_context * context,
          * an infinite medium
          */
         if (step_ptr != NULL) *step_ptr = 0.;
+
+        return PUMAS_STEP_APPROXIMATE;
 }
 
 /* A basic Pseudo Random Number Generator (PRNG) providing a uniform

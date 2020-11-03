@@ -599,7 +599,7 @@ struct pumas_physics {
  * Version tag for the shared data format. Increment whenever the
  * structure changes.
  */
-#define BINARY_DUMP_TAG 0
+#define BINARY_DUMP_TAG 1
 
         /** The total byte size of the shared data. */
         int size;
@@ -807,7 +807,8 @@ static enum pumas_event transport_with_stepping(
     const struct pumas_physics * physics, struct pumas_context * context,
     struct pumas_state * state, struct pumas_medium ** medium_ptr,
     struct medium_locals * locals, double step_max_medium,
-    double step_max_locals, struct error_context * error_);
+    enum pumas_step step_max_type, double step_max_locals,
+    struct error_context * error_);
 static double transport_set_locals(struct pumas_medium * medium,
     struct pumas_state * state, struct medium_locals * locals);
 static void transport_limit(const struct pumas_physics * physics,
@@ -939,8 +940,8 @@ static inline float * table_get_dcs_value(const struct pumas_physics * physics,
 static enum pumas_return step_transport(const struct pumas_physics * physics,
     struct pumas_context * context, struct pumas_state * state, int straight,
     struct pumas_medium * medium, struct medium_locals * locals,
-    double grammage_max, double step_max_medium, double * step_max_locals,
-    struct pumas_medium ** out_medium);
+    double grammage_max, double step_max_medium, enum pumas_step step_max_type,
+    double * step_max_locals, struct pumas_medium ** out_medium);
 static void step_fluctuate(const struct pumas_physics * physics,
     struct pumas_context * context, struct pumas_state * state, int material,
     double Xtot, double dX, double * kf, double * dE);
@@ -2115,7 +2116,8 @@ enum pumas_return pumas_context_transport(struct pumas_context * context,
         /* Get the start medium. */
         struct pumas_medium * medium;
         double step_max_medium;
-        context->medium(context, state, &medium, &step_max_medium);
+        enum pumas_step step_max_type = context->medium(
+            context, state, &medium, &step_max_medium);
         if (media != NULL) {
                 media[0] = medium;
                 media[1] = NULL;
@@ -2128,7 +2130,8 @@ enum pumas_return pumas_context_transport(struct pumas_context * context,
                                 PUMAS_EVENT_START | PUMAS_EVENT_STOP,
                             state);
                 return PUMAS_RETURN_SUCCESS;
-        } else if (step_max_medium > 0.)
+        } else if ((step_max_medium > 0.) &&
+            (step_max_type == PUMAS_STEP_APPROXIMATE))
                 step_max_medium += 0.5 * STEP_MIN;
         struct medium_locals locals = { { 0., { 0., 0., 0. } } };
         const double step_max_locals =
@@ -2170,7 +2173,8 @@ enum pumas_return pumas_context_transport(struct pumas_context * context,
         if (do_stepping) {
                 /* Transport with a detailed stepping. */
                 e = transport_with_stepping(physics, context, state, &medium,
-                    &locals, step_max_medium, step_max_locals, error_);
+                    &locals, step_max_medium, step_max_type, step_max_locals,
+                    error_);
         } else {
                 /* This is a purely deterministic case. */
                 e = transport_with_csda(
@@ -3716,6 +3720,7 @@ enum pumas_return csda_magnetic_transport(const struct pumas_physics * physics,
  *                        medium.
  * @param error           The error data.
  * @param step_max_medium The step limitation from the medium.
+ * @param step_max_type   The type of geometry step (exact or approximate).
  * @param step_max_locals The step limitation from the local properties.
  * @return The end condition event.
  *
@@ -3728,8 +3733,8 @@ enum pumas_return csda_magnetic_transport(const struct pumas_physics * physics,
 enum pumas_event transport_with_stepping(const struct pumas_physics * physics,
     struct pumas_context * context, struct pumas_state * state,
     struct pumas_medium ** medium_ptr, struct medium_locals * locals,
-    double step_max_medium, double step_max_locals,
-    struct error_context * error_)
+    double step_max_medium, enum pumas_step step_max_type,
+    double step_max_locals, struct error_context * error_)
 {
         /* Check the config */
         if ((context->random == NULL) &&
@@ -3813,15 +3818,17 @@ enum pumas_event transport_with_stepping(const struct pumas_physics * physics,
                 /* Do a transportation step. */
                 if (step_index > 1) {
                         /* Update the geometric step length */
-                        context->medium(context, state, NULL, &step_max_medium);
-                        if (step_max_medium > 0.)
+                        step_max_type = context->medium(
+                            context, state, NULL, &step_max_medium);
+                        if ((step_max_medium > 0.) &&
+                            (step_max_type == PUMAS_STEP_APPROXIMATE))
                                 step_max_medium += 0.5 * STEP_MIN;
                 }
 
                 struct pumas_medium * new_medium = NULL;
                 if (step_transport(physics, context, state, straight, medium,
-                        locals, grammage_max, step_max_medium, &step_max_locals,
-                        &new_medium) != PUMAS_RETURN_SUCCESS)
+                        locals, grammage_max, step_max_medium, step_max_type,
+                        &step_max_locals, &new_medium) != PUMAS_RETURN_SUCCESS)
                         return context_->step_event;
                 step_index++;
 
@@ -4850,6 +4857,7 @@ target_found:
  * @param locals             Handle for the local properties of the medium.
  * @param grammage_max       The maximum grammage until a limit is reached.
  * @param step_max_medium    The stepping limitation from medium boundaries.
+ * @param step_max_type      The type of geometry step (approximate or exact).
  * @param step_max_locals    The stepping limitation from a non uniform medium.
  * @param out_index          The index of the end step medium or a negative
  *                           value if a boundary condition was reached.
@@ -4862,7 +4870,8 @@ target_found:
 enum pumas_return step_transport(const struct pumas_physics * physics,
     struct pumas_context * context, struct pumas_state * state, int straight,
     struct pumas_medium * medium, struct medium_locals * locals,
-    double grammage_max, double step_max_medium, double * step_max_locals,
+    double grammage_max, double step_max_medium,
+    enum pumas_step step_max_type, double * step_max_locals,
     struct pumas_medium ** out_medium)
 {
         /* Unpack the data. */
@@ -4992,50 +5001,63 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
         context->medium(context, state, &end_medium, NULL);
         double end_position[3] = { position[0], position[1], position[2] };
         if (end_medium != medium) {
-                /* Check for an exact boundary. */
-                const double step_min = (step < STEP_MIN) ? step : STEP_MIN;
-                double pi[3];
-                memcpy(pi, position, sizeof(pi));
-                double s1 = 0., s2 = -step_min;
-                position[0] = pi[0] + s2 * sgn * direction[0];
-                position[1] = pi[1] + s2 * sgn * direction[1];
-                position[2] = pi[2] + s2 * sgn * direction[2];
-                struct pumas_medium * tmp_medium = NULL;
-                context->medium(context, state, &tmp_medium, NULL);
-                if (tmp_medium != medium) {
-                        /* Locate the medium change by dichotomy. */
-                        if (tmp_medium != end_medium) end_medium = tmp_medium;
-                        s1 = s2;
-                        s2 = -step;
-                        while (fabs(s1 - s2) > STEP_MIN) {
-                                double s3 = 0.5 * (s1 + s2);
-                                position[0] = pi[0] + s3 * sgn * direction[0];
-                                position[1] = pi[1] + s3 * sgn * direction[1];
-                                position[2] = pi[2] + s3 * sgn * direction[2];
-                                tmp_medium = NULL;
-                                context->medium(
-                                    context, state, &tmp_medium, NULL);
-                                if (tmp_medium == medium) {
-                                        s2 = s3;
-                                } else {
-                                        s1 = s3;
-                                        /* Update the end medium if required. */
-                                        if (tmp_medium != end_medium)
-                                                end_medium = tmp_medium;
-                                }
-                        }
+                if (step_max_type == PUMAS_STEP_APPROXIMATE) {
+                        /* Check for an exact boundary. */
+                        const double step_min =
+                            (step < STEP_MIN) ? step : STEP_MIN;
+                        double pi[3];
+                        memcpy(pi, position, sizeof(pi));
+                        double s1 = 0., s2 = -step_min;
                         position[0] = pi[0] + s2 * sgn * direction[0];
                         position[1] = pi[1] + s2 * sgn * direction[1];
                         position[2] = pi[2] + s2 * sgn * direction[2];
-                        step += s1;
-                        end_position[0] = pi[0] + s1 * sgn * direction[0];
-                        end_position[1] = pi[1] + s1 * sgn * direction[1];
-                        end_position[2] = pi[2] + s1 * sgn * direction[2];
-
-                        /* Force the last medium call to occur at the final
-                         * position. */
-                        tmp_medium = NULL;
+                        struct pumas_medium * tmp_medium = NULL;
                         context->medium(context, state, &tmp_medium, NULL);
+                        if (tmp_medium != medium) {
+                                /* Locate the medium change by dichotomy. */
+                                if (tmp_medium != end_medium)
+                                        end_medium = tmp_medium;
+                                s1 = s2;
+                                s2 = -step;
+                                while (fabs(s1 - s2) > STEP_MIN) {
+                                        double s3 = 0.5 * (s1 + s2);
+                                        position[0] =
+                                            pi[0] + s3 * sgn * direction[0];
+                                        position[1] =
+                                            pi[1] + s3 * sgn * direction[1];
+                                        position[2] =
+                                            pi[2] + s3 * sgn * direction[2];
+                                        tmp_medium = NULL;
+                                        context->medium(
+                                            context, state, &tmp_medium, NULL);
+                                        if (tmp_medium == medium) {
+                                                s2 = s3;
+                                        } else {
+                                                s1 = s3;
+                                                /* Update the end medium if
+                                                 * required.
+                                                 */
+                                                if (tmp_medium != end_medium)
+                                                        end_medium = tmp_medium;
+                                        }
+                                }
+                                position[0] = pi[0] + s2 * sgn * direction[0];
+                                position[1] = pi[1] + s2 * sgn * direction[1];
+                                position[2] = pi[2] + s2 * sgn * direction[2];
+                                step += s1;
+                                end_position[0] =
+                                    pi[0] + s1 * sgn * direction[0];
+                                end_position[1] =
+                                    pi[1] + s1 * sgn * direction[1];
+                                end_position[2] =
+                                    pi[2] + s1 * sgn * direction[2];
+
+                                /* Force the last medium call to occur at the
+                                 * final position. */
+                                tmp_medium = NULL;
+                                context->medium(
+                                    context, state, &tmp_medium, NULL);
+                        }
                 }
                 event = PUMAS_EVENT_MEDIUM;
                 *out_medium = end_medium;
