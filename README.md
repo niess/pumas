@@ -1,4 +1,4 @@
-# PUMAS ![Build](https://github.com/niess/pumas/workflows/Build/badge.svg) [![codecov](https://codecov.io/gh/niess/pumas/branch/master/graph/badge.svg)](https://codecov.io/gh/niess/pumas)
+# PUMAS ![Build](https://github.com/niess/pumas/workflows/Build/badge.svg) [![codecov](https://codecov.io/gh/niess/pumas/branch/master/graph/badge.svg)](https://codecov.io/gh/niess/pumas) [![Documentation](https://github.com/niess/pumas/workflows/Documentation/badge.svg)](https://niess.github.io/pumas-docs)
 ( **S**emi **A**nalytical **MU**ons -or taus- **P**ropagation, *backwards* )
 
 ## Description
