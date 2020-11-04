@@ -20,7 +20,7 @@ endif ()
 
 option (PUMAS_BUILD_EXAMPLES "Build the pumas example binaries" OFF)
 
-if ("${CMAKE_SYSTEM}" MATCHES "Linux")
+if (UNIX)
         option (PUMAS_USE_GDB "Additional features for debugging with gdb" OFF)
 endif ()
 
