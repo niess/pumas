@@ -5070,7 +5070,8 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
                 Bi[1] = locals->api.magnet[1];
                 Bi[2] = locals->api.magnet[2];
         }
-        if (*step_max_locals > 0.) {
+        if ((*step_max_locals > 0.) && ((step_max_type != PUMAS_STEP_EXACT) ||
+            (event != PUMAS_EVENT_MEDIUM))) {
                 /* Update the locals. */
                 *step_max_locals = transport_set_locals(medium, state, locals);
                 if (locals->api.density <= 0.)
@@ -5220,10 +5221,11 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
                         step = dX_ * density_i;
                         h_int = dX_ / (state->grammage - Xi);
                 } else {
-                        const double drho = density - locals->api.density;
-                        const double tmp =
+                        const double drho = locals->api.density - density;
+                        double tmp =
                             density * density + 2. * dX_ * drho / sf0;
-                        h_int = (sqrt(tmp) - density) / drho;
+                        tmp = (tmp > FLT_EPSILON) ? sqrt(tmp) : 0;
+                        h_int = (tmp - density) / drho;
                         step *= h_int;
                 }
                 state->grammage = grammage_max;
