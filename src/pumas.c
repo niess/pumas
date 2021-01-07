@@ -157,6 +157,10 @@
  */
 #define M_PI 3.14159265358979323846
 #endif
+/**
+ * Avogadro's number
+ */
+#define AVOGADRO_NUMBER 6.02214076E+23
 
 /* Helper macros for managing errors. */
 #define ERROR_INITIALISE(caller)                                               \
@@ -599,7 +603,7 @@ struct pumas_physics {
  * Version tag for the shared data format. Increment whenever the
  * structure changes.
  */
-#define BINARY_DUMP_TAG 1
+#define BINARY_DUMP_TAG 2
 
         /** The total byte size of the shared data. */
         int size;
@@ -689,6 +693,12 @@ struct pumas_physics {
         struct composite_material ** composite;
         /** The material names. */
         char ** material_name;
+        /** The Bremsstrahlung DCS. */
+        pumas_dcs_t * dcs_bremsstrahlung;
+        /** The pair_creation DCS. */
+        pumas_dcs_t * dcs_pair_production;
+        /** The photonuclear DCS. */
+        pumas_dcs_t * dcs_photonuclear;
         /**
          * Placeholder for shared data storage with -double- memory alignment.
          */
@@ -756,8 +766,8 @@ static double dcs_pair_production(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double q);
 static double dcs_photonuclear(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double q);
-static inline double dcs_photonuclear_d2(const struct pumas_physics * physics,
-    double A, double K, double q, double Q2);
+static inline double dcs_photonuclear_d2(
+    double A, double ml, double K, double q, double Q2);
 static inline double dcs_photonuclear_f2_allm(double x, double Q2);
 static inline double dcs_photonuclear_f2a_drss(double x, double F2p, double A);
 static inline double dcs_photonuclear_r_whitlow(double x, double Q2);
@@ -774,6 +784,14 @@ static double dcs_evaluate(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double q);
 static void dcs_model_fit(int m, int n, const double * x, const double * y,
     const double * w, double * c);
+
+static double default_dcs_bremsstrahlung(
+    double Z, double A, double m, double K, double q);
+static double default_dcs_pair_production(
+    double Z, double A, double m, double K, double q);
+static double default_dcs_photonuclear(
+    double Z, double A, double m, double K, double q);
+
 /**
  * Implementations of polar angle distributions and accessor.
  */
@@ -1313,6 +1331,11 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
                 p += size_data[imem] / pad_size;
         }
 
+        /* Set the default DCS's. */
+        physics->dcs_bremsstrahlung = &default_dcs_bremsstrahlung;
+        physics->dcs_pair_production = &default_dcs_pair_production;
+        physics->dcs_photonuclear = &default_dcs_photonuclear;
+
         /* Copy the global settings. */
         physics->particle = particle;
         if (particle == PUMAS_PARTICLE_MUON) {
@@ -1463,6 +1486,10 @@ enum pumas_return pumas_physics_load(
         /* Load the data and remap the addresses. */
         if (fread(physics, size, 1, stream) != 1) goto error;
 
+        physics->dcs_bremsstrahlung = &default_dcs_bremsstrahlung;
+        physics->dcs_pair_production = &default_dcs_pair_production;
+        physics->dcs_photonuclear = &default_dcs_photonuclear;
+
         void ** ptr = (void **)(&(physics->mdf_path));
         ptrdiff_t delta = (char *)(physics->data) - (char *)(*ptr);
         int i;
@@ -1570,6 +1597,7 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_physics_composite_properties)
         TOSTRING(pumas_physics_print)
         TOSTRING(pumas_error_raise)
+        TOSTRING(pumas_physics_dcs_set)
         TOSTRING(pumas_physics_property_grammage)
         TOSTRING(pumas_physics_property_proper_time)
         TOSTRING(pumas_physics_property_magnetic_rotation)
@@ -1592,6 +1620,7 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_error_handler_set)
         TOSTRING(pumas_error_handler_get)
         TOSTRING(pumas_error_catch)
+        TOSTRING(pumas_physics_dcs_get)
         TOSTRING(pumas_physics_material_length)
         TOSTRING(pumas_physics_composite_length)
         TOSTRING(pumas_physics_table_length)
@@ -8934,23 +8963,21 @@ int dcs_get_index(dcs_function_t * dcs_func)
 }
 
 /**
- * The Bremsstrahlung differential cross section.
+ * The default Bremsstrahlung differential cross section.
  *
- * @param Physics Handle for physics tables.
- * @param element The target atomic element.
+ * @param Z       The charge number of the target atom.
+ * @param A       The mass number of the target atom.
+ * @param mu      The projectile rest mass, in GeV
  * @param K       The projectile initial kinetic energy.
  * @param q       The kinetic energy lost to the photon.
- * @return The differential cross section in m^2/kg.
+ * @return The corresponding value of the atomic DCS, in m^2 / GeV.
  *
- * The differential cross-section is computed following the PDG:
+ * The Bremsstrahlung differential cross-section is computed following the PDG:
  * http://pdg.lbl.gov/2014/AtomicNuclearProperties/adndt.pdf.
  */
-double dcs_bremsstrahlung(const struct pumas_physics * physics,
-    const struct atomic_element * element, double K, double q)
+double default_dcs_bremsstrahlung(
+    double Z, double A, double mu, double K, double q)
 {
-        const double Z = element->Z;
-        const double A = element->A;
-        const double mu = physics->mass;
         const double me = ELECTRON_MASS;
         const double sqrte = 1.648721271;
         const double phie_factor = mu / (me * me * sqrte);
@@ -8959,9 +8986,9 @@ double dcs_bremsstrahlung(const struct pumas_physics * physics,
         const double BZ_n = (Z == 1.) ? 202.4 : 182.7 * pow(Z, -1. / 3.);
         const double BZ_e = (Z == 1.) ? 446. : 1429. * pow(Z, -2. / 3.);
         const double D_n = 1.54 * pow(A, 0.27);
-        const double dcs_factor = 4.394466E+20 * rem * rem * Z / A;
-
         const double E = K + mu;
+        const double dcs_factor = 7.297182E-07 * rem * rem * Z / E;
+
         const double delta_factor = 0.5 * mu * mu / E;
         const double qe_max = E / (1. + 0.5 * mu * mu / (me * E));
 
@@ -8984,19 +9011,38 @@ double dcs_bremsstrahlung(const struct pumas_physics * physics,
 }
 
 /**
- * The Pair production differential cross section.
+ * Wrapper for the Bremsstrahlung differential cross section.
  *
  * @param Physics Handle for physics tables.
  * @param element The target atomic element.
  * @param K       The projectile initial kinetic energy.
- * @param q       The kinetic energy lost to the e+e- pair.
- * @return The differential cross section in m^2/kg
+ * @param q       The kinetic energy lost to the photon.
+ * @return The differential cross section in m^2/kg.
+ */
+double dcs_bremsstrahlung(const struct pumas_physics * physics,
+    const struct atomic_element * element, double K, double q)
+{
+        return physics->dcs_bremsstrahlung(element->Z, element->A,
+            physics->mass, K, q) * 1E+03 * AVOGADRO_NUMBER *
+            (physics->mass + K) / element->A;
+}
+
+
+/**
+ * The default Bremsstrahlung differential cross section.
+ *
+ * @param Z       The charge number of the target atom.
+ * @param A       The mass number of the target atom.
+ * @param mu      The projectile rest mass, in GeV
+ * @param K       The projectile initial kinetic energy.
+ * @param q       The kinetic energy lost to the photon.
+ * @return The corresponding value of the atomic DCS, in m^2 / GeV.
  *
  * The differential cross section is computed following R.P. Kokoulin's
  * formulae taken from the Geant4 Physics Reference Manual.
  */
-double dcs_pair_production(const struct pumas_physics * physics,
-    const struct atomic_element * element, double K, double q)
+double default_dcs_pair_production(
+    double Z, double A_, double mass, double K, double q)
 {
 /*
  * Coefficients for the Gaussian quadrature from:
@@ -9011,23 +9057,23 @@ double dcs_pair_production(const struct pumas_physics * physics,
         /*  Check the bounds of the energy transfer. */
         if (q <= 4. * ELECTRON_MASS) return 0.;
         const double sqrte = 1.6487212707;
-        const double Z13 = pow(element->Z, 1. / 3.);
-        if (q >= K + physics->mass * (1. - 0.75 * sqrte * Z13)) return 0.;
+        const double Z13 = pow(Z, 1. / 3.);
+        if (q >= K + mass * (1. - 0.75 * sqrte * Z13)) return 0.;
 
         /*  Precompute some constant factors for the integration. */
-        const double nu = q / (K + physics->mass);
-        const double r = physics->mass / ELECTRON_MASS;
+        const double nu = q / (K + mass);
+        const double r = mass / ELECTRON_MASS;
         const double beta = 0.5 * nu * nu / (1. - nu);
         const double xi_factor = 0.5 * r * r * beta;
-        const double A = (element->Z == 1.) ? 202.4 : 183.;
+        const double A = (Z == 1.) ? 202.4 : 183.;
         const double AZ13 = A / Z13;
         const double cL = 2. * sqrte * ELECTRON_MASS * AZ13;
         const double cLe = 2.25 * Z13 * Z13 / (r * r);
 
         /*  Compute the bound for the integral. */
-        const double gamma = 1. + K / physics->mass;
+        const double gamma = 1. + K / mass;
         const double x0 = 4. * ELECTRON_MASS / q;
-        const double x1 = 6. / (gamma * (gamma - q / physics->mass));
+        const double x1 = 6. / (gamma * (gamma - q / mass));
         const double argmin =
             (x0 + 2. * (1. - x0) * x1) / (1. + (1. - x1) * sqrt(1. - x0));
         if ((argmin >= 1.) || (argmin <= 0.)) return 0.;
@@ -9092,7 +9138,7 @@ double dcs_pair_production(const struct pumas_physics * physics,
                 zeta = 0.;
         else {
                 double gamma1, gamma2;
-                if (element->Z == 1.) {
+                if (Z == 1.) {
                         gamma1 = 4.4E-05;
                         gamma2 = 4.8E-05;
                 } else {
@@ -9111,11 +9157,29 @@ double dcs_pair_production(const struct pumas_physics * physics,
         }
 
         /* Gather the results and return the macroscopic DCS. */
-        const double dcs = 1.0807718E-07 * element->Z * (element->Z + zeta) *
-            (K + physics->mass - q) * I / (element->A * q);
+        const double E = K + mass;
+        const double dcs = 1.794664E-34 * Z * (Z + zeta) * (E - q) * I /
+            (q * E);
         return (dcs < 0.) ? 0. : dcs;
 
 #undef N_GQ
+}
+
+/**
+ * Wrapper for the pair production differential cross section.
+ *
+ * @param Physics Handle for physics tables.
+ * @param element The target atomic element.
+ * @param K       The projectile initial kinetic energy.
+ * @param q       The kinetic energy lost to the photon.
+ * @return The differential cross section in m^2/kg.
+ */
+double dcs_pair_production(const struct pumas_physics * physics,
+    const struct atomic_element * element, double K, double q)
+{
+        return physics->dcs_pair_production(element->Z, element->A,
+            physics->mass, K, q) * 1E+03 * AVOGADRO_NUMBER *
+            (physics->mass + K) / element->A;
 }
 
 /** ALLM97 parameterisation of the proton structure function, F2.
@@ -9224,7 +9288,7 @@ double dcs_photonuclear_r_whitlow(double x, double Q2)
 /** The doubly differential cross sections d^2S/(dq*dQ2) for photonuclear
  * interactions.
  *
- * @param Physics Handle for physics tables.
+ * @param ml      The projectile mass.
  * @param A       The target atomic weight.
  * @param K       The projectile initial kinetic energy.
  * @param q       The kinetic energy lost to the photon.
@@ -9234,11 +9298,9 @@ double dcs_photonuclear_r_whitlow(double x, double Q2)
  * References:
  *      Dutta et al., Phys.Rev. D63 (2001) 094020 [arXiv:hep-ph/0012350].
  */
-double dcs_photonuclear_d2(const struct pumas_physics * physics, double A,
-    double K, double q, double Q2)
+double dcs_photonuclear_d2(double A, double ml, double K, double q, double Q2)
 {
-        const double ml = physics->mass;
-        const double cf = 1.5676209E-08 / A;
+        const double cf = 2.603096E-35;
         const double M = 0.931494;
         const double E = K + ml;
 
@@ -9258,22 +9320,23 @@ double dcs_photonuclear_d2(const struct pumas_physics * physics, double A,
 }
 
 /**
- * The Photonuclear differential cross section.
+ * The default photonuclear differential cross section.
  *
- * @param Physics Handle for physics tables.
- * @param element The target atomic element.
+ * @param Z       The charge number of the target atom.
+ * @param A       The mass number of the target atom.
+ * @param mu      The projectile rest mass, in GeV
  * @param K       The projectile initial kinetic energy.
  * @param q       The kinetic energy lost to the photon.
- * @return The differential cross section in m^2/kg.
+ * @return The corresponding value of the atomic DCS, in m^2 / GeV.
  *
- * The differential cross-section is computed following DRSS, with ALLM97
- * parameterisation of the structure function F2.
+ * The photonuclear differential cross-section is computed following DRSS,
+ * with ALLM97 parameterisation of the structure function F2.
  *
  * References:
  *      Dutta et al., Phys.Rev. D63 (2001) 094020 [arXiv:hep-ph/0012350].
  */
-double dcs_photonuclear(const struct pumas_physics * physics,
-    const struct atomic_element * element, double K, double q)
+double default_dcs_photonuclear(
+    double Z, double A, double ml, double K, double q)
 {
 /*
  * Coefficients for the Gaussian quadrature from:
@@ -9289,11 +9352,6 @@ double dcs_photonuclear(const struct pumas_physics * physics,
                 0.3123470770400029, 0.3123470770400029, 0.2606106964029354,
                 0.2606106964029354 };
 
-        /* Unpack and check the kinematic. */
-        if (dcs_photonuclear_check(K, q)) return 0.;
-
-        const double A = element->A;
-        const double ml = physics->mass;
         const double M = 0.931494;
         const double mpi = 0.134977;
         const double E = K + ml;
@@ -9320,13 +9378,34 @@ double dcs_photonuclear(const struct pumas_physics * physics,
         int i;
         for (i = 0; i < N_GQ; i++) {
                 const double Q2 = exp(pQ2c + 0.5 * dpQ2 * xGQ[i]);
-                ds += dcs_photonuclear_d2(physics, A, K, q, Q2) * Q2 * wGQ[i];
+                ds += dcs_photonuclear_d2(A, ml, K, q, Q2) * Q2 * wGQ[i];
         }
 
         if (ds < 0.) ds = 0.;
-        return 0.5 * ds * dpQ2 * E;
+        return 0.5 * ds * dpQ2;
 
 #undef N_GQ
+}
+
+/**
+ * Wrapper for the photonuclear differential cross section.
+ *
+ * @param Physics Handle for physics tables.
+ * @param element The target atomic element.
+ * @param K       The projectile initial kinetic energy.
+ * @param q       The kinetic energy lost to the photon.
+ * @return The differential cross section in m^2/kg.
+ */
+double dcs_photonuclear(const struct pumas_physics * physics,
+    const struct atomic_element * element, double K, double q)
+{
+        if (dcs_photonuclear_check(K, q)) { /* Check the kinematic range. */
+                return 0.;
+        } else {
+                return physics->dcs_photonuclear(element->Z, element->A,
+                    physics->mass, K, q) * 1E+03 * AVOGADRO_NUMBER *
+                    (physics->mass + K) / element->A;
+        }
 }
 
 /**
@@ -10650,4 +10729,55 @@ void pumas_physics_tabulation_clear(const struct pumas_physics * physics,
                 e = prev;
         }
         data->elements = NULL;
+}
+
+
+/**
+ * Get the Differential Cross-Section (DCS) for a given process.
+ */
+pumas_dcs_t * pumas_physics_dcs_get(
+    const struct pumas_physics * physics, enum pumas_process process)
+{
+        if (physics == NULL) return NULL;
+
+        if (process == PUMAS_PROCESS_BREMSSTRAHLUNG) {
+                return physics->dcs_bremsstrahlung;
+        } else if (process == PUMAS_PROCESS_PAIR_PRODUCTION) {
+                return physics->dcs_pair_production;
+        } else if (process == PUMAS_PROCESS_PHOTONUCLEAR) {
+                return physics->dcs_photonuclear;
+        } else {
+                return NULL;
+        }
+}
+
+/**
+ * Set the Differential Cross-Section (DCS) for a given process.
+ */
+enum pumas_return pumas_physics_dcs_set(
+    struct pumas_physics * physics, enum pumas_process process,
+    pumas_dcs_t * dcs)
+{
+        ERROR_INITIALISE(pumas_physics_dcs_set);
+
+        if (physics == NULL) {
+                return ERROR_MESSAGE(PUMAS_RETURN_VALUE_ERROR,
+                    "`null' physics");
+        }
+
+        if (process == PUMAS_PROCESS_BREMSSTRAHLUNG) {
+                physics->dcs_bremsstrahlung = (dcs != NULL) ?
+                    dcs : &default_dcs_bremsstrahlung;
+        } else if (process == PUMAS_PROCESS_PAIR_PRODUCTION) {
+                physics->dcs_pair_production = (dcs != NULL) ?
+                    dcs : &default_dcs_pair_production;
+        } else if (process == PUMAS_PROCESS_PHOTONUCLEAR) {
+                physics->dcs_photonuclear = (dcs != NULL) ?
+                    dcs : &default_dcs_photonuclear;
+        } else {
+                return ERROR_FORMAT(PUMAS_RETURN_INDEX_ERROR,
+                    "invalid process index [%d]", process);
+        }
+
+        return PUMAS_RETURN_SUCCESS;
 }

@@ -135,6 +135,8 @@ START_TEST(test_api_error)
         CHECK_STRING(pumas_physics_composite_update);
         CHECK_STRING(pumas_physics_create);
         CHECK_STRING(pumas_physics_create_tabulation);
+        CHECK_STRING(pumas_physics_dcs_get);
+        CHECK_STRING(pumas_physics_dcs_set);
         CHECK_STRING(pumas_physics_destroy);
         CHECK_STRING(pumas_physics_dump);
         CHECK_STRING(pumas_physics_load);
@@ -1068,6 +1070,110 @@ START_TEST(test_api_print)
         fputs("\n===\n", stream);
         pumas_physics_print(physics, stream, "    ", "\n");
         fclose(stream);
+
+        /* Free the data */
+        pumas_physics_destroy(&physics);
+}
+END_TEST
+
+/* Test the dcs API */
+START_TEST(test_api_dcs)
+{
+        /* Test the initialisation error */
+        pumas_dcs_t * dcs = pumas_physics_dcs_get(
+            physics, PUMAS_PROCESS_BREMSSTRAHLUNG);
+        ck_assert_ptr_null(dcs);
+
+        reset_error();
+        pumas_physics_dcs_set(physics, PUMAS_PROCESS_BREMSSTRAHLUNG, dcs);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_VALUE_ERROR);
+
+        /* Load the muon data */
+        load_muon();
+
+        /* Test the getter */
+        reset_error();
+        dcs = pumas_physics_dcs_get(physics, -1);
+        ck_assert_ptr_null(dcs);
+
+        pumas_dcs_t * dcs_bs = pumas_physics_dcs_get(
+            physics, PUMAS_PROCESS_BREMSSTRAHLUNG);
+        ck_assert_ptr_nonnull(dcs_bs);
+
+        pumas_dcs_t * dcs_pp = pumas_physics_dcs_get(
+            physics, PUMAS_PROCESS_PAIR_PRODUCTION);
+        ck_assert_ptr_nonnull(dcs_pp);
+
+        pumas_dcs_t * dcs_pn = pumas_physics_dcs_get(
+            physics, PUMAS_PROCESS_PHOTONUCLEAR);
+        ck_assert_ptr_nonnull(dcs_pn);
+
+        /* Test the setter */
+        reset_error();
+        pumas_physics_dcs_set(physics, PUMAS_PROCESS_BREMSSTRAHLUNG, dcs_pp);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        dcs = pumas_physics_dcs_get(physics, PUMAS_PROCESS_BREMSSTRAHLUNG);
+        ck_assert_ptr_eq(dcs, dcs_pp);
+
+        reset_error();
+        pumas_physics_dcs_set(physics, PUMAS_PROCESS_BREMSSTRAHLUNG, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        dcs = pumas_physics_dcs_get(physics, PUMAS_PROCESS_BREMSSTRAHLUNG);
+        ck_assert_ptr_eq(dcs, dcs_bs);
+
+        reset_error();
+        pumas_physics_dcs_set(physics, PUMAS_PROCESS_PAIR_PRODUCTION, dcs_pn);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        dcs = pumas_physics_dcs_get(physics, PUMAS_PROCESS_PAIR_PRODUCTION);
+        ck_assert_ptr_eq(dcs, dcs_pn);
+
+        reset_error();
+        pumas_physics_dcs_set(physics, PUMAS_PROCESS_PAIR_PRODUCTION, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        dcs = pumas_physics_dcs_get(physics, PUMAS_PROCESS_PAIR_PRODUCTION);
+        ck_assert_ptr_eq(dcs, dcs_pp);
+
+        reset_error();
+        pumas_physics_dcs_set(physics, PUMAS_PROCESS_PHOTONUCLEAR, dcs_bs);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        dcs = pumas_physics_dcs_get(physics, PUMAS_PROCESS_PHOTONUCLEAR);
+        ck_assert_ptr_eq(dcs, dcs_bs);
+
+        reset_error();
+        pumas_physics_dcs_set(physics, PUMAS_PROCESS_PHOTONUCLEAR, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        dcs = pumas_physics_dcs_get(physics, PUMAS_PROCESS_PHOTONUCLEAR);
+        ck_assert_ptr_eq(dcs, dcs_pn);
+
+        /* Test some numerical values by comparing to fig. 4 of
+         * D.E. Groom, N.V. Mokhov, and S.I. Striganov,
+         * Atomic Data and Nuclear Data Tables 78, Number 2 (July 2001)
+         */
+        const double Z = 26;
+        const double A = 55.8452;
+        const double m = 0.10566;
+        const double NA = 6.02214076E+23;
+        const double k = 1E+04 * NA / A; /* m^2 to cm^2 / g */
+
+        double p = 10;
+        double E = sqrt(p * p + m * m);
+        double q = 0.1 * E;
+        ck_assert_double_eq_tol(
+            dcs_bs(Z, A, m, E - m, q) * E * k, 2.5E-05, 5E-06);
+        ck_assert_double_eq_tol(
+            dcs_pp(Z, A, m, E - m, q) * E * k, 1E-05, 5E-06);
+        ck_assert_double_eq_tol(
+            dcs_pn(Z, A, m, E - m, q) * E * k, 1E-05, 5E-06);
+
+        p = 10E+03;
+        E = sqrt(p * p + m * m);
+        q = 1E-03 * E;
+        ck_assert_double_eq_tol(
+            dcs_bs(Z, A, m, E - m, q) * E * k, 5E-03, 3E-03);
+        ck_assert_double_eq_tol(
+            dcs_pp(Z, A, m, E - m, q) * E * k, 0.5, 0.2);
+        ck_assert_double_eq_tol(
+            dcs_pn(Z, A, m, E - m, q) * E * k, 2E-03, 5E-04);
 
         /* Free the data */
         pumas_physics_destroy(&physics);
@@ -3833,7 +3939,7 @@ START_TEST(test_detailed_straight)
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_le(state->distance, d - d1);
                 ck_assert_double_le(state->grammage, X - X1);
-                ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
+                ck_assert_double_eq_tol(state->time / (t0 - t1), 1, 0.1);
                 ck_assert_double_eq_tol(
                     state->weight, exp(-state->time / ctau), FLT_EPSILON);
                 ck_assert_double_eq(state->position[0], 0.);
@@ -4588,6 +4694,7 @@ Suite * create_suite(void)
         tcase_add_test(tc_api, test_api_context);
         tcase_add_test(tc_api, test_api_recorder);
         tcase_add_test(tc_api, test_api_print);
+        tcase_add_test(tc_api, test_api_dcs);
 
         /* The no loss test case */
         TCase * tc_lossless = tcase_create("Lossless");

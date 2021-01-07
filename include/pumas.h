@@ -210,6 +210,16 @@ enum pumas_event {
         PUMAS_EVENT_STOP = 8192
 };
 
+/** Indices for customizable Physics processes. */
+enum pumas_process {
+        /** The Bremstrahlung process */
+        PUMAS_PROCESS_BREMSSTRAHLUNG = 0,
+        /** The e+e- pair production process */
+        PUMAS_PROCESS_PAIR_PRODUCTION,
+        /** The photonuclear process */
+        PUMAS_PROCESS_PHOTONUCLEAR
+};
+
 /**
  * Container for a Monte-Carlo state.
  */
@@ -265,7 +275,7 @@ struct pumas_medium;
  * different media even though they have the same material base.
  *
  */
-typedef double(pumas_locals_cb)(struct pumas_medium * medium,
+typedef double pumas_locals_cb (struct pumas_medium * medium,
     struct pumas_state * state, struct pumas_locals * locals);
 
 /**
@@ -318,7 +328,7 @@ struct pumas_context;
  * **Note** : by default the recorder uses an in-memory copy with dynamic
  * allocation. Setting a custom recorder disables the default recording.
  */
-typedef void pumas_recorder_cb(struct pumas_context * context,
+typedef void pumas_recorder_cb (struct pumas_context * context,
     struct pumas_state * state, struct pumas_medium * medium,
     enum pumas_event event);
 
@@ -390,7 +400,7 @@ enum pumas_step {
  * **Warning** : it is an error to return zero or less for any state if the
  * extension is finite.
  */
-typedef enum pumas_step pumas_medium_cb(
+typedef enum pumas_step pumas_medium_cb (
     struct pumas_context * context, struct pumas_state * state,
     struct pumas_medium ** medium, double * step);
 
@@ -400,7 +410,7 @@ typedef enum pumas_step pumas_medium_cb(
  * This is a generic function pointer used to identify the library functions,
  * e.g. for error handling.
  */
-typedef void pumas_function_t(void);
+typedef void pumas_function_t (void);
 
 /**
  * Callback for error handling.
@@ -412,7 +422,7 @@ typedef void pumas_function_t(void);
  * The user can provide its own error handler. It will be called at the
  * return of any PUMAS library function providing an error code.
  */
-typedef void pumas_handler_cb(enum pumas_return rc, pumas_function_t * caller,
+typedef void pumas_handler_cb (enum pumas_return rc, pumas_function_t * caller,
     const char * message);
 
 /**
@@ -428,7 +438,7 @@ typedef void pumas_handler_cb(enum pumas_return rc, pumas_function_t * caller,
  * callback is thread safe, e.g. by using independant streams for each context
  * or a locking mechanism in order to share a single random stream.
  */
-typedef double(pumas_random_cb)(struct pumas_context * context);
+typedef double pumas_random_cb (struct pumas_context * context);
 
 /**
  * A handle for a simulation stream.
@@ -514,6 +524,24 @@ struct pumas_context {
  * Opaque handle for Physics tables
  */
 struct pumas_physics;
+
+/**
+ * Prototype for a Differential Cross-Section (DCS).
+ *
+ * @param Z       The charge number of the target atom.
+ * @param A       The mass number of the target atom.
+ * @param m       The projectile rest mass, in GeV
+ * @param K       The projectile kinetic energy, in GeV.
+ * @param q       The projectile energy loss, in GeV.
+ * @return The corresponding value of the atomic DCS, in m^2 / GeV.
+ *
+ * The `pumas_physics_dcs_get` function returns the current (default) DCS.
+ * The `pumas_physics_dcs_set` functions allows to provide an alternative one.
+ *
+ * **Note** : only the Bremsstrahlung, pair creation and photonuclear processes
+ * can be redefined.
+ */
+typedef double pumas_dcs_t (double Z, double A, double m, double K, double q);
 
 /**
  * Initialise the Physics.
@@ -1277,7 +1305,7 @@ PUMAS_API void pumas_recorder_destroy(struct pumas_recorder ** recorder);
  *
  * The provided callback must conform to the `malloc` semantic and behaviour.
  */
-typedef void * pumas_allocate_cb(size_t size);
+typedef void * pumas_allocate_cb (size_t size);
 
 /**
  * Set the memory allocation function for the PUMAS library.
@@ -1303,7 +1331,7 @@ PUMAS_API void pumas_memory_allocator(pumas_allocate_cb * allocator);
  *
  * The provided callback must conform to the `realloc` semantic and behaviour.
  */
-typedef void * pumas_reallocate_cb(void * ptr, size_t size);
+typedef void * pumas_reallocate_cb (void * ptr, size_t size);
 
 /**
  * Set the memory re-allocation function for the PUMAS library.
@@ -1327,7 +1355,7 @@ PUMAS_API void pumas_memory_reallocator(pumas_reallocate_cb * reallocator);
  *
  * The provided callback must conform to the `free` semantic and behaviour.
  */
-typedef void pumas_deallocate_cb(void * ptr);
+typedef void pumas_deallocate_cb (void * ptr);
 
 /**
  * Set the memory deallocation function for the PUMAS library.
@@ -1537,6 +1565,46 @@ PUMAS_API void pumas_physics_tabulation_clear(
 PUMAS_API enum pumas_return pumas_physics_create_tabulation(
     struct pumas_physics ** physics, enum pumas_particle particle,
     const char * mdf_path);
+
+/**
+ * Get the Differential Cross-Section (DCS) for a given process.
+ *
+ * @param physics      Handle for the Physics tables.
+ * @param process      The Physics process.
+ * @return On success the DCS function is returned otherwise `NULL` is
+ * returned.
+ *
+ * __Warnings__
+ *
+ * This function is **not** thread safe.
+ */
+PUMAS_API pumas_dcs_t * pumas_physics_dcs_get(
+    const struct pumas_physics * physics, enum pumas_process process);
+/**
+ * Set the Differential Cross-Section (DCS) for a given process.
+ *
+ * @param physics      Handle for the Physics tables.
+ * @param process      The Physics process.
+ * @param dcs          The user supplied DCS or `NULL`.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
+ *
+ * **Note** : suppling a `NULL` dcs pointer reset the corresponding process to
+ * its default.
+ *
+ * __Warnings__
+ *
+ * This function is **not** thread safe.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INDEX_ERROR             The process index is not valid.
+ *
+ *     PUMAS_RETURN_VALUE_ERROR             The supplied physics is `NULL`.
+ */
+PUMAS_API enum pumas_return pumas_physics_dcs_set(
+    struct pumas_physics * physics, enum pumas_process process,
+    pumas_dcs_t * dcs);
 
 #ifdef __cplusplus
 }
