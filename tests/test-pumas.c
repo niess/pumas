@@ -541,32 +541,32 @@ START_TEST(test_api_property)
 
         reset_error();
         pumas_physics_property_energy_loss(
-            physics, PUMAS_SCHEME_HYBRID, 3, 0., &value);
+            physics, PUMAS_MODE_HYBRID, 3, 0., &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
         pumas_physics_property_energy_loss(
-            physics, PUMAS_SCHEME_DETAILED, 0, 0., &value);
+            physics, PUMAS_MODE_DETAILED, 0, 0., &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
         pumas_physics_property_grammage(
-            physics, PUMAS_SCHEME_HYBRID, 3, 0., &value);
+            physics, PUMAS_MODE_HYBRID, 3, 0., &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
         pumas_physics_property_grammage(
-            physics, PUMAS_SCHEME_DETAILED, 0, 0., &value);
+            physics, PUMAS_MODE_DETAILED, 0, 0., &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
         pumas_physics_property_kinetic_energy(
-            physics, PUMAS_SCHEME_HYBRID, 3, 0., &value);
+            physics, PUMAS_MODE_HYBRID, 3, 0., &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
         pumas_physics_property_kinetic_energy(
-            physics, PUMAS_SCHEME_DETAILED, 0, 0., &value);
+            physics, PUMAS_MODE_DETAILED, 0, 0., &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
@@ -575,12 +575,12 @@ START_TEST(test_api_property)
 
         reset_error();
         pumas_physics_property_proper_time(
-            physics, PUMAS_SCHEME_HYBRID, 3, 0., &value);
+            physics, PUMAS_MODE_HYBRID, 3, 0., &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
         pumas_physics_property_proper_time(
-            physics, PUMAS_SCHEME_DETAILED, 0, 0., &value);
+            physics, PUMAS_MODE_DETAILED, 0, 0., &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
@@ -604,47 +604,47 @@ START_TEST(test_api_property)
         ck_assert_double_lt(1. / (value * TEST_ROCK_DENSITY), 1E+03);
 
         pumas_physics_property_energy_loss(
-            physics, PUMAS_SCHEME_CSDA, 0, 1E+00, &value);
+            physics, PUMAS_MODE_CSDA, 0, 1E+00, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq(value, 1.808E-04);
 
         pumas_physics_property_energy_loss(
-            physics, PUMAS_SCHEME_CSDA, 0, 1E+03, &value);
+            physics, PUMAS_MODE_CSDA, 0, 1E+03, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq(value, 6.604E-04);
 
         pumas_physics_property_energy_loss(
-            physics, PUMAS_SCHEME_HYBRID, 0, 1E+03, &value);
+            physics, PUMAS_MODE_HYBRID, 0, 1E+03, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_lt(value, 6.604E-04);
 
         pumas_physics_property_grammage(
-            physics, PUMAS_SCHEME_CSDA, 0, 1E+00, &value);
+            physics, PUMAS_MODE_CSDA, 0, 1E+00, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq_tol(value, 5.534E+03, 1.);
 
         pumas_physics_property_grammage(
-            physics, PUMAS_SCHEME_CSDA, 0, 1E+03, &value);
+            physics, PUMAS_MODE_CSDA, 0, 1E+03, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq_tol(value, 2.455E+06, 1E+03);
 
         pumas_physics_property_grammage(
-            physics, PUMAS_SCHEME_HYBRID, 0, 1E+03, &value);
+            physics, PUMAS_MODE_HYBRID, 0, 1E+03, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_gt(value, 2.455E+06);
 
         pumas_physics_property_kinetic_energy(
-            physics, PUMAS_SCHEME_CSDA, 0, 5.534E+03, &value);
+            physics, PUMAS_MODE_CSDA, 0, 5.534E+03, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq_tol(value, 1E+00, 1E-03);
 
         pumas_physics_property_kinetic_energy(
-            physics, PUMAS_SCHEME_CSDA, 0, 2.455E+06, &value);
+            physics, PUMAS_MODE_CSDA, 0, 2.455E+06, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq_tol(value, 1E+03, 1.);
 
         pumas_physics_property_kinetic_energy(
-            physics, PUMAS_SCHEME_HYBRID, 0, 2.455E+06, &value);
+            physics, PUMAS_MODE_HYBRID, 0, 2.455E+06, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_lt(value, 1E+03);
 
@@ -654,12 +654,12 @@ START_TEST(test_api_property)
         ck_assert_double_gt(value, 5.534E+03 / 3.3374);
 
         pumas_physics_property_proper_time(
-            physics, PUMAS_SCHEME_CSDA, 0, 1E+00, &value);
+            physics, PUMAS_MODE_CSDA, 0, 1E+00, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_lt(value, 5.534E+03);
 
         pumas_physics_property_proper_time(
-            physics, PUMAS_SCHEME_CSDA, 0, 1E-02, &value);
+            physics, PUMAS_MODE_CSDA, 0, 1E-02, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_gt(value, 8.498);
 
@@ -672,26 +672,26 @@ START_TEST(test_api_property)
         /* Check overflows */
         double vmax;
         pumas_physics_property_energy_loss(
-            physics, PUMAS_SCHEME_CSDA, 0, 1E+08, &value);
+            physics, PUMAS_MODE_CSDA, 0, 1E+08, &value);
         pumas_physics_table_value(physics, PUMAS_PROPERTY_ENERGY_LOSS,
-            PUMAS_SCHEME_CSDA, 0, 145, &vmax);
+            PUMAS_MODE_CSDA, 0, 145, &vmax);
         ck_assert_double_gt(value, vmax);
 
         pumas_physics_property_grammage(
-            physics, PUMAS_SCHEME_CSDA, 0, 1E+08, &value);
+            physics, PUMAS_MODE_CSDA, 0, 1E+08, &value);
         pumas_physics_table_value(
-            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_SCHEME_CSDA, 0, 145, &vmax);
+            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_MODE_CSDA, 0, 145, &vmax);
         ck_assert_double_gt(value, vmax);
 
         pumas_physics_property_proper_time(
-            physics, PUMAS_SCHEME_CSDA, 0, 1E+08, &value);
+            physics, PUMAS_MODE_CSDA, 0, 1E+08, &value);
         pumas_physics_table_value(physics, PUMAS_PROPERTY_PROPER_TIME,
-            PUMAS_SCHEME_CSDA, 0, 145, &vmax);
+            PUMAS_MODE_CSDA, 0, 145, &vmax);
         ck_assert_double_gt(value, vmax);
 
         pumas_physics_property_cross_section(physics, 0, 1E+08, &value);
         pumas_physics_table_value(physics, PUMAS_PROPERTY_CROSS_SECTION,
-            PUMAS_SCHEME_HYBRID, 0, 145, &vmax);
+            PUMAS_MODE_HYBRID, 0, 145, &vmax);
         ck_assert_double_eq(value, vmax);
 
         /* Unload the data */
@@ -733,22 +733,22 @@ START_TEST(test_api_table)
 
         reset_error();
         pumas_physics_table_index(physics, PUMAS_PROPERTY_GRAMMAGE,
-            PUMAS_SCHEME_DETAILED, 0, 0., &index);
+            PUMAS_MODE_DETAILED, 0, 0., &index);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
         pumas_physics_table_index(
-            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_SCHEME_CSDA, 3, 0., &index);
+            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_MODE_CSDA, 3, 0., &index);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
         pumas_physics_table_index(physics, PUMAS_PROPERTY_GRAMMAGE,
-            PUMAS_SCHEME_CSDA, 0, 1E+18, &index);
+            PUMAS_MODE_CSDA, 0, 1E+18, &index);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_VALUE_ERROR);
 
         reset_error();
         pumas_physics_table_index(physics, PUMAS_PROPERTY_GRAMMAGE,
-            PUMAS_SCHEME_CSDA, 0, -1., &index);
+            PUMAS_MODE_CSDA, 0, -1., &index);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_VALUE_ERROR);
 
         reset_error();
@@ -757,84 +757,84 @@ START_TEST(test_api_table)
 
         reset_error();
         pumas_physics_table_value(physics, PUMAS_PROPERTY_GRAMMAGE,
-            PUMAS_SCHEME_DETAILED, 0, 0, &value);
+            PUMAS_MODE_DETAILED, 0, 0, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
         pumas_physics_table_value(
-            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_SCHEME_CSDA, 3, 0, &value);
+            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_MODE_CSDA, 3, 0, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
         pumas_physics_table_value(physics, PUMAS_PROPERTY_GRAMMAGE,
-            PUMAS_SCHEME_CSDA, 0, 200, &value);
+            PUMAS_MODE_CSDA, 0, 200, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
         pumas_physics_table_value(
-            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_SCHEME_CSDA, 0, -1, &value);
+            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_MODE_CSDA, 0, -1, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         /* Check some values */
         reset_error();
 
         pumas_physics_table_index(physics, PUMAS_PROPERTY_KINETIC_ENERGY,
-            PUMAS_SCHEME_CSDA, 0, 0., &index);
+            PUMAS_MODE_CSDA, 0, 0., &index);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(index, 0);
 
         pumas_physics_table_index(physics, PUMAS_PROPERTY_KINETIC_ENERGY,
-            PUMAS_SCHEME_CSDA, 0, 1E+00, &index);
+            PUMAS_MODE_CSDA, 0, 1E+00, &index);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(index, 49);
 
         pumas_physics_table_index(physics, PUMAS_PROPERTY_KINETIC_ENERGY,
-            PUMAS_SCHEME_CSDA, 0, 1E+06, &index);
+            PUMAS_MODE_CSDA, 0, 1E+06, &index);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(index, 145);
 
         pumas_physics_table_value(physics, PUMAS_PROPERTY_KINETIC_ENERGY,
-            PUMAS_SCHEME_CSDA, 0, 0, &value);
+            PUMAS_MODE_CSDA, 0, 0, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq(value, 0.);
 
         pumas_physics_table_value(physics, PUMAS_PROPERTY_KINETIC_ENERGY,
-            PUMAS_SCHEME_CSDA, 0, 49, &value);
+            PUMAS_MODE_CSDA, 0, 49, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq(value, 1E+00);
 
         pumas_physics_table_index(
-            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_SCHEME_CSDA, 0, 0., &index);
+            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_MODE_CSDA, 0, 0., &index);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(index, 0);
 
         pumas_physics_table_index(physics, PUMAS_PROPERTY_GRAMMAGE,
-            PUMAS_SCHEME_CSDA, 0, 5.534E+03, &index);
+            PUMAS_MODE_CSDA, 0, 5.534E+03, &index);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(index, 49);
 
         pumas_physics_table_value(
-            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_SCHEME_CSDA, 0, 0, &value);
+            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_MODE_CSDA, 0, 0, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq(value, 0.);
 
         pumas_physics_table_value(
-            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_SCHEME_CSDA, 0, 49, &value);
+            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_MODE_CSDA, 0, 49, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq_tol(value, 5.534E+03, 1.);
 
         pumas_physics_table_value(physics, PUMAS_PROPERTY_GRAMMAGE,
-            PUMAS_SCHEME_HYBRID, 0, 49, &value);
+            PUMAS_MODE_HYBRID, 0, 49, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_gt(value, 5.534E+03);
 
         pumas_physics_table_value(physics, PUMAS_PROPERTY_ENERGY_LOSS,
-            PUMAS_SCHEME_CSDA, 0, 0, &value);
+            PUMAS_MODE_CSDA, 0, 0, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq(value, 0.);
 
         pumas_physics_table_value(physics, PUMAS_PROPERTY_CROSS_SECTION,
-            PUMAS_SCHEME_HYBRID, 0, 0, &value);
+            PUMAS_MODE_HYBRID, 0, 0, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq(value, 0.);
 
@@ -850,22 +850,22 @@ START_TEST(test_api_table)
         ck_assert_int_eq(index, 49);
 
         pumas_physics_table_value(physics, PUMAS_PROPERTY_PROPER_TIME,
-            PUMAS_SCHEME_CSDA, 0, 49, &value);
+            PUMAS_MODE_CSDA, 0, 49, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_lt(value, 5.534E+03);
 
         pumas_physics_table_index(physics, PUMAS_PROPERTY_PROPER_TIME,
-            PUMAS_SCHEME_CSDA, 0, value, &index);
+            PUMAS_MODE_CSDA, 0, value, &index);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(index, 49);
 
         pumas_physics_table_value(physics, PUMAS_PROPERTY_PROPER_TIME,
-            PUMAS_SCHEME_CSDA, 0, 17, &value);
+            PUMAS_MODE_CSDA, 0, 17, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_gt(value, 8.498);
 
         pumas_physics_table_index(physics, PUMAS_PROPERTY_PROPER_TIME,
-            PUMAS_SCHEME_CSDA, 0, value, &index);
+            PUMAS_MODE_CSDA, 0, value, &index);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(index, 17);
 
@@ -946,16 +946,16 @@ START_TEST(test_api_context)
         ck_assert_ptr_null(context->medium);
         ck_assert_ptr_null(context->random);
         ck_assert_ptr_null(context->recorder);
-        ck_assert_int_eq(context->longitudinal, 0);
-        ck_assert_int_eq(context->forward, 1);
-        ck_assert_int_eq(context->scheme, PUMAS_SCHEME_DETAILED);
-        ck_assert_int_eq(context->decay, PUMAS_DECAY_WEIGHT);
+        ck_assert_int_eq(context->mode.scattering, PUMAS_MODE_FULL_SPACE);
+        ck_assert_int_eq(context->mode.direction, PUMAS_MODE_FORWARD);
+        ck_assert_int_eq(context->mode.energy_loss, PUMAS_MODE_DETAILED);
+        ck_assert_int_eq(context->mode.decay, PUMAS_MODE_WEIGHT);
         ck_assert_int_eq(context->event, PUMAS_EVENT_NONE);
 
-        ck_assert_double_eq(context->kinetic_limit, 0.);
-        ck_assert_double_eq(context->distance_max, 0.);
-        ck_assert_double_eq(context->grammage_max, 0.);
-        ck_assert_double_eq(context->time_max, 0.);
+        ck_assert_double_eq(context->limit.kinetic, 0.);
+        ck_assert_double_eq(context->limit.distance, 0.);
+        ck_assert_double_eq(context->limit.grammage, 0.);
+        ck_assert_double_eq(context->limit.time, 0.);
 
         /* Test the context destruction */
         pumas_context_destroy(&context);
@@ -975,16 +975,16 @@ START_TEST(test_api_context)
         ck_assert_ptr_null(context->medium);
         ck_assert_ptr_null(context->random);
         ck_assert_ptr_null(context->recorder);
-        ck_assert_int_eq(context->longitudinal, 0);
-        ck_assert_int_eq(context->forward, 1);
-        ck_assert_int_eq(context->scheme, PUMAS_SCHEME_DETAILED);
-        ck_assert_int_eq(context->decay, PUMAS_DECAY_PROCESS);
+        ck_assert_int_eq(context->mode.scattering, PUMAS_MODE_FULL_SPACE);
+        ck_assert_int_eq(context->mode.direction, PUMAS_MODE_FORWARD);
+        ck_assert_int_eq(context->mode.energy_loss, PUMAS_MODE_DETAILED);
+        ck_assert_int_eq(context->mode.decay, PUMAS_MODE_DECAY);
         ck_assert_int_eq(context->event, PUMAS_EVENT_NONE);
 
-        ck_assert_double_eq(context->kinetic_limit, 0.);
-        ck_assert_double_eq(context->distance_max, 0.);
-        ck_assert_double_eq(context->grammage_max, 0.);
-        ck_assert_double_eq(context->time_max, 0.);
+        ck_assert_double_eq(context->limit.kinetic, 0.);
+        ck_assert_double_eq(context->limit.distance, 0.);
+        ck_assert_double_eq(context->limit.grammage, 0.);
+        ck_assert_double_eq(context->limit.time, 0.);
 
         /* Free the data */
         pumas_context_destroy(&context);
@@ -1176,7 +1176,9 @@ static enum pumas_step geometry_medium(struct pumas_context * context,
                 } else if (z < TEST_MAX_ALTITUDE) {
                         if (medium_ptr != NULL) *medium_ptr = media + 1;
 
-                        const double sgn = context->forward ? 1. : -1.;
+                        const double sgn =
+                            (context->mode.direction == PUMAS_MODE_FORWARD) ?
+                            1. : -1.;
                         const double uz = state->direction[2] * sgn;
                         if (fabs(uz) < 1E-03) {
                                 if (step_ptr != NULL) *step_ptr = 1E+03;
@@ -1205,8 +1207,8 @@ static void lossless_setup(void)
         geometry.uniform = 1;
         pumas_context_create(&context, physics, 0);
         context->medium = &geometry_medium;
-        context->longitudinal = 1;
-        context->scheme = PUMAS_SCHEME_NO_LOSS;
+        context->mode.scattering = PUMAS_MODE_LONGITUDINAL;
+        context->mode.energy_loss = PUMAS_MODE_VIRTUAL;
 }
 
 static void lossless_teardown(void)
@@ -1250,15 +1252,16 @@ START_TEST(test_lossless_straight)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_MISSING_LIMIT);
 
         for (forward = 0; forward < 2; forward++) {
-                context->forward = forward;
+                context->mode.direction =
+                    forward ? PUMAS_MODE_FORWARD : PUMAS_MODE_BACKWARD;
                 const double sgn = forward ? 1. : -1.;
 
                 /* Check the forward distance limit */
                 context->event = PUMAS_EVENT_LIMIT_DISTANCE;
-                context->distance_max = 1E+03;
+                context->limit.distance = 1E+03;
 
                 double k = 1.;
-                double d = context->distance_max;
+                double d = context->limit.distance;
                 double X = d * TEST_ROCK_DENSITY;
                 double gamma = k / mu + 1.;
                 double t = d / sqrt(gamma * gamma - 1.);
@@ -1300,13 +1303,13 @@ START_TEST(test_lossless_straight)
                                 ck_assert_ptr_eq(media[0], media[1]);
                         }
                 }
-                context->distance_max = 0.;
+                context->limit.distance = 0.;
 
                 /* Check the forward grammage limit */
                 context->event = PUMAS_EVENT_LIMIT_GRAMMAGE;
-                context->grammage_max = 1E+03;
+                context->limit.grammage = 1E+03;
 
-                X = context->grammage_max;
+                X = context->limit.grammage;
                 d = X / TEST_ROCK_DENSITY;
                 t = d / sqrt(gamma * gamma - 1.);
                 for (i = 0; i < 2; i++) {
@@ -1350,9 +1353,9 @@ START_TEST(test_lossless_straight)
 
                 /* Check the forward time limit */
                 context->event = PUMAS_EVENT_LIMIT_TIME;
-                context->time_max = 1E+03;
+                context->limit.time = 1E+03;
 
-                t = context->time_max;
+                t = context->limit.time;
                 d = t * sqrt(gamma * gamma - 1.);
                 X = d * TEST_ROCK_DENSITY;
                 for (i = 0; i < 2; i++) {
@@ -1400,7 +1403,7 @@ END_TEST
 START_TEST(test_lossless_magnet)
 {
         geometry.magnet[1] = 0.1;
-        context->distance_max = 1E+03;
+        context->limit.distance = 1E+03;
         context->event = PUMAS_EVENT_LIMIT_DISTANCE;
 
         double ctau, mu;
@@ -1413,7 +1416,7 @@ START_TEST(test_lossless_magnet)
         const double k = 1E+00;
         const double gamma = k / mu + 1.;
         const double bg = sqrt(gamma * gamma - 1.);
-        const double d = context->distance_max;
+        const double d = context->limit.distance;
         const double rL = mu * bg / (geometry.magnet[1] * 0.299792458);
         const double X = d * TEST_ROCK_DENSITY;
         const double t = d / bg;
@@ -1446,7 +1449,7 @@ START_TEST(test_lossless_magnet)
 
         /* Erase the magnetic field and restore the context */
         geometry.magnet[1] = 0.;
-        context->distance_max = 0.;
+        context->limit.distance = 0.;
         context->event = PUMAS_EVENT_NONE;
 }
 END_TEST
@@ -1489,10 +1492,10 @@ START_TEST(test_lossless_geometry)
                 initialise_state();
                 state->kinetic = 1E+03;
                 if (i) {
-                        context->forward = 0;
+                        context->mode.direction = PUMAS_MODE_BACKWARD;
                         state->direction[2] = -1.;
                 } else {
-                        context->forward = 1;
+                        context->mode.direction = PUMAS_MODE_FORWARD;
                 }
 
                 reset_error();
@@ -1560,7 +1563,7 @@ START_TEST(test_lossless_geometry)
         context->recorder = NULL;
         geometry.uniform = 1;
         context->event = PUMAS_EVENT_NONE;
-        context->forward = 1;
+        context->mode.direction = PUMAS_MODE_FORWARD;
 }
 END_TEST
 
@@ -1572,8 +1575,8 @@ static void csda_setup(void)
         geometry.uniform = 1;
         pumas_context_create(&context, physics, 0);
         context->medium = &geometry_medium;
-        context->longitudinal = 1;
-        context->scheme = PUMAS_SCHEME_CSDA;
+        context->mode.scattering = PUMAS_MODE_LONGITUDINAL;
+        context->mode.energy_loss = PUMAS_MODE_CSDA;
 }
 
 static void csda_teardown(void)
@@ -1624,13 +1627,13 @@ START_TEST(test_csda_straight)
         context->medium = &geometry_medium;
 
         context->random = NULL;
-        context->decay = PUMAS_DECAY_PROCESS;
+        context->mode.decay = PUMAS_MODE_DECAY;
         reset_error();
         initialise_state();
         pumas_context_transport(context, state, NULL, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_MISSING_RANDOM);
         context->random = &uniform01;
-        context->decay = PUMAS_DECAY_WEIGHT;
+        context->mode.decay = PUMAS_MODE_WEIGHT;
 
         /* Check the forward full path transport */
         double X, d, t0;
@@ -1643,9 +1646,9 @@ START_TEST(test_csda_straight)
                 initialise_state();
                 state->kinetic = 1.;
                 pumas_physics_property_grammage(
-                    physics, PUMAS_SCHEME_CSDA, 0, state->kinetic, &X);
+                    physics, PUMAS_MODE_CSDA, 0, state->kinetic, &X);
                 pumas_physics_property_proper_time(
-                    physics, PUMAS_SCHEME_CSDA, 0, state->kinetic, &t0);
+                    physics, PUMAS_MODE_CSDA, 0, state->kinetic, &t0);
                 t0 /= TEST_ROCK_DENSITY;
                 d = X / TEST_ROCK_DENSITY;
                 pumas_context_transport(context, state, event, media);
@@ -1682,7 +1685,7 @@ START_TEST(test_csda_straight)
                 else
                         event = &event_data, media = media_data;
 
-                context->kinetic_limit = 0.5;
+                context->limit.kinetic = 0.5;
                 reset_error();
                 initialise_state();
                 state->kinetic = 1.;
@@ -1698,8 +1701,8 @@ START_TEST(test_csda_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
 
-                context->kinetic_limit = 0.;
-                context->distance_max = 0.5 * d;
+                context->limit.kinetic = 0.;
+                context->limit.distance = 0.5 * d;
                 reset_error();
                 initialise_state();
                 state->kinetic = 1.;
@@ -1715,8 +1718,8 @@ START_TEST(test_csda_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
 
-                context->distance_max = 0.;
-                context->grammage_max = 0.5 * X;
+                context->limit.distance = 0.;
+                context->limit.grammage = 0.5 * X;
                 reset_error();
                 initialise_state();
                 state->kinetic = 1.;
@@ -1732,15 +1735,15 @@ START_TEST(test_csda_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
 
-                context->grammage_max = 0.;
-                context->time_max = 0.5 * t0;
+                context->limit.grammage = 0.;
+                context->limit.time = 0.5 * t0;
                 reset_error();
                 initialise_state();
                 state->kinetic = 1.;
                 pumas_context_transport(context, state, event, media);
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_eq(state->kinetic, 0.);
-                context->time_max = 0.;
+                context->limit.time = 0.;
                 if (i == 0) {
                         ck_assert_ptr_null(event);
                         ck_assert_ptr_null(media);
@@ -1753,12 +1756,12 @@ START_TEST(test_csda_straight)
 
         /* Check the forward kinetic limit */
         double X1, d1, t1;
-        context->kinetic_limit = 0.5;
+        context->limit.kinetic = 0.5;
         context->event = PUMAS_EVENT_LIMIT_KINETIC;
         pumas_physics_property_grammage(
-            physics, PUMAS_SCHEME_CSDA, 0, context->kinetic_limit, &X1);
+            physics, PUMAS_MODE_CSDA, 0, context->limit.kinetic, &X1);
         pumas_physics_property_proper_time(
-            physics, PUMAS_SCHEME_CSDA, 0, context->kinetic_limit, &t1);
+            physics, PUMAS_MODE_CSDA, 0, context->limit.kinetic, &t1);
         t1 /= TEST_ROCK_DENSITY;
         d1 = X1 / TEST_ROCK_DENSITY;
 
@@ -1773,7 +1776,7 @@ START_TEST(test_csda_straight)
                 state->kinetic = 1.;
                 pumas_context_transport(context, state, event, media);
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-                ck_assert_double_eq(state->kinetic, context->kinetic_limit);
+                ck_assert_double_eq(state->kinetic, context->limit.kinetic);
                 ck_assert_double_eq(state->distance, d - d1);
                 ck_assert_double_eq(state->grammage, X - X1);
                 ck_assert_double_eq_tol(state->time, t0 - t1, FLT_EPSILON);
@@ -1796,13 +1799,13 @@ START_TEST(test_csda_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->kinetic_limit = 0.;
+        context->limit.kinetic = 0.;
 
         /* Check the forward grammage limit */
         double k1;
         X1 = 0.5 * X;
         d1 = X1 / TEST_ROCK_DENSITY;
-        context->grammage_max = X1;
+        context->limit.grammage = X1;
         context->event = PUMAS_EVENT_LIMIT_GRAMMAGE;
 
         for (i = 0; i < 2; i++) {
@@ -1817,7 +1820,7 @@ START_TEST(test_csda_straight)
                 pumas_context_transport(context, state, event, media);
                 k1 = state->kinetic;
                 pumas_physics_property_proper_time(
-                    physics, PUMAS_SCHEME_CSDA, 0, k1, &t1);
+                    physics, PUMAS_MODE_CSDA, 0, k1, &t1);
                 t1 /= TEST_ROCK_DENSITY;
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_eq(state->distance, d - d1);
@@ -1842,12 +1845,12 @@ START_TEST(test_csda_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->grammage_max = 0.;
+        context->limit.grammage = 0.;
 
         /* Check the forward distance limit */
         d1 = 0.5 * d;
         X1 = d1 * TEST_ROCK_DENSITY;
-        context->distance_max = d1;
+        context->limit.distance = d1;
         context->event = PUMAS_EVENT_LIMIT_DISTANCE;
 
         for (i = 0; i < 2; i++) {
@@ -1862,7 +1865,7 @@ START_TEST(test_csda_straight)
                 pumas_context_transport(context, state, event, media);
                 k1 = state->kinetic;
                 pumas_physics_property_proper_time(
-                    physics, PUMAS_SCHEME_CSDA, 0, k1, &t1);
+                    physics, PUMAS_MODE_CSDA, 0, k1, &t1);
                 t1 /= TEST_ROCK_DENSITY;
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_eq(state->distance, d - d1);
@@ -1887,11 +1890,11 @@ START_TEST(test_csda_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->distance_max = 0.;
+        context->limit.distance = 0.;
 
         /* Check the forward time limit */
         t1 = 0.5 * t0;
-        context->time_max = t1;
+        context->limit.time = t1;
         context->event = PUMAS_EVENT_LIMIT_TIME;
 
         for (i = 0; i < 2; i++) {
@@ -1906,7 +1909,7 @@ START_TEST(test_csda_straight)
                 pumas_context_transport(context, state, event, media);
                 k1 = state->kinetic;
                 pumas_physics_property_grammage(
-                    physics, PUMAS_SCHEME_CSDA, 0, k1, &X1);
+                    physics, PUMAS_MODE_CSDA, 0, k1, &X1);
                 d1 = X1 / TEST_ROCK_DENSITY;
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_eq(state->distance, d - d1);
@@ -1931,24 +1934,24 @@ START_TEST(test_csda_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->time_max = 0.;
+        context->limit.time = 0.;
 
         /* Check the backward transport with a kinetic limit */
-        context->forward = 0;
-        context->kinetic_limit = 1.;
+        context->mode.direction = PUMAS_MODE_BACKWARD;
+        context->limit.kinetic = 1.;
         context->event = PUMAS_EVENT_LIMIT_KINETIC;
         k1 = 0.5;
-        pumas_physics_property_grammage(physics, PUMAS_SCHEME_CSDA, 0, k1, &X1);
+        pumas_physics_property_grammage(physics, PUMAS_MODE_CSDA, 0, k1, &X1);
         pumas_physics_property_proper_time(
-            physics, PUMAS_SCHEME_CSDA, 0, k1, &t1);
+            physics, PUMAS_MODE_CSDA, 0, k1, &t1);
         t1 /= TEST_ROCK_DENSITY;
         d1 = X1 / TEST_ROCK_DENSITY;
 
         double de0, de1;
         pumas_physics_property_energy_loss(
-            physics, PUMAS_SCHEME_CSDA, 0, context->kinetic_limit, &de0);
+            physics, PUMAS_MODE_CSDA, 0, context->limit.kinetic, &de0);
         pumas_physics_property_energy_loss(
-            physics, PUMAS_SCHEME_CSDA, 0, k1, &de1);
+            physics, PUMAS_MODE_CSDA, 0, k1, &de1);
         double w = exp(-(t0 - t1) / ctau) * de0 / de1;
 
         for (i = 0; i < 2; i++) {
@@ -1963,7 +1966,7 @@ START_TEST(test_csda_straight)
                 pumas_context_transport(context, state, event, media);
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_eq(state->charge, -1.);
-                ck_assert_double_eq(state->kinetic, context->kinetic_limit);
+                ck_assert_double_eq(state->kinetic, context->limit.kinetic);
                 ck_assert_double_eq(state->distance, d - d1);
                 ck_assert_double_eq(state->grammage, X - X1);
                 ck_assert_double_eq_tol(state->time, t0 - t1, FLT_EPSILON);
@@ -1985,13 +1988,13 @@ START_TEST(test_csda_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->kinetic_limit = 0.;
+        context->limit.kinetic = 0.;
 
         /* Check the backward transport with a grammage limit */
-        context->grammage_max = X - X1;
-        context->kinetic_limit = 0.75;          /* Not activated  */
-        context->distance_max = 0.5 * (d - d1); /* Not activated  */
-        context->time_max = 0.5 * (t0 - t1);    /* Not activated  */
+        context->limit.grammage = X - X1;
+        context->limit.kinetic = 0.75;          /* Not activated  */
+        context->limit.distance = 0.5 * (d - d1); /* Not activated  */
+        context->limit.time = 0.5 * (t0 - t1);    /* Not activated  */
         context->event = PUMAS_EVENT_LIMIT_GRAMMAGE;
 
         for (i = 0; i < 2; i++) {
@@ -2028,11 +2031,11 @@ START_TEST(test_csda_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->grammage_max = 0.;
+        context->limit.grammage = 0.;
 
         /* Check the backward transport with a distance limit */
-        context->distance_max = d - d1;
-        context->grammage_max = 0.5 * (X - X1); /* Not activated  */
+        context->limit.distance = d - d1;
+        context->limit.grammage = 0.5 * (X - X1); /* Not activated  */
         context->event = PUMAS_EVENT_LIMIT_DISTANCE;
 
         for (i = 0; i < 2; i++) {
@@ -2069,11 +2072,11 @@ START_TEST(test_csda_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->grammage_max = 0.;
+        context->limit.grammage = 0.;
 
         /* Check the backward transport with a time limit */
-        context->time_max = t0 - t1;
-        context->distance_max = 0.5 * (d - d1); /* Not activated  */
+        context->limit.time = t0 - t1;
+        context->limit.distance = 0.5 * (d - d1); /* Not activated  */
         context->event = PUMAS_EVENT_LIMIT_TIME;
 
         for (i = 0; i < 2; i++) {
@@ -2111,11 +2114,11 @@ START_TEST(test_csda_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->grammage_max = 0.;
-        context->time_max = 0.5 * (t0 - t1); /* Not activated */
+        context->limit.grammage = 0.;
+        context->limit.time = 0.5 * (t0 - t1); /* Not activated */
 
         /* Check the case of an initial kinetic limit violation */
-        context->kinetic_limit = 0.5;
+        context->limit.kinetic = 0.5;
         context->event = PUMAS_EVENT_LIMIT_KINETIC;
 
         for (i = 0; i < 2; i++) {
@@ -2141,8 +2144,8 @@ START_TEST(test_csda_straight)
                 }
         }
 
-        context->forward = 1;
-        context->kinetic_limit = 1;
+        context->mode.direction = PUMAS_MODE_FORWARD;
+        context->limit.kinetic = 1;
 
         for (i = 0; i < 2; i++) {
                 if (i == 0)
@@ -2166,11 +2169,11 @@ START_TEST(test_csda_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->forward = 0;
-        context->kinetic_limit = 0.;
+        context->mode.direction = PUMAS_MODE_BACKWARD;
+        context->limit.kinetic = 0.;
 
         /* Check the case of an initial grammage limit violation */
-        context->grammage_max = 0.5 * X;
+        context->limit.grammage = 0.5 * X;
         context->event = PUMAS_EVENT_LIMIT_GRAMMAGE;
 
         for (i = 0; i < 2; i++) {
@@ -2198,7 +2201,7 @@ START_TEST(test_csda_straight)
                 }
         }
 
-        context->forward = 1;
+        context->mode.direction = PUMAS_MODE_FORWARD;
         for (i = 0; i < 2; i++) {
                 if (i == 0)
                         event = NULL, media = NULL;
@@ -2223,11 +2226,11 @@ START_TEST(test_csda_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->forward = 0;
-        context->grammage_max = 0.;
+        context->mode.direction = PUMAS_MODE_BACKWARD;
+        context->limit.grammage = 0.;
 
         /* Check the case of an initial distance limit violation */
-        context->distance_max = 0.5 * d;
+        context->limit.distance = 0.5 * d;
         context->event = PUMAS_EVENT_LIMIT_DISTANCE;
 
         for (i = 0; i < 2; i++) {
@@ -2255,7 +2258,7 @@ START_TEST(test_csda_straight)
                 }
         }
 
-        context->forward = 1;
+        context->mode.direction = PUMAS_MODE_FORWARD;
         for (i = 0; i < 2; i++) {
                 if (i == 0)
                         event = NULL, media = NULL;
@@ -2280,11 +2283,11 @@ START_TEST(test_csda_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->forward = 0;
-        context->distance_max = 0.;
+        context->mode.direction = PUMAS_MODE_BACKWARD;
+        context->limit.distance = 0.;
 
         /* Check the case of an initial time limit violation */
-        context->time_max = 0.5 * t0;
+        context->limit.time = 0.5 * t0;
         context->event = PUMAS_EVENT_LIMIT_TIME;
 
         for (i = 0; i < 2; i++) {
@@ -2312,7 +2315,7 @@ START_TEST(test_csda_straight)
                 }
         }
 
-        context->forward = 1;
+        context->mode.direction = PUMAS_MODE_FORWARD;
         for (i = 0; i < 2; i++) {
                 if (i == 0)
                         event = NULL, media = NULL;
@@ -2337,11 +2340,11 @@ START_TEST(test_csda_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->time_max = 0.;
+        context->limit.time = 0.;
         context->event = PUMAS_EVENT_NONE;
 
         /* Check the overflow case */
-        context->forward = 1;
+        context->mode.direction = PUMAS_MODE_FORWARD;
         for (i = 0; i < 2; i++) {
                 if (i == 0)
                         event = NULL, media = NULL;
@@ -2352,9 +2355,9 @@ START_TEST(test_csda_straight)
                 initialise_state();
                 state->kinetic = 1E+08;
                 pumas_physics_property_grammage(
-                    physics, PUMAS_SCHEME_CSDA, 0, state->kinetic, &X);
+                    physics, PUMAS_MODE_CSDA, 0, state->kinetic, &X);
                 pumas_physics_property_proper_time(
-                    physics, PUMAS_SCHEME_CSDA, 0, state->kinetic, &t0);
+                    physics, PUMAS_MODE_CSDA, 0, state->kinetic, &t0);
                 t0 /= TEST_ROCK_DENSITY;
                 d = X / TEST_ROCK_DENSITY;
                 pumas_context_transport(context, state, event, media);
@@ -2404,9 +2407,9 @@ START_TEST(test_csda_record)
 
         double X, d, t0;
         pumas_physics_property_grammage(
-            physics, PUMAS_SCHEME_CSDA, 0, state->kinetic, &X);
+            physics, PUMAS_MODE_CSDA, 0, state->kinetic, &X);
         pumas_physics_property_proper_time(
-            physics, PUMAS_SCHEME_CSDA, 0, state->kinetic, &t0);
+            physics, PUMAS_MODE_CSDA, 0, state->kinetic, &t0);
         t0 /= TEST_ROCK_DENSITY;
         d = X / TEST_ROCK_DENSITY;
         pumas_context_transport(context, state, NULL, NULL);
@@ -2468,7 +2471,7 @@ START_TEST(test_csda_magnet)
 
         double X, d, phi0, phi1, phi, *u = state->direction;
         pumas_physics_property_grammage(
-            physics, PUMAS_SCHEME_CSDA, 0, state->kinetic, &X);
+            physics, PUMAS_MODE_CSDA, 0, state->kinetic, &X);
         d = X / TEST_ROCK_DENSITY;
         pumas_physics_property_magnetic_rotation(
             physics, 0, state->kinetic, &phi0);
@@ -2528,10 +2531,10 @@ START_TEST(test_csda_geometry)
                 initialise_state();
                 state->kinetic = 1E+03;
                 if (i) {
-                        context->forward = 0;
+                        context->mode.direction = PUMAS_MODE_BACKWARD;
                         state->direction[2] = -1.;
                 } else {
-                        context->forward = 1;
+                        context->mode.direction = PUMAS_MODE_FORWARD;
                 }
 
                 reset_error();
@@ -2599,7 +2602,7 @@ START_TEST(test_csda_geometry)
         context->recorder = NULL;
         geometry.uniform = 1;
         context->event = PUMAS_EVENT_NONE;
-        context->forward = 1;
+        context->mode.direction = PUMAS_MODE_FORWARD;
 }
 END_TEST
 
@@ -2611,8 +2614,8 @@ static void hybrid_setup(void)
         geometry.uniform = 1;
         pumas_context_create(&context, physics, 0);
         context->medium = &geometry_medium;
-        context->longitudinal = 1;
-        context->scheme = PUMAS_SCHEME_HYBRID;
+        context->mode.scattering = PUMAS_MODE_LONGITUDINAL;
+        context->mode.energy_loss = PUMAS_MODE_HYBRID;
         context->random = &uniform01;
 }
 
@@ -2655,9 +2658,9 @@ START_TEST(test_hybrid_straight)
                         initialise_state();
                         state->kinetic = (ik == 0) ? 1E+08 : 1E+03;
                         pumas_physics_property_grammage(physics,
-                            PUMAS_SCHEME_HYBRID, 0, state->kinetic, &X);
+                            PUMAS_MODE_HYBRID, 0, state->kinetic, &X);
                         pumas_physics_property_proper_time(physics,
-                            PUMAS_SCHEME_HYBRID, 0, state->kinetic, &t0);
+                            PUMAS_MODE_HYBRID, 0, state->kinetic, &t0);
                         t0 /= TEST_ROCK_DENSITY;
                         d = X / TEST_ROCK_DENSITY;
                         pumas_context_transport(context, state, event, media);
@@ -2698,7 +2701,7 @@ START_TEST(test_hybrid_straight)
                 else
                         event = &event_data, media = media_data;
 
-                context->kinetic_limit = 0.5E+03;
+                context->limit.kinetic = 0.5E+03;
                 reset_error();
                 initialise_state();
                 state->kinetic = 1E+03;
@@ -2714,8 +2717,8 @@ START_TEST(test_hybrid_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
 
-                context->kinetic_limit = 0.;
-                context->distance_max = 0.5 * d;
+                context->limit.kinetic = 0.;
+                context->limit.distance = 0.5 * d;
                 reset_error();
                 initialise_state();
                 state->kinetic = 1.;
@@ -2731,8 +2734,8 @@ START_TEST(test_hybrid_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
 
-                context->distance_max = 0.;
-                context->grammage_max = 0.5 * X;
+                context->limit.distance = 0.;
+                context->limit.grammage = 0.5 * X;
                 reset_error();
                 initialise_state();
                 state->kinetic = 1.;
@@ -2748,15 +2751,15 @@ START_TEST(test_hybrid_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
 
-                context->grammage_max = 0.;
-                context->time_max = 0.5 * t0;
+                context->limit.grammage = 0.;
+                context->limit.time = 0.5 * t0;
                 reset_error();
                 initialise_state();
                 state->kinetic = 1.;
                 pumas_context_transport(context, state, event, media);
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_eq(state->kinetic, 0.);
-                context->time_max = 0.;
+                context->limit.time = 0.;
                 if (i == 0) {
                         ck_assert_ptr_null(event);
                         ck_assert_ptr_null(media);
@@ -2769,12 +2772,12 @@ START_TEST(test_hybrid_straight)
 
         /* Check the forward kinetic limit */
         double X1, d1, t1;
-        context->kinetic_limit = 0.5E+03;
+        context->limit.kinetic = 0.5E+03;
         context->event = PUMAS_EVENT_LIMIT_KINETIC;
         pumas_physics_property_grammage(
-            physics, PUMAS_SCHEME_HYBRID, 0, context->kinetic_limit, &X1);
+            physics, PUMAS_MODE_HYBRID, 0, context->limit.kinetic, &X1);
         pumas_physics_property_proper_time(
-            physics, PUMAS_SCHEME_HYBRID, 0, context->kinetic_limit, &t1);
+            physics, PUMAS_MODE_HYBRID, 0, context->limit.kinetic, &t1);
         t1 /= TEST_ROCK_DENSITY;
         d1 = X1 / TEST_ROCK_DENSITY;
 
@@ -2789,7 +2792,7 @@ START_TEST(test_hybrid_straight)
                 state->kinetic = 1E+03;
                 pumas_context_transport(context, state, event, media);
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-                ck_assert_double_le(state->kinetic, context->kinetic_limit);
+                ck_assert_double_le(state->kinetic, context->limit.kinetic);
                 ck_assert_double_le(state->distance, d - d1);
                 ck_assert_double_le(state->grammage, X - X1);
                 ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
@@ -2812,13 +2815,13 @@ START_TEST(test_hybrid_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->kinetic_limit = 0.;
+        context->limit.kinetic = 0.;
 
         /* Check the forward grammage limit */
         double k1;
         X1 = 1E-02 * X;
         d1 = X1 / TEST_ROCK_DENSITY;
-        context->grammage_max = X1;
+        context->limit.grammage = X1;
         context->event = PUMAS_EVENT_LIMIT_GRAMMAGE;
 
         for (i = 0; i < 2; i++) {
@@ -2833,7 +2836,7 @@ START_TEST(test_hybrid_straight)
                 pumas_context_transport(context, state, event, media);
                 k1 = state->kinetic;
                 pumas_physics_property_proper_time(
-                    physics, PUMAS_SCHEME_HYBRID, 0, k1, &t1);
+                    physics, PUMAS_MODE_HYBRID, 0, k1, &t1);
                 t1 /= TEST_ROCK_DENSITY;
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_le(state->distance, d - d1);
@@ -2858,12 +2861,12 @@ START_TEST(test_hybrid_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->grammage_max = 0.;
+        context->limit.grammage = 0.;
 
         /* Check the forward distance limit */
         d1 = 1E-02 * d;
         X1 = d1 * TEST_ROCK_DENSITY;
-        context->distance_max = d1;
+        context->limit.distance = d1;
         context->event = PUMAS_EVENT_LIMIT_DISTANCE;
 
         for (i = 0; i < 2; i++) {
@@ -2878,7 +2881,7 @@ START_TEST(test_hybrid_straight)
                 pumas_context_transport(context, state, event, media);
                 k1 = state->kinetic;
                 pumas_physics_property_proper_time(
-                    physics, PUMAS_SCHEME_HYBRID, 0, k1, &t1);
+                    physics, PUMAS_MODE_HYBRID, 0, k1, &t1);
                 t1 /= TEST_ROCK_DENSITY;
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_le(state->distance, d - d1);
@@ -2903,11 +2906,11 @@ START_TEST(test_hybrid_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->distance_max = 0.;
+        context->limit.distance = 0.;
 
         /* Check the forward time limit */
         t1 = 1E-02 * t0;
-        context->time_max = t1;
+        context->limit.time = t1;
         context->event = PUMAS_EVENT_LIMIT_TIME;
 
         for (i = 0; i < 2; i++) {
@@ -2922,7 +2925,7 @@ START_TEST(test_hybrid_straight)
                 pumas_context_transport(context, state, event, media);
                 k1 = state->kinetic;
                 pumas_physics_property_grammage(
-                    physics, PUMAS_SCHEME_HYBRID, 0, k1, &X1);
+                    physics, PUMAS_MODE_HYBRID, 0, k1, &X1);
                 d1 = X1 / TEST_ROCK_DENSITY;
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_le(state->distance, d - d1);
@@ -2947,17 +2950,17 @@ START_TEST(test_hybrid_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->time_max = 0.;
+        context->limit.time = 0.;
 
         /* Check the backward transport with a kinetic limit */
-        context->forward = 0;
-        context->kinetic_limit = 1E+03;
+        context->mode.direction = PUMAS_MODE_BACKWARD;
+        context->limit.kinetic = 1E+03;
         context->event = PUMAS_EVENT_LIMIT_KINETIC;
-        k1 = 0.5 * context->kinetic_limit;
+        k1 = 0.5 * context->limit.kinetic;
         pumas_physics_property_grammage(
-            physics, PUMAS_SCHEME_HYBRID, 0, k1, &X1);
+            physics, PUMAS_MODE_HYBRID, 0, k1, &X1);
         pumas_physics_property_proper_time(
-            physics, PUMAS_SCHEME_HYBRID, 0, k1, &t1);
+            physics, PUMAS_MODE_HYBRID, 0, k1, &t1);
         t1 /= TEST_ROCK_DENSITY;
         d1 = X1 / TEST_ROCK_DENSITY;
 
@@ -2973,7 +2976,7 @@ START_TEST(test_hybrid_straight)
                 pumas_context_transport(context, state, event, media);
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_eq(state->charge, -1.);
-                ck_assert_double_ge(state->kinetic, context->kinetic_limit);
+                ck_assert_double_ge(state->kinetic, context->limit.kinetic);
                 ck_assert_double_le(state->distance, d - d1);
                 ck_assert_double_le(state->grammage, X - X1);
                 ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
@@ -2995,13 +2998,13 @@ START_TEST(test_hybrid_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->kinetic_limit = 0.;
+        context->limit.kinetic = 0.;
 
         /* Check the backward transport with a grammage limit */
-        context->grammage_max = X - X1;
-        context->kinetic_limit = 0.75E+03;      /* Not activated  */
-        context->distance_max = 0.5 * (d - d1); /* Not activated  */
-        context->time_max = 0.5 * (t0 - t1);    /* Not activated  */
+        context->limit.grammage = X - X1;
+        context->limit.kinetic = 0.75E+03;      /* Not activated  */
+        context->limit.distance = 0.5 * (d - d1); /* Not activated  */
+        context->limit.time = 0.5 * (t0 - t1);    /* Not activated  */
         context->event = PUMAS_EVENT_LIMIT_GRAMMAGE;
 
         for (i = 0; i < 2; i++) {
@@ -3038,11 +3041,11 @@ START_TEST(test_hybrid_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->grammage_max = 0.;
+        context->limit.grammage = 0.;
 
         /* Check the backward transport with a distance limit */
-        context->distance_max = d - d1;
-        context->grammage_max = 0.5 * (X - X1); /* Not activated  */
+        context->limit.distance = d - d1;
+        context->limit.grammage = 0.5 * (X - X1); /* Not activated  */
         context->event = PUMAS_EVENT_LIMIT_DISTANCE;
 
         for (i = 0; i < 2; i++) {
@@ -3079,11 +3082,11 @@ START_TEST(test_hybrid_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->grammage_max = 0.;
+        context->limit.grammage = 0.;
 
         /* Check the backward transport with a time limit */
-        context->time_max = t0 - t1;
-        context->distance_max = 0.5 * (d - d1); /* Not activated  */
+        context->limit.time = t0 - t1;
+        context->limit.distance = 0.5 * (d - d1); /* Not activated  */
         context->event = PUMAS_EVENT_LIMIT_TIME;
 
         for (i = 0; i < 2; i++) {
@@ -3117,11 +3120,11 @@ START_TEST(test_hybrid_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->grammage_max = 0.;
-        context->time_max = 0.5 * (t0 - t1); /* Not activated */
+        context->limit.grammage = 0.;
+        context->limit.time = 0.5 * (t0 - t1); /* Not activated */
 
         /* Check the case of an initial kinetic limit violation */
-        context->kinetic_limit = 0.5E+03;
+        context->limit.kinetic = 0.5E+03;
         context->event = PUMAS_EVENT_LIMIT_KINETIC;
 
         for (i = 0; i < 2; i++) {
@@ -3147,8 +3150,8 @@ START_TEST(test_hybrid_straight)
                 }
         }
 
-        context->forward = 1;
-        context->kinetic_limit = 1E+03;
+        context->mode.direction = PUMAS_MODE_FORWARD;
+        context->limit.kinetic = 1E+03;
 
         for (i = 0; i < 2; i++) {
                 if (i == 0)
@@ -3172,11 +3175,11 @@ START_TEST(test_hybrid_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->forward = 0;
-        context->kinetic_limit = 0.;
+        context->mode.direction = PUMAS_MODE_BACKWARD;
+        context->limit.kinetic = 0.;
 
         /* Check the case of an initial grammage limit violation */
-        context->grammage_max = 0.5 * X;
+        context->limit.grammage = 0.5 * X;
         context->event = PUMAS_EVENT_LIMIT_GRAMMAGE;
 
         for (i = 0; i < 2; i++) {
@@ -3204,7 +3207,7 @@ START_TEST(test_hybrid_straight)
                 }
         }
 
-        context->forward = 1;
+        context->mode.direction = PUMAS_MODE_FORWARD;
         for (i = 0; i < 2; i++) {
                 if (i == 0)
                         event = NULL, media = NULL;
@@ -3229,11 +3232,11 @@ START_TEST(test_hybrid_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->forward = 0;
-        context->grammage_max = 0.;
+        context->mode.direction = PUMAS_MODE_BACKWARD;
+        context->limit.grammage = 0.;
 
         /* Check the case of an initial distance limit violation */
-        context->distance_max = 0.5 * d;
+        context->limit.distance = 0.5 * d;
         context->event = PUMAS_EVENT_LIMIT_DISTANCE;
 
         for (i = 0; i < 2; i++) {
@@ -3261,7 +3264,7 @@ START_TEST(test_hybrid_straight)
                 }
         }
 
-        context->forward = 1;
+        context->mode.direction = PUMAS_MODE_FORWARD;
         for (i = 0; i < 2; i++) {
                 if (i == 0)
                         event = NULL, media = NULL;
@@ -3286,11 +3289,11 @@ START_TEST(test_hybrid_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->forward = 0;
-        context->distance_max = 0.;
+        context->mode.direction = PUMAS_MODE_BACKWARD;
+        context->limit.distance = 0.;
 
         /* Check the case of an initial time limit violation */
-        context->time_max = 0.5 * t0;
+        context->limit.time = 0.5 * t0;
         context->event = PUMAS_EVENT_LIMIT_TIME;
 
         for (i = 0; i < 2; i++) {
@@ -3318,7 +3321,7 @@ START_TEST(test_hybrid_straight)
                 }
         }
 
-        context->forward = 1;
+        context->mode.direction = PUMAS_MODE_FORWARD;
         for (i = 0; i < 2; i++) {
                 if (i == 0)
                         event = NULL, media = NULL;
@@ -3344,15 +3347,15 @@ START_TEST(test_hybrid_straight)
                 }
         }
 
-        context->forward = 1;
-        context->time_max = 0.;
+        context->mode.direction = PUMAS_MODE_FORWARD;
+        context->limit.time = 0.;
         context->event = PUMAS_EVENT_NONE;
 }
 END_TEST
 
 START_TEST(test_hybrid_scattering)
 {
-        context->longitudinal = 0;
+        context->mode.scattering = PUMAS_MODE_FULL_SPACE;
 
         double ctau;
         pumas_physics_particle(physics, NULL, &ctau, NULL);
@@ -3365,9 +3368,9 @@ START_TEST(test_hybrid_scattering)
         state->kinetic = 1E+03;
 
         pumas_physics_property_grammage(
-            physics, PUMAS_SCHEME_HYBRID, 0, state->kinetic, &X);
+            physics, PUMAS_MODE_HYBRID, 0, state->kinetic, &X);
         pumas_physics_property_proper_time(
-            physics, PUMAS_SCHEME_HYBRID, 0, state->kinetic, &t0);
+            physics, PUMAS_MODE_HYBRID, 0, state->kinetic, &t0);
         t0 /= TEST_ROCK_DENSITY;
         d = X / TEST_ROCK_DENSITY;
 
@@ -3387,16 +3390,16 @@ START_TEST(test_hybrid_scattering)
         ck_assert_double_eq_tol(norm2, 1., FLT_EPSILON);
 
         /* Check the backward transport with scattering */
-        context->forward = 0;
-        context->kinetic_limit = 1E+03;
+        context->mode.direction = PUMAS_MODE_BACKWARD;
+        context->limit.kinetic = 1E+03;
         context->event = PUMAS_EVENT_LIMIT_KINETIC;
 
         double k1, X1, d1, t1;
-        k1 = 0.5 * context->kinetic_limit;
+        k1 = 0.5 * context->limit.kinetic;
         pumas_physics_property_grammage(
-            physics, PUMAS_SCHEME_HYBRID, 0, k1, &X1);
+            physics, PUMAS_MODE_HYBRID, 0, k1, &X1);
         pumas_physics_property_proper_time(
-            physics, PUMAS_SCHEME_HYBRID, 0, k1, &t1);
+            physics, PUMAS_MODE_HYBRID, 0, k1, &t1);
         t1 /= TEST_ROCK_DENSITY;
         d1 = X1 / TEST_ROCK_DENSITY;
 
@@ -3406,7 +3409,7 @@ START_TEST(test_hybrid_scattering)
         pumas_context_transport(context, state, NULL, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq(state->charge, -1.);
-        ck_assert_double_ge(state->kinetic, context->kinetic_limit);
+        ck_assert_double_ge(state->kinetic, context->limit.kinetic);
         ck_assert_double_le(state->distance, d - d1 + FLT_EPSILON);
         ck_assert_double_le(state->grammage, X - X1 + FLT_EPSILON);
         ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
@@ -3418,9 +3421,9 @@ START_TEST(test_hybrid_scattering)
 
         /* Restore the context status */
         context->event = PUMAS_EVENT_NONE;
-        context->kinetic_limit = 0.;
-        context->forward = 1;
-        context->longitudinal = 1;
+        context->limit.kinetic = 0.;
+        context->mode.direction = PUMAS_MODE_FORWARD;
+        context->mode.scattering = PUMAS_MODE_LONGITUDINAL;
 }
 END_TEST
 
@@ -3442,9 +3445,9 @@ START_TEST(test_hybrid_record)
 
         double X, d, t0;
         pumas_physics_property_grammage(
-            physics, PUMAS_SCHEME_HYBRID, 0, state->kinetic, &X);
+            physics, PUMAS_MODE_HYBRID, 0, state->kinetic, &X);
         pumas_physics_property_proper_time(
-            physics, PUMAS_SCHEME_HYBRID, 0, state->kinetic, &t0);
+            physics, PUMAS_MODE_HYBRID, 0, state->kinetic, &t0);
         t0 /= TEST_ROCK_DENSITY;
         d = X / TEST_ROCK_DENSITY;
         pumas_context_transport(context, state, NULL, NULL);
@@ -3507,7 +3510,7 @@ START_TEST(test_hybrid_magnet)
 
         double X, d, phi0, phi1, phi, *u = state->direction;
         pumas_physics_property_grammage(
-            physics, PUMAS_SCHEME_HYBRID, 0, state->kinetic, &X);
+            physics, PUMAS_MODE_HYBRID, 0, state->kinetic, &X);
         d = X / TEST_ROCK_DENSITY;
         pumas_physics_property_magnetic_rotation(
             physics, 0, state->kinetic, &phi0);
@@ -3531,7 +3534,7 @@ START_TEST(test_hybrid_magnet)
         state->kinetic = 1E+03;
 
         pumas_physics_property_grammage(
-            physics, PUMAS_SCHEME_HYBRID, 0, state->kinetic, &X);
+            physics, PUMAS_MODE_HYBRID, 0, state->kinetic, &X);
         d = X / TEST_ROCK_DENSITY;
         pumas_physics_property_magnetic_rotation(
             physics, 0, state->kinetic, &phi0);
@@ -3561,8 +3564,8 @@ static void detailed_setup(void)
         geometry.uniform = 1;
         pumas_context_create(&context, physics, 0);
         context->medium = &geometry_medium;
-        context->longitudinal = 0;
-        context->scheme = PUMAS_SCHEME_DETAILED;
+        context->mode.scattering = PUMAS_MODE_FULL_SPACE;
+        context->mode.energy_loss = PUMAS_MODE_DETAILED;
         context->random = &uniform01;
 }
 
@@ -3575,7 +3578,7 @@ static void detailed_teardown(void)
 
 START_TEST(test_detailed_straight)
 {
-        context->longitudinal = 1;
+        context->mode.scattering = PUMAS_MODE_LONGITUDINAL;
 
         int i;
         enum pumas_event event_data, *event;
@@ -3606,9 +3609,9 @@ START_TEST(test_detailed_straight)
                 initialise_state();
                 state->kinetic = 1E+03;
                 pumas_physics_property_grammage(
-                    physics, PUMAS_SCHEME_HYBRID, 0, state->kinetic, &X);
+                    physics, PUMAS_MODE_HYBRID, 0, state->kinetic, &X);
                 pumas_physics_property_proper_time(
-                    physics, PUMAS_SCHEME_HYBRID, 0, state->kinetic, &t0);
+                    physics, PUMAS_MODE_HYBRID, 0, state->kinetic, &t0);
                 t0 /= TEST_ROCK_DENSITY;
                 d = X / TEST_ROCK_DENSITY;
                 pumas_context_transport(context, state, event, media);
@@ -3646,7 +3649,7 @@ START_TEST(test_detailed_straight)
                 else
                         event = &event_data, media = media_data;
 
-                context->kinetic_limit = 0.5E+03;
+                context->limit.kinetic = 0.5E+03;
                 reset_error();
                 initialise_state();
                 state->kinetic = 1E+03;
@@ -3662,8 +3665,8 @@ START_TEST(test_detailed_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
 
-                context->kinetic_limit = 0.;
-                context->distance_max = 0.5 * d;
+                context->limit.kinetic = 0.;
+                context->limit.distance = 0.5 * d;
                 reset_error();
                 initialise_state();
                 state->kinetic = 1.;
@@ -3679,8 +3682,8 @@ START_TEST(test_detailed_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
 
-                context->distance_max = 0.;
-                context->grammage_max = 0.5 * X;
+                context->limit.distance = 0.;
+                context->limit.grammage = 0.5 * X;
                 reset_error();
                 initialise_state();
                 state->kinetic = 1.;
@@ -3696,15 +3699,15 @@ START_TEST(test_detailed_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
 
-                context->grammage_max = 0.;
-                context->time_max = 0.5 * t0;
+                context->limit.grammage = 0.;
+                context->limit.time = 0.5 * t0;
                 reset_error();
                 initialise_state();
                 state->kinetic = 1.;
                 pumas_context_transport(context, state, event, media);
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_eq(state->kinetic, 0.);
-                context->time_max = 0.;
+                context->limit.time = 0.;
                 if (i == 0) {
                         ck_assert_ptr_null(event);
                         ck_assert_ptr_null(media);
@@ -3717,12 +3720,12 @@ START_TEST(test_detailed_straight)
 
         /* Check the forward kinetic limit */
         double X1, d1, t1;
-        context->kinetic_limit = 0.5E+03;
+        context->limit.kinetic = 0.5E+03;
         context->event = PUMAS_EVENT_LIMIT_KINETIC;
         pumas_physics_property_grammage(
-            physics, PUMAS_SCHEME_HYBRID, 0, context->kinetic_limit, &X1);
+            physics, PUMAS_MODE_HYBRID, 0, context->limit.kinetic, &X1);
         pumas_physics_property_proper_time(
-            physics, PUMAS_SCHEME_HYBRID, 0, context->kinetic_limit, &t1);
+            physics, PUMAS_MODE_HYBRID, 0, context->limit.kinetic, &t1);
         t1 /= TEST_ROCK_DENSITY;
         d1 = X1 / TEST_ROCK_DENSITY;
 
@@ -3737,7 +3740,7 @@ START_TEST(test_detailed_straight)
                 state->kinetic = 1E+03;
                 pumas_context_transport(context, state, event, media);
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-                ck_assert_double_le(state->kinetic, context->kinetic_limit);
+                ck_assert_double_le(state->kinetic, context->limit.kinetic);
                 ck_assert_double_le(state->distance, d - d1);
                 ck_assert_double_le(state->grammage, X - X1);
                 ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
@@ -3760,13 +3763,13 @@ START_TEST(test_detailed_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->kinetic_limit = 0.;
+        context->limit.kinetic = 0.;
 
         /* Check the forward grammage limit */
         double k1;
         X1 = 1E-02 * X;
         d1 = X1 / TEST_ROCK_DENSITY;
-        context->grammage_max = X1;
+        context->limit.grammage = X1;
         context->event = PUMAS_EVENT_LIMIT_GRAMMAGE;
 
         for (i = 0; i < 2; i++) {
@@ -3781,7 +3784,7 @@ START_TEST(test_detailed_straight)
                 pumas_context_transport(context, state, event, media);
                 k1 = state->kinetic;
                 pumas_physics_property_proper_time(
-                    physics, PUMAS_SCHEME_HYBRID, 0, k1, &t1);
+                    physics, PUMAS_MODE_HYBRID, 0, k1, &t1);
                 t1 /= TEST_ROCK_DENSITY;
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_le(state->distance, d - d1);
@@ -3805,12 +3808,12 @@ START_TEST(test_detailed_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->grammage_max = 0.;
+        context->limit.grammage = 0.;
 
         /* Check the forward distance limit */
         d1 = 1E-02 * d;
         X1 = d1 * TEST_ROCK_DENSITY;
-        context->distance_max = d1;
+        context->limit.distance = d1;
         context->event = PUMAS_EVENT_LIMIT_DISTANCE;
 
         for (i = 0; i < 2; i++) {
@@ -3825,7 +3828,7 @@ START_TEST(test_detailed_straight)
                 pumas_context_transport(context, state, event, media);
                 k1 = state->kinetic;
                 pumas_physics_property_proper_time(
-                    physics, PUMAS_SCHEME_HYBRID, 0, k1, &t1);
+                    physics, PUMAS_MODE_HYBRID, 0, k1, &t1);
                 t1 /= TEST_ROCK_DENSITY;
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_le(state->distance, d - d1);
@@ -3850,11 +3853,11 @@ START_TEST(test_detailed_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->distance_max = 0.;
+        context->limit.distance = 0.;
 
         /* Check the forward time limit */
         t1 = 1E-02 * t0;
-        context->time_max = t1;
+        context->limit.time = t1;
         context->event = PUMAS_EVENT_LIMIT_TIME;
 
         for (i = 0; i < 2; i++) {
@@ -3869,7 +3872,7 @@ START_TEST(test_detailed_straight)
                 pumas_context_transport(context, state, event, media);
                 k1 = state->kinetic;
                 pumas_physics_property_grammage(
-                    physics, PUMAS_SCHEME_HYBRID, 0, k1, &X1);
+                    physics, PUMAS_MODE_HYBRID, 0, k1, &X1);
                 d1 = X1 / TEST_ROCK_DENSITY;
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_eq_tol(state->distance / (d - d1), 1., 0.5);
@@ -3895,17 +3898,17 @@ START_TEST(test_detailed_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->time_max = 0.;
+        context->limit.time = 0.;
 
         /* Check the backward transport with a kinetic limit */
-        context->forward = 0;
-        context->kinetic_limit = 1E+03;
+        context->mode.direction = PUMAS_MODE_BACKWARD;
+        context->limit.kinetic = 1E+03;
         context->event = PUMAS_EVENT_LIMIT_KINETIC;
-        k1 = 0.5 * context->kinetic_limit;
+        k1 = 0.5 * context->limit.kinetic;
         pumas_physics_property_grammage(
-            physics, PUMAS_SCHEME_HYBRID, 0, k1, &X1);
+            physics, PUMAS_MODE_HYBRID, 0, k1, &X1);
         pumas_physics_property_proper_time(
-            physics, PUMAS_SCHEME_HYBRID, 0, k1, &t1);
+            physics, PUMAS_MODE_HYBRID, 0, k1, &t1);
         t1 /= TEST_ROCK_DENSITY;
         d1 = X1 / TEST_ROCK_DENSITY;
 
@@ -3921,7 +3924,7 @@ START_TEST(test_detailed_straight)
                 pumas_context_transport(context, state, event, media);
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_eq(state->charge, -1.);
-                ck_assert_double_ge(state->kinetic, context->kinetic_limit);
+                ck_assert_double_ge(state->kinetic, context->limit.kinetic);
                 ck_assert_double_le(state->distance, d - d1);
                 ck_assert_double_le(state->grammage, X - X1);
                 ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
@@ -3943,13 +3946,13 @@ START_TEST(test_detailed_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->kinetic_limit = 0.;
+        context->limit.kinetic = 0.;
 
         /* Check the backward transport with a grammage limit */
-        context->grammage_max = X - X1;
-        context->kinetic_limit = 0.75E+03;      /* Not activated  */
-        context->distance_max = 0.5 * (d - d1); /* Not activated  */
-        context->time_max = 0.5 * (t0 - t1);    /* Not activated  */
+        context->limit.grammage = X - X1;
+        context->limit.kinetic = 0.75E+03;      /* Not activated  */
+        context->limit.distance = 0.5 * (d - d1); /* Not activated  */
+        context->limit.time = 0.5 * (t0 - t1);    /* Not activated  */
         context->event = PUMAS_EVENT_LIMIT_GRAMMAGE;
 
         for (i = 0; i < 2; i++) {
@@ -3986,11 +3989,11 @@ START_TEST(test_detailed_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->grammage_max = 0.;
+        context->limit.grammage = 0.;
 
         /* Check the backward transport with a distance limit */
-        context->distance_max = d - d1;
-        context->grammage_max = 0.5 * (X - X1); /* Not activated  */
+        context->limit.distance = d - d1;
+        context->limit.grammage = 0.5 * (X - X1); /* Not activated  */
         context->event = PUMAS_EVENT_LIMIT_DISTANCE;
 
         for (i = 0; i < 2; i++) {
@@ -4027,11 +4030,11 @@ START_TEST(test_detailed_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->grammage_max = 0.;
+        context->limit.grammage = 0.;
 
         /* Check the backward transport with a time limit */
-        context->time_max = t0 - t1;
-        context->distance_max = 0.5 * (d - d1); /* Not activated  */
+        context->limit.time = t0 - t1;
+        context->limit.distance = 0.5 * (d - d1); /* Not activated  */
         context->event = PUMAS_EVENT_LIMIT_TIME;
 
         for (i = 0; i < 2; i++) {
@@ -4065,11 +4068,11 @@ START_TEST(test_detailed_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->grammage_max = 0.;
-        context->time_max = 0.5 * (t0 - t1); /* Not activated */
+        context->limit.grammage = 0.;
+        context->limit.time = 0.5 * (t0 - t1); /* Not activated */
 
         /* Check the case of an initial kinetic limit violation */
-        context->kinetic_limit = 0.5E+03;
+        context->limit.kinetic = 0.5E+03;
         context->event = PUMAS_EVENT_LIMIT_KINETIC;
 
         for (i = 0; i < 2; i++) {
@@ -4095,8 +4098,8 @@ START_TEST(test_detailed_straight)
                 }
         }
 
-        context->forward = 1;
-        context->kinetic_limit = 1E+03;
+        context->mode.direction = PUMAS_MODE_FORWARD;
+        context->limit.kinetic = 1E+03;
 
         for (i = 0; i < 2; i++) {
                 if (i == 0)
@@ -4120,11 +4123,11 @@ START_TEST(test_detailed_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->forward = 0;
-        context->kinetic_limit = 0.;
+        context->mode.direction = PUMAS_MODE_BACKWARD;
+        context->limit.kinetic = 0.;
 
         /* Check the case of an initial grammage limit violation */
-        context->grammage_max = 0.5 * X;
+        context->limit.grammage = 0.5 * X;
         context->event = PUMAS_EVENT_LIMIT_GRAMMAGE;
 
         for (i = 0; i < 2; i++) {
@@ -4152,7 +4155,7 @@ START_TEST(test_detailed_straight)
                 }
         }
 
-        context->forward = 1;
+        context->mode.direction = PUMAS_MODE_FORWARD;
         for (i = 0; i < 2; i++) {
                 if (i == 0)
                         event = NULL, media = NULL;
@@ -4177,11 +4180,11 @@ START_TEST(test_detailed_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->forward = 0;
-        context->grammage_max = 0.;
+        context->mode.direction = PUMAS_MODE_BACKWARD;
+        context->limit.grammage = 0.;
 
         /* Check the case of an initial distance limit violation */
-        context->distance_max = 0.5 * d;
+        context->limit.distance = 0.5 * d;
         context->event = PUMAS_EVENT_LIMIT_DISTANCE;
 
         for (i = 0; i < 2; i++) {
@@ -4209,7 +4212,7 @@ START_TEST(test_detailed_straight)
                 }
         }
 
-        context->forward = 1;
+        context->mode.direction = PUMAS_MODE_FORWARD;
         for (i = 0; i < 2; i++) {
                 if (i == 0)
                         event = NULL, media = NULL;
@@ -4234,11 +4237,11 @@ START_TEST(test_detailed_straight)
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
         }
-        context->forward = 0;
-        context->distance_max = 0.;
+        context->mode.direction = PUMAS_MODE_BACKWARD;
+        context->limit.distance = 0.;
 
         /* Check the case of an initial time limit violation */
-        context->time_max = 0.5 * t0;
+        context->limit.time = 0.5 * t0;
         context->event = PUMAS_EVENT_LIMIT_TIME;
 
         for (i = 0; i < 2; i++) {
@@ -4266,7 +4269,7 @@ START_TEST(test_detailed_straight)
                 }
         }
 
-        context->forward = 1;
+        context->mode.direction = PUMAS_MODE_FORWARD;
         for (i = 0; i < 2; i++) {
                 if (i == 0)
                         event = NULL, media = NULL;
@@ -4292,10 +4295,10 @@ START_TEST(test_detailed_straight)
                 }
         }
 
-        context->forward = 1;
-        context->time_max = 0.;
+        context->mode.direction = PUMAS_MODE_FORWARD;
+        context->limit.time = 0.;
         context->event = PUMAS_EVENT_NONE;
-        context->longitudinal = 0;
+        context->mode.scattering = PUMAS_MODE_FULL_SPACE;
 }
 END_TEST
 
@@ -4312,9 +4315,9 @@ START_TEST(test_detailed_scattering)
         state->kinetic = 1E+03;
 
         pumas_physics_property_grammage(
-            physics, PUMAS_SCHEME_HYBRID, 0, state->kinetic, &X);
+            physics, PUMAS_MODE_HYBRID, 0, state->kinetic, &X);
         pumas_physics_property_proper_time(
-            physics, PUMAS_SCHEME_HYBRID, 0, state->kinetic, &t0);
+            physics, PUMAS_MODE_HYBRID, 0, state->kinetic, &t0);
         t0 /= TEST_ROCK_DENSITY;
         d = X / TEST_ROCK_DENSITY;
 
@@ -4334,16 +4337,16 @@ START_TEST(test_detailed_scattering)
         ck_assert_double_eq_tol(norm2, 1., FLT_EPSILON);
 
         /* Check the backward transport with scattering */
-        context->forward = 0;
-        context->kinetic_limit = 1E+03;
+        context->mode.direction = PUMAS_MODE_BACKWARD;
+        context->limit.kinetic = 1E+03;
         context->event = PUMAS_EVENT_LIMIT_KINETIC;
 
         double k1, X1, d1, t1;
         k1 = 1E-03;
         pumas_physics_property_grammage(
-            physics, PUMAS_SCHEME_HYBRID, 0, k1, &X1);
+            physics, PUMAS_MODE_HYBRID, 0, k1, &X1);
         pumas_physics_property_proper_time(
-            physics, PUMAS_SCHEME_HYBRID, 0, k1, &t1);
+            physics, PUMAS_MODE_HYBRID, 0, k1, &t1);
         t1 /= TEST_ROCK_DENSITY;
         d1 = X1 / TEST_ROCK_DENSITY;
 
@@ -4353,7 +4356,7 @@ START_TEST(test_detailed_scattering)
         pumas_context_transport(context, state, NULL, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq(state->charge, -1.);
-        ck_assert_double_ge(state->kinetic, context->kinetic_limit);
+        ck_assert_double_ge(state->kinetic, context->limit.kinetic);
         ck_assert_double_eq_tol(state->distance / (d - d1), 1., 0.5);
         ck_assert_double_eq_tol(state->grammage / (X - X1), 1., 0.5);
         ck_assert_double_eq_tol(state->time / (t0 - t1), 1., 0.5);
@@ -4364,21 +4367,21 @@ START_TEST(test_detailed_scattering)
 
         /* Restore the context status */
         context->event = PUMAS_EVENT_NONE;
-        context->kinetic_limit = 0.;
-        context->forward = 1;
+        context->limit.kinetic = 0.;
+        context->mode.direction = PUMAS_MODE_FORWARD;
 }
 END_TEST
 
 START_TEST(test_detailed_magnet)
 {
-        context->longitudinal = 1;
+        context->mode.scattering = PUMAS_MODE_LONGITUDINAL;
         geometry.magnet[1] = 0.1;
 
         /* Compare the MC deflection and the analytical computation at low
          * energy, i.e. when no DEL */
-        context->forward = 0;
+        context->mode.direction = PUMAS_MODE_BACKWARD;
         context->event = PUMAS_EVENT_LIMIT_KINETIC;
-        context->kinetic_limit = 1E+01;
+        context->limit.kinetic = 1E+01;
 
         double tol = 5E-02;
         reset_error();
@@ -4387,12 +4390,12 @@ START_TEST(test_detailed_magnet)
 
         double X, d, phi0, phi1, phi, *u = state->direction;
         pumas_physics_property_grammage(
-            physics, PUMAS_SCHEME_HYBRID, 0, state->kinetic, &X);
+            physics, PUMAS_MODE_HYBRID, 0, state->kinetic, &X);
         d = X / TEST_ROCK_DENSITY;
         pumas_physics_property_magnetic_rotation(
             physics, 0, state->kinetic, &phi0);
         pumas_physics_property_magnetic_rotation(
-            physics, 0, context->kinetic_limit, &phi1);
+            physics, 0, context->limit.kinetic, &phi1);
         phi = -(phi1 - phi0) * geometry.magnet[1] / TEST_ROCK_DENSITY *
             state->charge;
 
@@ -4407,16 +4410,16 @@ START_TEST(test_detailed_magnet)
         ck_assert_double_eq_tol(norm2, 1., FLT_EPSILON);
 
         /* Check a high energy case */
-        context->forward = 1;
+        context->mode.direction = PUMAS_MODE_FORWARD;
         context->event = PUMAS_EVENT_NONE;
-        context->kinetic_limit = 0.;
+        context->limit.kinetic = 0.;
 
         reset_error();
         initialise_state();
         state->kinetic = 1E+03;
 
         pumas_physics_property_grammage(
-            physics, PUMAS_SCHEME_HYBRID, 0, state->kinetic, &X);
+            physics, PUMAS_MODE_HYBRID, 0, state->kinetic, &X);
         d = X / TEST_ROCK_DENSITY;
         pumas_physics_property_magnetic_rotation(
             physics, 0, state->kinetic, &phi0);
@@ -4436,7 +4439,7 @@ START_TEST(test_detailed_magnet)
 
         /* Restore the context and the geometry */
         geometry.magnet[1] = 0.;
-        context->longitudinal = 0;
+        context->mode.scattering = PUMAS_MODE_FULL_SPACE;
 }
 END_TEST
 
@@ -4461,16 +4464,16 @@ static void tau_teardown(void)
 START_TEST(test_tau_csda)
 {
         enum pumas_event event;
-        context->longitudinal = 1;
-        context->scheme = PUMAS_SCHEME_CSDA;
+        context->mode.scattering = PUMAS_MODE_LONGITUDINAL;
+        context->mode.energy_loss = PUMAS_MODE_CSDA;
 
         /* Test some errors */
-        context->decay = PUMAS_DECAY_WEIGHT;
+        context->mode.decay = PUMAS_MODE_WEIGHT;
         reset_error();
         initialise_state();
         pumas_context_transport(context, state, &event, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_DECAY_ERROR);
-        context->decay = PUMAS_DECAY_PROCESS;
+        context->mode.decay = PUMAS_MODE_DECAY;
 
         /* Test the forward transport */
         reset_error();
@@ -4479,7 +4482,7 @@ START_TEST(test_tau_csda)
 
         double X, d;
         pumas_physics_property_grammage(
-            physics, PUMAS_SCHEME_CSDA, 0, state->kinetic, &X);
+            physics, PUMAS_MODE_CSDA, 0, state->kinetic, &X);
         d = X / TEST_ROCK_DENSITY;
 
         pumas_context_transport(context, state, &event, NULL);
@@ -4490,8 +4493,8 @@ START_TEST(test_tau_csda)
         ck_assert_double_eq(state->direction[1], 0.);
         ck_assert_double_eq(state->direction[2], 1.);
 
-        context->longitudinal = 0;
-        context->scheme = PUMAS_SCHEME_DETAILED;
+        context->mode.scattering = PUMAS_MODE_FULL_SPACE;
+        context->mode.energy_loss = PUMAS_MODE_DETAILED;
 }
 END_TEST
 

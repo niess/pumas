@@ -261,7 +261,7 @@ int main(int narg, char * argv[])
         pumas_context_create(&context, physics, 0);
 
         /* Configure the context for a backward transport */
-        context->forward = 0;
+        context->mode.direction = PUMAS_MODE_BACKWARD;
 
         /* Set the medium callback */
         context->medium = &medium2;
@@ -309,14 +309,18 @@ int main(int narg, char * argv[])
                                 /* Below 100 GeV do a detailed simulation
                                  * à la Geant4, including transverse transport
                                  */
-                                context->scheme = PUMAS_SCHEME_DETAILED;
-                                context->longitudinal = 0;
-                                context->kinetic_limit = 1E+02;
+                                context->mode.energy_loss =
+                                    PUMAS_MODE_DETAILED;
+                                context->mode.scattering =
+                                    PUMAS_MODE_FULL_SPACE;
+                                context->limit.kinetic = 1E+02;
                         } else {
                                 /* Do a fast simulation à la MUM */
-                                context->scheme = PUMAS_SCHEME_HYBRID;
-                                context->longitudinal = 1;
-                                context->kinetic_limit = kinetic_threshold;
+                                context->mode.energy_loss =
+                                    PUMAS_MODE_HYBRID;
+                                context->mode.scattering =
+                                    PUMAS_MODE_LONGITUDINAL;
+                                context->limit.kinetic = kinetic_threshold;
                         }
                         enum pumas_event event;
                         struct pumas_medium * medium[2];

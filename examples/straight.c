@@ -186,13 +186,13 @@ int main(int narg, char * argv[])
         /* Configure the context for simulating the detailed energy loss, à
          * la Geant4
          */
-        context->scheme = PUMAS_SCHEME_DETAILED;
+        context->mode.energy_loss = PUMAS_MODE_DETAILED;
 
         /* Do a backward transport */
-        context->forward = 0;
+        context->mode.direction = PUMAS_MODE_BACKWARD;
 
         /* Disable any transverse transport */
-        context->longitudinal = 1;
+        context->mode.scattering = PUMAS_MODE_LONGITUDINAL;
 
         /* Set the medium callback */
         context->medium = &medium1;
@@ -201,7 +201,8 @@ int main(int narg, char * argv[])
         context->random = &uniform01;
 
         /* Set a distance limit for the transport as the total rock depth */
-        context->distance_max = (rock_thickness <= 0.) ? 1E-06 : rock_thickness;
+        context->limit.distance =
+            (rock_thickness <= 0.) ? 1E-06 : rock_thickness;
         context->event |= PUMAS_EVENT_LIMIT_DISTANCE;
 
         /* Run the Monte-Carlo */

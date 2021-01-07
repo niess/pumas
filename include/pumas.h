@@ -66,45 +66,56 @@ enum pumas_property {
 };
 
 /**
- * Schemes for the computation of energy losses.
+ * Modes for the Monte Carlo transport.
  */
-enum pumas_scheme {
+enum pumas_mode {
         /** All energy losses are disabled.
          *
          * **Note** : This mode is provided for test purpose only. Running
          * without energy losses requires specifying a range or grammage limit.
          */
-        PUMAS_SCHEME_NO_LOSS = -1,
+        PUMAS_MODE_VIRTUAL = -1,
         /** Energy losses are purely determinstic as given by the Continuously
          * Slowing Down Approximation (CSDA).
          */
-        PUMAS_SCHEME_CSDA,
+        PUMAS_MODE_CSDA = 0,
         /** Energy losses are simulated using an hybrid Monte-Carlo scheme with
          * hard stochastic interactions and a deterministic Continuous Energy
          * Loss (CEL).
          */
-        PUMAS_SCHEME_HYBRID,
+        PUMAS_MODE_HYBRID = 1,
         /** In addition to the hybrid scheme small fluctuations of the CEL are
          * also simulated.
          */
-        PUMAS_SCHEME_DETAILED
-};
-
-/**
- * Modes for handling particle decays.
- */
-enum pumas_decay {
-        /** Decays are disabled. */
-        PUMAS_DECAY_NONE = 0,
+        PUMAS_MODE_DETAILED = 2,
+        /** Decays are disabled, i.e. muons or taus are stable. */
+        PUMAS_MODE_STABLE = 0,
         /**
          * Decays are accounted for by a weight factor. This is efficient
          * for muons but irrelevant -numerically instable- for the forward
          * transport of taus since they decay in flight. Hence it is
          * disabled in the latter case.
          */
-        PUMAS_DECAY_WEIGHT,
-        /** Decays are enabled as a specific Monte-Carlo process. */
-        PUMAS_DECAY_PROCESS
+        PUMAS_MODE_WEIGHT = 1,
+        /** Decays are accounted for with a specific Monte-Carlo process.
+         *
+         * **Note** : the transported particle stops at the dcay vertex but
+         * its decay is not simulated, i.e. no daughter particles are
+         * generated. */
+        PUMAS_MODE_DECAY = 2,
+        /** Do a classical forward Monte Carlo transport. */
+        PUMAS_MODE_FORWARD = 0,
+        /** Do a reverse Monte Carlo transport. */
+        PUMAS_MODE_BACKWARD = 1,
+        /** Fully simulate the (multiple)scattering. */
+        PUMAS_MODE_FULL_SPACE = 0,
+        /** Neglect the tranverse scattering, i.e. only simulate the energy
+         * loss.
+         *
+         * **Note** : charged particles are still deflected by external
+         * electromagnetic fields.
+         */
+        PUMAS_MODE_LONGITUDINAL = 1
 };
 
 /** Return codes for the API functions. */
@@ -433,7 +444,7 @@ typedef double(pumas_random_cb)(struct pumas_context * context);
  * + Depending on the level of detail of the simulation a random stream must
  * be provided by the user before any call to `pumas_transport`.
  *
- * + Note that for `kinetic_limit`, `distance_max`, `grammage_max` or `time_max`
+ * + Note that for `kinetic`, `distance`, `grammage` or `time` external limits
  * to be taken into account, the corresponding events must be activated as well,
  * with the `event` flag.
  */
@@ -449,26 +460,33 @@ struct pumas_context {
          */
         void * user_data;
 
-        /**
-         * Flag to enable or disable transverse transport. Default is `0`,
-         * i.e. transverse transport is enabled.
-         */
-        int longitudinal;
-        /**
-         * Flag to switch between forward and reverse transport. Default is
-         * `1`, i.e. forward Monte-Carlo.
-         */
-        int forward;
-        /**
-         * The scheme used for the computation of energy losses. Default is
-         * `PUMAS_SCHEME_DETAILED`.
-         */
-        enum pumas_scheme scheme;
-        /**
-         * The mode for handling decays. Default is `PUMAS_DECAY_WEIGHT` for
-         * a muon or `PUMAS_DECAY_PROCESS` for a tau.
-         */
-        enum pumas_decay decay;
+        /** Monte Carlo transport mode. */
+        struct {
+                /**
+                * The scheme used for the computation of energy losses. Default
+                * is `PUMAS_SCHEME_DETAILED`.
+                */
+                enum pumas_mode energy_loss;
+                /**
+                * The mode for handling decays. Default is `PUMAS_MODE_WEIGHT`
+                * for a muon or `PUMAS_MODE_DECAY` for a tau. Set this to
+                * `PUMAS_MODE_STABLE` in order to disable decays at all.
+                */
+                enum pumas_mode decay;
+                /**
+                * Direction of the Monte Carlo flow. Default is
+                * `PUMAS_MODE_FORWARD`. Set this to `PUMAS_MODE_BACKWARD` for a
+                * reverse Monte Carlo.
+                */
+                enum pumas_mode direction;
+                /**
+                * Algorithm for the simulation of the scattering. Default is
+                * `PUMAS_MODE_FULL_SPACE`. Other option is
+                * `PUMAS_MODE_LONGITUDNAL` which neglects any transverse
+                * scattering.
+                */
+                enum pumas_mode scattering;
+        } mode;
         /**
          * The events that might stop the transport. Default is
          * `PUMAS_EVENT_NONE`, i.e. the transport stops only if the particle
@@ -476,16 +494,20 @@ struct pumas_context {
          */
         enum pumas_event event;
 
-        /** The minimum kinetic energy for forward transport, or maximum one
-         * for backward transport, in GeV.
-         */
-        double kinetic_limit;
-        /** The maximum travelled distance, in m. */
-        double distance_max;
-        /** The maximum travelled grammage, in kg / m^2. */
-        double grammage_max;
-        /** The maximum travelled proper time, in m. */
-        double time_max;
+        /** External limits for the Monte Carlo transport. */
+        struct {
+                /**
+                 * The minimum kinetic energy for forward transport, or the
+                 * maximum one for backward transport, in GeV.
+                 */
+                double kinetic;
+                /** The maximum travelled distance, in m. */
+                double distance;
+                /** The maximum travelled grammage, in kg / m^2. */
+                double grammage;
+                /** The maximum travelled proper time, in m. */
+                double time;
+        } limit;
 };
 
 /**
@@ -863,7 +885,7 @@ PUMAS_API const struct pumas_physics * pumas_context_physics_get(
  *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_grammage(
-    const struct pumas_physics * physics, enum pumas_scheme scheme,
+    const struct pumas_physics * physics, enum pumas_mode scheme,
     int material, double kinetic, double * grammage);
 
 /**
@@ -889,7 +911,7 @@ PUMAS_API enum pumas_return pumas_physics_property_grammage(
  *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_proper_time(
-    const struct pumas_physics * physics, enum pumas_scheme scheme,
+    const struct pumas_physics * physics, enum pumas_mode scheme,
     int material, double kinetic, double * time);
 
 /**
@@ -939,7 +961,7 @@ PUMAS_API enum pumas_return pumas_physics_property_magnetic_rotation(
  *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_kinetic_energy(
-    const struct pumas_physics * physics, enum pumas_scheme scheme,
+    const struct pumas_physics * physics, enum pumas_mode scheme,
     int material, double grammage, double * kinetic);
 
 /**
@@ -964,7 +986,7 @@ PUMAS_API enum pumas_return pumas_physics_property_kinetic_energy(
  *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_energy_loss(
-    const struct pumas_physics * physics, enum pumas_scheme scheme,
+    const struct pumas_physics * physics, enum pumas_mode scheme,
     int material, double kinetic, double * dedx);
 
 /**
@@ -1162,7 +1184,7 @@ PUMAS_API enum pumas_return pumas_physics_composite_properties(
  */
 PUMAS_API enum pumas_return pumas_physics_table_value(
     const struct pumas_physics * physics, enum pumas_property property,
-    enum pumas_scheme scheme, int material, int row, double * value);
+    enum pumas_mode scheme, int material, int row, double * value);
 
 /**
  * The depth, i.e. number of kinetic values, of the tabulated data.
@@ -1204,7 +1226,7 @@ PUMAS_API int pumas_physics_table_length(const struct pumas_physics * physics);
  */
 PUMAS_API enum pumas_return pumas_physics_table_index(
     const struct pumas_physics * physics, enum pumas_property property,
-    enum pumas_scheme scheme, int material, double value, int * index);
+    enum pumas_mode scheme, int material, double value, int * index);
 
 /**
  * Create a new particle recorder.
