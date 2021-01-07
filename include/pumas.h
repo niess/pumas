@@ -1569,9 +1569,12 @@ PUMAS_API enum pumas_return pumas_physics_create_tabulation(
 /**
  * Get the Differential Cross-Section (DCS) for a given process.
  *
- * @param physics      Handle for the Physics tables.
+ * @param physics      Handle for the Physics tables or `NULL`.
  * @param process      The Physics process.
  * @return On success the DCS function is returned otherwise `NULL` is
+ * returned.
+ *
+ * **Note** : if the physics pointer is `NULL` then PUMAS default DCS model is
  * returned.
  *
  * __Warnings__

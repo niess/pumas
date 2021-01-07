@@ -1080,11 +1080,8 @@ END_TEST
 START_TEST(test_api_dcs)
 {
         /* Test the initialisation error */
-        pumas_dcs_t * dcs = pumas_physics_dcs_get(
-            physics, PUMAS_PROCESS_BREMSSTRAHLUNG);
-        ck_assert_ptr_null(dcs);
-
         reset_error();
+        pumas_dcs_t * dcs = NULL;
         pumas_physics_dcs_set(physics, PUMAS_PROCESS_BREMSSTRAHLUNG, dcs);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_VALUE_ERROR);
 
@@ -1177,6 +1174,16 @@ START_TEST(test_api_dcs)
 
         /* Free the data */
         pumas_physics_destroy(&physics);
+
+        /* Test the default getter */
+        dcs = pumas_physics_dcs_get(physics, PUMAS_PROCESS_BREMSSTRAHLUNG);
+        ck_assert_ptr_eq(dcs, dcs_bs);
+
+        dcs = pumas_physics_dcs_get(physics, PUMAS_PROCESS_PAIR_PRODUCTION);
+        ck_assert_ptr_eq(dcs, dcs_pp);
+
+        dcs = pumas_physics_dcs_get(physics, PUMAS_PROCESS_PHOTONUCLEAR);
+        ck_assert_ptr_eq(dcs, dcs_pn);
 }
 END_TEST
 

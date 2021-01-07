@@ -10738,14 +10738,15 @@ void pumas_physics_tabulation_clear(const struct pumas_physics * physics,
 pumas_dcs_t * pumas_physics_dcs_get(
     const struct pumas_physics * physics, enum pumas_process process)
 {
-        if (physics == NULL) return NULL;
-
         if (process == PUMAS_PROCESS_BREMSSTRAHLUNG) {
-                return physics->dcs_bremsstrahlung;
+                return (physics == NULL) ?
+                    &default_dcs_bremsstrahlung : physics->dcs_bremsstrahlung;
         } else if (process == PUMAS_PROCESS_PAIR_PRODUCTION) {
-                return physics->dcs_pair_production;
+                return (physics == NULL) ?
+                    &default_dcs_pair_production : physics->dcs_pair_production;
         } else if (process == PUMAS_PROCESS_PHOTONUCLEAR) {
-                return physics->dcs_photonuclear;
+                return (physics == NULL) ?
+                    &default_dcs_photonuclear : physics->dcs_photonuclear;
         } else {
                 return NULL;
         }
