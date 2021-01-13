@@ -220,6 +220,24 @@ enum pumas_process {
         PUMAS_PROCESS_PHOTONUCLEAR
 };
 
+/** Indices for PUMAS library constants. */
+enum pumas_constant {
+        /** The Avogadro number in mol. */
+        PUMAS_CONSTANT_AVOGADRO_NUMBER = 0,
+        /** The electron mass in GeV/c^2. */
+        PUMAS_CONSTANT_ELECTRON_MASS,
+        /** The muon decay length in m. */
+        PUMAS_CONSTANT_MUON_C_TAU,
+        /** The muon mass in GeV/c^2. */
+        PUMAS_CONSTANT_MUON_MASS,
+        /** The tau decay length in m. */
+        PUMAS_CONSTANT_TAU_C_TAU,
+        /** The tau mass in GeV/c^2. */
+        PUMAS_CONSTANT_TAU_MASS,
+        /** The number of PUMAS constants.  */
+        PUMAS_N_CONSTANTS
+};
+
 /**
  * Container for a Monte-Carlo state.
  */
@@ -1583,6 +1601,7 @@ PUMAS_API enum pumas_return pumas_physics_create_tabulation(
  */
 PUMAS_API pumas_dcs_t * pumas_physics_dcs_get(
     const struct pumas_physics * physics, enum pumas_process process);
+
 /**
  * Set the Differential Cross-Section (DCS) for a given process.
  *
@@ -1608,6 +1627,23 @@ PUMAS_API pumas_dcs_t * pumas_physics_dcs_get(
 PUMAS_API enum pumas_return pumas_physics_dcs_set(
     struct pumas_physics * physics, enum pumas_process process,
     pumas_dcs_t * dcs);
+
+/**
+ * Get a PUMAS library constant.
+ *
+ * @param index     The constant index.
+ * @param value     The corresponding value.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INDEX_ERROR             The index is not a valid.
+ *
+ *     PUMAS_RETURN_VALUE_ERROR             The value pointer is `NULL`.
+ */
+PUMAS_API enum pumas_return pumas_constant(
+    enum pumas_constant index, double * value);
 
 #ifdef __cplusplus
 }

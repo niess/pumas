@@ -277,7 +277,7 @@ enum mdf_depth {
         MDF_DEPTH_COMPOSITE
 };
 /**
- * Tags for operations relative to the the parsing of materials in MDFs.
+ * Tags for operations relative to the parsing of materials in MDFs.
  */
 enum mdf_settings_operation {
         /** Free the names table. */
@@ -1080,6 +1080,31 @@ static double math_rms(double a, double b);
 static int fe_status;
 #endif
 
+/* Getter for library constants */
+PUMAS_API enum pumas_return pumas_constant(
+    enum pumas_constant index, double * value)
+{
+        ERROR_INITIALISE(pumas_constant);
+
+        const double values[] = {AVOGADRO_NUMBER, ELECTRON_MASS, MUON_C_TAU,
+            MUON_MASS, TAU_C_TAU, TAU_MASS};
+
+        if (value == NULL) {
+                return ERROR_MESSAGE(PUMAS_RETURN_VALUE_ERROR,
+                    "NULL value pointer");
+        }
+
+        if ((index < 0) || (index >= PUMAS_N_CONSTANTS)) {
+                *value = 0;
+                return ERROR_FORMAT(PUMAS_RETURN_INDEX_ERROR,
+                    "invalid `constant' index [%d]", index);
+        }
+
+        *value = values[index];
+
+        return PUMAS_RETURN_SUCCESS;
+}
+
 /*
  * Public library functions: user supplied memory allocation.
  */
@@ -1609,6 +1634,7 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_physics_table_index)
 
         /* Other library functions. */
+        TOSTRING(pumas_constant)
         TOSTRING(pumas_physics_destroy)
         TOSTRING(pumas_physics_tabulation_clear)
         TOSTRING(pumas_context_destroy)

@@ -71,6 +71,43 @@ static double uniform01(struct pumas_context * context)
         return (1. + rand()) / (RAND_MAX + 2.);
 }
 
+/* Test the constant API */
+START_TEST(test_api_constant)
+{
+        double value;
+
+        pumas_constant(PUMAS_CONSTANT_AVOGADRO_NUMBER, &value);
+        ck_assert_double_eq(value, 6.02214076E+23);
+
+        pumas_constant(PUMAS_CONSTANT_ELECTRON_MASS, &value);
+        ck_assert_double_eq(value, 0.510998910E-03);
+
+        pumas_constant(PUMAS_CONSTANT_MUON_C_TAU, &value);
+        ck_assert_double_eq(value, 658.654);
+
+        pumas_constant(PUMAS_CONSTANT_MUON_MASS, &value);
+        ck_assert_double_eq(value, 0.10565839);
+
+        pumas_constant(PUMAS_CONSTANT_TAU_C_TAU, &value);
+        ck_assert_double_eq(value, 87.03E-06);
+
+        pumas_constant(PUMAS_CONSTANT_TAU_MASS, &value);
+        ck_assert_double_eq(value, 1.77682);
+
+        reset_error();
+        pumas_constant(-1, &value);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
+
+        reset_error();
+        pumas_constant(6, &value);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
+
+        reset_error();
+        pumas_constant(PUMAS_CONSTANT_AVOGADRO_NUMBER, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_VALUE_ERROR);
+}
+END_TEST
+
 /* Test the error API */
 START_TEST(test_api_error)
 {
@@ -118,6 +155,7 @@ START_TEST(test_api_error)
          *     grep "T " |                                                     \
          *     awk '{print "CHECK_STRING("$3");"}'
          */
+        CHECK_STRING(pumas_constant);
         CHECK_STRING(pumas_context_create);
         CHECK_STRING(pumas_context_destroy);
         CHECK_STRING(pumas_context_physics_get);
@@ -4692,6 +4730,7 @@ Suite * create_suite(void)
         tcase_set_timeout(tc_api, timeout);
         tcase_add_test(tc_api, test_api_error);
         tcase_add_test(tc_api, test_api_version);
+        tcase_add_test(tc_api, test_api_constant);
         tcase_add_test(tc_api, test_api_init);
         tcase_add_test(tc_api, test_api_memory);
         tcase_add_test(tc_api, test_api_material);
