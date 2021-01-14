@@ -1180,17 +1180,18 @@ PUMAS_API enum pumas_return pumas_physics_composite_update(
  *
  * @param physics    Handle for the Physics tables.
  * @param index      The composite material index.
+ * @param length     The number of base material components of the composite.
  * @param density    The composite material reference density.
- * @param components The number of base material components of the composite.
+ * @param components The vector of indices of the base materials.
  * @param fractions  The vector of mass fractions of the base materials
  *                   components.
  * @param densities  The vector of densities of the base materials components.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * Get the properties of a composite material. `density`, `components`,
- * `fractions` or `densities` can be `NULL` in which case the corresponding
- * property is not retrieved.
+ * Get the properties of a composite material. `length`, `density`,
+ * `components`, `fractions` or `densities` can be `NULL` in which case the
+ * corresponding property is not retrieved.
  *
  * __Error codes__
  *
@@ -1199,8 +1200,8 @@ PUMAS_API enum pumas_return pumas_physics_composite_update(
  *     PUMAS_RETURN_PHYSICS_ERROR             The Physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_composite_properties(
-    const struct pumas_physics * physics, int index, double * density,
-    int * components, double * fractions, double * densities);
+    const struct pumas_physics * physics, int index, int * length,
+    double * density, int * components, double * fractions, double * densities);
 
 /**
  * Accessor to the tabulated Physics data.

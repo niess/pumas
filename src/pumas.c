@@ -2340,8 +2340,8 @@ clean_and_exit:
 }
 
 enum pumas_return pumas_physics_composite_properties(
-    const struct pumas_physics * physics, int material, double * density,
-    int * components, double * fractions, double * densities)
+    const struct pumas_physics * physics, int material, int * length,
+    double * density, int * components, double * fractions, double * densities)
 {
         ERROR_INITIALISE(pumas_physics_composite_properties);
 
@@ -2356,13 +2356,13 @@ enum pumas_return pumas_physics_composite_properties(
 
         const int icomp =
             material - physics->n_materials + physics->n_composites;
+        if (length != NULL) *length = physics->composite[icomp]->n_components;
         if (density != NULL) *density = physics->composite[icomp]->density;
-        if (components != NULL)
-                *components = physics->composite[icomp]->n_components;
         int i;
         for (i = 0; i < physics->composite[icomp]->n_components; i++) {
                 struct composite_component * component =
                     physics->composite[icomp]->component + i;
+                if (components != NULL) components[i] = component->material;
                 if (fractions != NULL) fractions[i] = component->fraction;
                 if (densities != NULL) densities[i] = component->density;
         }
