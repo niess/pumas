@@ -468,8 +468,6 @@ struct composite_component {
         int material;
         /** The component mass fraction in the composite. */
         double fraction;
-        /** The base material density. */
-        double density;
         /** The element-wise weight. */
         double weight;
 };
@@ -477,8 +475,6 @@ struct composite_component {
  * Handle for a composite material.
  */
 struct composite_material {
-        /** The composite reference density. */
-        double density;
         /** The number of sub components. */
         int n_components;
         /** Placeholder for the sub components' data. */
@@ -603,7 +599,7 @@ struct pumas_physics {
  * Version tag for the shared data format. Increment whenever the
  * structure changes.
  */
-#define BINARY_DUMP_TAG 2
+#define BINARY_DUMP_TAG 3
 
         /** The total byte size of the shared data. */
         int size;
@@ -683,6 +679,8 @@ struct pumas_physics {
         double * table_Ms1;
         /** The number of elements in a material. */
         int * elements_in;
+        /** The reference density of a material. */
+        double * material_density;
         /** The relative electronic density of a material. */
         double * material_ZoA;
         /** The properties of an atomic element . */
@@ -1163,7 +1161,7 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         FILE * fid_mdf = NULL;
         struct mdf_buffer * mdf = NULL;
         const int pad_size = sizeof(*((*physics_ptr)->data));
-#define N_DATA_POINTERS 26
+#define N_DATA_POINTERS 27
         int size_data[N_DATA_POINTERS];
 
         /* Check the particle type. */
@@ -1297,6 +1295,9 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         /* elements_in. */
         size_data[imem++] =
             memory_padded_size(sizeof(int) * settings.n_materials, pad_size);
+        /* material_density */
+        size_data[imem++] =
+            memory_padded_size(sizeof(double) * settings.n_materials, pad_size);
         /* material_ZoA */
         size_data[imem++] =
             memory_padded_size(sizeof(double) * settings.n_materials, pad_size);
@@ -1832,19 +1833,27 @@ enum pumas_return pumas_physics_print(const struct pumas_physics * physics,
                 if (fprintf(stream, "%s%s%s%s\"%s\" : {", head, cr, tab, tab,
                         physics->material_name[material]) < 0)
                         goto error;
+                if (fprintf(stream, "%s%s%s%s\"density\" : %.5lg", cr, tab, tab,
+                        tab, physics->material_density[material] * 1E-03) < 0)
+                        goto error;
+                if (fprintf(stream, ",%s%s%s%s\"elements\" : {", cr, tab, tab,
+                        tab) < 0)
+                        goto error;
                 int iel = 0;
                 for (; iel < physics->elements_in[material]; iel++) {
                         const char * head2 = (iel == 0) ? "" : ",";
                         int element =
                             physics->composition[material][iel].element;
-                        if (fprintf(stream, "%s%s%s%s%s\"%s (%%)\" : %.5lg",
-                                head2, cr, tab, tab, tab,
+                        if (fprintf(stream, "%s%s%s%s%s%s\"%s (%%)\" : %.5lg",
+                                head2, cr, tab, tab, tab, tab,
                                 physics->element[element]->name, 100. *
                                     physics->composition[material][iel]
                                         .fraction) < 0)
                                 goto error;
                 }
-                if (fprintf(stream, "%s%s%s}", cr, tab, tab) < 0) goto error;
+                if (fprintf(stream, "%s%s%s%s}%s%s%s}",
+                    cr, tab, tab, tab, cr, tab, tab) < 0)
+                        goto error;
         }
         if (fprintf(stream, "%s%s}", cr, tab) < 0) goto error;
         if (physics->n_composites <= 0) goto closure;
@@ -1861,7 +1870,7 @@ enum pumas_return pumas_physics_print(const struct pumas_physics * physics,
                         physics->material_name[material]) < 0)
                         goto error;
                 if (fprintf(stream, "%s%s%s%s\"density\" : %.5lg", cr, tab, tab,
-                        tab, composite->density * 1E-03) < 0)
+                        tab, physics->material_density[material] * 1E-03) < 0)
                         goto error;
                 if (fprintf(stream, ",%s%s%s%s\"materials\" : {", cr, tab, tab,
                         tab) < 0)
@@ -1875,11 +1884,6 @@ enum pumas_return pumas_physics_print(const struct pumas_physics * physics,
                         if (fprintf(stream, "%s%s%s%s%s%s\"%s\" : {", head2, cr,
                                 tab, tab, tab, tab,
                                 physics->material_name[c->material]) < 0)
-                                goto error;
-                        if (fprintf(stream, "%s%s%s%s%s%s\"density (g/cm^3)\" "
-                                            ": %.5lg",
-                                cr, tab, tab, tab, tab, tab,
-                                c->density * 1E-03) < 0)
                                 goto error;
                         if (fprintf(stream, ",%s%s%s%s%s%s\"fraction (%%)\" "
                                             ": %.5lg%s%s%s%s%s}",
@@ -2303,12 +2307,17 @@ int pumas_physics_composite_length(const struct pumas_physics * physics)
 }
 
 enum pumas_return pumas_physics_composite_update(struct pumas_physics * physics,
-    int material, const double * fractions, const double * densities)
+    int material, const double * fractions)
 {
         ERROR_INITIALISE(pumas_physics_composite_update);
 
         if (physics == NULL) {
                 return ERROR_NOT_INITIALISED();
+        }
+
+        if (fractions == NULL) {
+                return ERROR_MESSAGE(PUMAS_RETURN_VALUE_ERROR,
+                    "NULL pointer for fractions");
         }
 
         const int i0 = physics->n_materials - physics->n_composites;
@@ -2323,8 +2332,8 @@ enum pumas_return pumas_physics_composite_update(struct pumas_physics * physics,
         for (i = 0; i < physics->composite[icomp]->n_components; i++) {
                 struct composite_component * component =
                     physics->composite[icomp]->component + i;
-                if (fractions != NULL) component->fraction = fractions[i];
-                if (densities != NULL) component->density = densities[i];
+                const double d = fractions[i];
+                component->fraction = (d > 0.) ? d : 0.;
         }
 
         const enum pumas_return rc =
@@ -2341,7 +2350,7 @@ clean_and_exit:
 
 enum pumas_return pumas_physics_composite_properties(
     const struct pumas_physics * physics, int material, int * length,
-    double * density, int * components, double * fractions, double * densities)
+    double * density, int * components, double * fractions)
 {
         ERROR_INITIALISE(pumas_physics_composite_properties);
 
@@ -2357,14 +2366,13 @@ enum pumas_return pumas_physics_composite_properties(
         const int icomp =
             material - physics->n_materials + physics->n_composites;
         if (length != NULL) *length = physics->composite[icomp]->n_components;
-        if (density != NULL) *density = physics->composite[icomp]->density;
+        if (density != NULL) *density = physics->material_density[material];
         int i;
         for (i = 0; i < physics->composite[icomp]->n_components; i++) {
                 struct composite_component * component =
                     physics->composite[icomp]->component + i;
                 if (components != NULL) components[i] = component->material;
                 if (fractions != NULL) fractions[i] = component->fraction;
-                if (densities != NULL) densities[i] = component->density;
         }
 
         return PUMAS_RETURN_SUCCESS;
@@ -7220,6 +7228,18 @@ enum pumas_return mdf_parse_materials(struct pumas_physics * physics,
                                         size_name = size_new;
                                 }
                                 strcpy(filename + offset_dir, node.at2.file);
+
+                                double rho;
+                                if ((sscanf(node.at3.density, "%lf", &rho) != 1)
+                                    || (rho <= 0.)) {
+                                        ERROR_VREGISTER(
+                                            PUMAS_RETURN_VALUE_ERROR,
+                                            "invalid value for density [%s]",
+                                           node.at3.density);
+                                        break;
+                                }
+                                rho *= 1E+03; /* g/cm^3 -> kg/m^3 */
+                                physics->material_density[imat] = rho;
                         } else {
                                 int n = strlen(node.at2.file) + 1;
                                 physics->dedx_filename[imat] = allocate(n);
@@ -7349,7 +7369,7 @@ enum pumas_return mdf_parse_composites(struct pumas_physics * physics,
                                 error_) != PUMAS_RETURN_SUCCESS)
                                 break;
                         data_ma->component[i].material = ima;
-                        double f, rho;
+                        double f;
                         if ((sscanf(node.at2.fraction, "%lf", &f) != 1) ||
                             (f < 0.)) {
                                 ERROR_VREGISTER(PUMAS_RETURN_VALUE_ERROR,
@@ -7357,15 +7377,7 @@ enum pumas_return mdf_parse_composites(struct pumas_physics * physics,
                                     node.at2.fraction);
                                 break;
                         }
-                        if ((sscanf(node.at3.density, "%lf", &rho) != 1) ||
-                            (rho <= 0.)) {
-                                ERROR_VREGISTER(PUMAS_RETURN_VALUE_ERROR,
-                                    "invalid density [%s]", node.at3.density);
-                                break;
-                        }
-                        rho *= 1E+03; /* g/cm^3 -> kg/m^3.*/
                         data_ma->component[i].fraction = f;
-                        data_ma->component[i].density = rho;
 
                         const int i0 = imat + icomp + 1;
                         for (i = 0; i < physics->elements_in[ima]; i++) {
@@ -7602,6 +7614,8 @@ enum pumas_return mdf_get_node(struct mdf_buffer * mdf, struct mdf_node * node,
                                         node->at1.name = value;
                                 else if (strcmp(attr, "file") == 0)
                                         node->at2.file = value;
+                                else if (strcmp(attr, "density") == 0)
+                                        node->at3.density = value;
                                 else
                                         return ERROR_REGISTER_INVALID_XML_ATTRIBUTE(
                                             attr, "<material>", mdf->mdf_path,
@@ -7627,8 +7641,6 @@ enum pumas_return mdf_get_node(struct mdf_buffer * mdf, struct mdf_node * node,
                                         node->at1.name = value;
                                 else if (strcmp(attr, "fraction") == 0)
                                         node->at2.fraction = value;
-                                else if (strcmp(attr, "density") == 0)
-                                        node->at3.density = value;
                                 else
                                         return ERROR_REGISTER_INVALID_XML_ATTRIBUTE(
                                             attr, "<component>", mdf->mdf_path,
@@ -8002,17 +8014,19 @@ enum pumas_return compute_composite_density(
         for (i = 0; i < physics->composite[icomp]->n_components; i++) {
                 const struct composite_component * component =
                     physics->composite[icomp]->component + i;
-                if (component->density <= 0.)
+                const double component_density =
+                    physics->material_density[component->material];
+                if (component_density <= 0.)
                         return ERROR_REGISTER_NEGATIVE_DENSITY(
                             physics->material_name[component->material]);
-                rho_inv += component->fraction / component->density;
+                rho_inv += component->fraction / component_density;
                 nrm += component->fraction;
         }
 
         if (rho_inv <= 0.)
                 return ERROR_REGISTER_NEGATIVE_DENSITY(
                     physics->material_name[material]);
-        physics->composite[icomp]->density = nrm / rho_inv;
+        physics->material_density[material] = nrm / rho_inv;
         return PUMAS_RETURN_SUCCESS;
 }
 

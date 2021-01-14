@@ -1152,18 +1152,15 @@ PUMAS_API int pumas_physics_composite_length(
  * @param material   The composite material index.
  * @param fractions  The vector of mass fractions of the base materials
  *                   components.
- * @param densities  The vector of densities of the base materials components.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * Update the composition and/or the density of a composite material.
- * `fractions` or `densities` can be `NULL` in which case the corresponding
- * property is not updated.
+ * Update the composition of a composite material. **Note** that negative
+ * fraction values are treated as zero.
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_DENSITY_ERROR             Some density value is null
- * or less.
+ *     PUMAS_RETURN_VALUE_ERROR               The *fractions* pointer is `NULL`.
  *
  *     PUMAS_RETURN_INDEX_ERROR               The provided index is not valid.
  *
@@ -1172,8 +1169,7 @@ PUMAS_API int pumas_physics_composite_length(
  *     PUMAS_RETURN_MEMORY_ERROR              Couldn't allocate memory.
  */
 PUMAS_API enum pumas_return pumas_physics_composite_update(
-    struct pumas_physics * physics, int material, const double * fractions,
-    const double * densities);
+    struct pumas_physics * physics, int material, const double * fractions);
 
 /**
  * Get the properties of a composite material.
@@ -1185,13 +1181,12 @@ PUMAS_API enum pumas_return pumas_physics_composite_update(
  * @param components The vector of indices of the base materials.
  * @param fractions  The vector of mass fractions of the base materials
  *                   components.
- * @param densities  The vector of densities of the base materials components.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
  * Get the properties of a composite material. `length`, `density`,
- * `components`, `fractions` or `densities` can be `NULL` in which case the
- * corresponding property is not retrieved.
+ * `components` or `fractions` can be `NULL` in which case the corresponding
+ * property is not retrieved.
  *
  * __Error codes__
  *
@@ -1201,7 +1196,7 @@ PUMAS_API enum pumas_return pumas_physics_composite_update(
  */
 PUMAS_API enum pumas_return pumas_physics_composite_properties(
     const struct pumas_physics * physics, int index, int * length,
-    double * density, int * components, double * fractions, double * densities);
+    double * density, int * components, double * fractions);
 
 /**
  * Accessor to the tabulated Physics data.

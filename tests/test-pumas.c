@@ -437,16 +437,16 @@ START_TEST(test_api_composite)
         int i, index, length, components[2];
         const char * name;
         const char * names[] = { "Water", "StandardRock", "WetRock" };
-        double density, fractions[2], densities[2];
+        double density, fractions[2];
 
         /* Check the initialisation error */
         reset_error();
         pumas_physics_composite_properties(
-            physics, 0, NULL, NULL, NULL, NULL, NULL);
+            physics, 0, NULL, NULL, NULL, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         reset_error();
-        pumas_physics_composite_update(physics, 0, NULL, NULL);
+        pumas_physics_composite_update(physics, 0, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         index = pumas_physics_composite_length(physics);
@@ -478,20 +478,21 @@ START_TEST(test_api_composite)
         /* Check the properties getter */
         reset_error();
         pumas_physics_composite_properties(
-            physics, 0, NULL, NULL, NULL, NULL, NULL);
+            physics, 0, NULL, NULL, NULL, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
         pumas_physics_composite_properties(
-            physics, 2, NULL, NULL, NULL, NULL, NULL);
+            physics, 2, NULL, NULL, NULL, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
 
         double density0 = TEST_ROCK_DENSITY, density1 = 1.00E+03;
         double fraction0 = 0.5, fraction1 = 0.5;
         double rho = 1. / (fraction0 / density0 + fraction1 / density1);
 
+        reset_error();
         pumas_physics_composite_properties(
-            physics, 2, &length, &density, components, fractions, densities);
+            physics, 2, &length, &density, components, fractions);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(length, 2);
         ck_assert_double_eq(density, rho);
@@ -499,16 +500,15 @@ START_TEST(test_api_composite)
         ck_assert_double_eq(components[1], 0);
         ck_assert_double_eq(fractions[0], fraction0);
         ck_assert_double_eq(fractions[1], fraction1);
-        ck_assert_double_eq(densities[0], density0);
-        ck_assert_double_eq(densities[1], density1);
 
         /* Check the properties setter */
         reset_error();
-        pumas_physics_composite_update(physics, 2, NULL, NULL);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        pumas_physics_composite_update(physics, 2, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_VALUE_ERROR);
 
+        reset_error();
         pumas_physics_composite_properties(
-            physics, 2, &length, &density, components, fractions, densities);
+            physics, 2, &length, &density, components, fractions);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(length, 2);
         ck_assert_double_eq(density, rho);
@@ -516,23 +516,19 @@ START_TEST(test_api_composite)
         ck_assert_double_eq(components[1], 0);
         ck_assert_double_eq(fractions[0], fraction0);
         ck_assert_double_eq(fractions[1], fraction1);
-        ck_assert_double_eq(densities[0], density0);
-        ck_assert_double_eq(densities[1], density1);
 
-        density0 = 2.3E+03, density = 1.2E+03;
         fraction0 = 0.3, fraction1 = 0.7;
         rho = 1. / (fraction0 / density0 + fraction1 / density1);
 
         {
-                double tmp0[] = { fraction0, fraction1 };
-                double tmp1[] = { density0, density1 };
-                pumas_physics_composite_update(physics, 2, tmp0, tmp1);
+                double tmp[] = { fraction0, fraction1 };
+                pumas_physics_composite_update(physics, 2, tmp);
         }
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
 
         reset_error();
         pumas_physics_composite_properties(
-            physics, 2, &length, &density, components, fractions, densities);
+            physics, 2, &length, &density, components, fractions);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(length, 2);
         ck_assert_double_eq(density, rho);
@@ -540,8 +536,6 @@ START_TEST(test_api_composite)
         ck_assert_double_eq(components[1], 0);
         ck_assert_double_eq(fractions[0], fraction0);
         ck_assert_double_eq(fractions[1], fraction1);
-        ck_assert_double_eq(densities[0], density0);
-        ck_assert_double_eq(densities[1], density1);
 
         pumas_physics_destroy(&physics);
 }
