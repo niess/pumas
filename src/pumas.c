@@ -1158,6 +1158,7 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         if (physics_ptr == NULL) {
                 return ERROR_NULL_PHYSICS();
         }
+        *physics_ptr = NULL;
 #if (GDB_MODE)
         /* Save the floating points exceptions status and enable them. */
         fe_status = fegetexcept();
@@ -7878,9 +7879,15 @@ consistency_check:
                         return ERROR_VREGISTER(PUMAS_RETURN_FORMAT_ERROR,
                             "missing attribute(s) for XML <composite> [@%s:%d]",
                             mdf->mdf_path, mdf->line);
-        } else if ((node->key == MDF_KEY_MATERIAL) ||
-            (node->key == MDF_KEY_ATOMIC_COMPONENT)) {
+        } else if ((node->key == MDF_KEY_ATOMIC_COMPONENT) ||
+            (node->key == MDF_KEY_COMPOSITE_COMPONENT)) {
                 if ((node->at1.name == NULL) || (node->at2.fraction == NULL))
+                        return ERROR_VREGISTER(PUMAS_RETURN_FORMAT_ERROR,
+                            "missing attribute(s) for XML <component> [@%s:%d]",
+                            mdf->mdf_path, mdf->line);
+        } else if (node->key == MDF_KEY_MATERIAL) {
+                if ((node->at1.name == NULL) || (node->at2.fraction == NULL) ||
+                    (node->at3.density == NULL))
                         return ERROR_VREGISTER(PUMAS_RETURN_FORMAT_ERROR,
                             "missing attribute(s) for XML <component> [@%s:%d]",
                             mdf->mdf_path, mdf->line);
