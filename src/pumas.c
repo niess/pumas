@@ -196,6 +196,10 @@
         ERROR_FORMAT(PUMAS_RETURN_INDEX_ERROR,                                 \
             "invalid energy loss scheme [%d]", scheme)
 
+#define ERROR_INVALID_ELEMENT(element)                                         \
+        ERROR_FORMAT(                                                          \
+            PUMAS_RETURN_INDEX_ERROR, "invalid element index [%d]", element)
+
 #define ERROR_INVALID_MATERIAL(material)                                       \
         ERROR_FORMAT(                                                          \
             PUMAS_RETURN_INDEX_ERROR, "invalid material index [%d]", material)
@@ -468,8 +472,6 @@ struct composite_component {
         int material;
         /** The component mass fraction in the composite. */
         double fraction;
-        /** The element-wise weight. */
-        double weight;
 };
 /**
  * Handle for a composite material.
@@ -1617,8 +1619,12 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_physics_particle)
         TOSTRING(pumas_context_create)
         TOSTRING(pumas_recorder_create)
+        TOSTRING(pumas_physics_element_name)
+        TOSTRING(pumas_physics_element_index)
+        TOSTRING(pumas_physics_element_properties)
         TOSTRING(pumas_physics_material_name)
         TOSTRING(pumas_physics_material_index)
+        TOSTRING(pumas_physics_material_properties)
         TOSTRING(pumas_physics_composite_update)
         TOSTRING(pumas_physics_composite_properties)
         TOSTRING(pumas_physics_print)
@@ -1648,6 +1654,7 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_error_handler_get)
         TOSTRING(pumas_error_catch)
         TOSTRING(pumas_physics_dcs_get)
+        TOSTRING(pumas_physics_element_length)
         TOSTRING(pumas_physics_material_length)
         TOSTRING(pumas_physics_composite_length)
         TOSTRING(pumas_physics_table_length)
@@ -2263,6 +2270,69 @@ enum pumas_return pumas_physics_particle(const struct pumas_physics * physics,
         return PUMAS_RETURN_SUCCESS;
 }
 
+/* Public library functions: elements handling. */
+enum pumas_return pumas_physics_element_name(
+    const struct pumas_physics * physics, int index, const char ** element)
+{
+        ERROR_INITIALISE(pumas_physics_element_name);
+
+        if (physics == NULL) {
+                return ERROR_NOT_INITIALISED();
+        }
+        if ((index < 0) || (index >= physics->n_elements)) {
+                return ERROR_INVALID_ELEMENT(index);
+        }
+        *element = physics->element[index]->name;
+
+        return PUMAS_RETURN_SUCCESS;
+}
+
+enum pumas_return pumas_physics_element_index(
+    const struct pumas_physics * physics, const char * element, int * index)
+{
+        ERROR_INITIALISE(pumas_physics_element_index);
+
+        if (physics == NULL) {
+                return ERROR_NOT_INITIALISED();
+        }
+
+        const int i = element_index(physics, element);
+        if (i < 0) {
+                return ERROR_FORMAT(PUMAS_RETURN_UNKNOWN_ELEMENT,
+                    "unknown element `%s'", element);
+        } else {
+                *index = i;
+        }
+
+        return PUMAS_RETURN_SUCCESS;
+}
+
+int pumas_physics_element_length(const struct pumas_physics * physics)
+{
+        if (physics == NULL) return 0;
+        return physics->n_elements;
+}
+
+enum pumas_return pumas_physics_element_properties(
+    const struct pumas_physics * physics, int index, double * Z, double * A,
+    double * I)
+{
+        ERROR_INITIALISE(pumas_physics_element_properties);
+
+        if (physics == NULL) {
+                return ERROR_NOT_INITIALISED();
+        }
+        if ((index < 0) || (index >= physics->n_elements)) {
+                return ERROR_INVALID_ELEMENT(index);
+        }
+
+        if (Z != NULL) *Z = physics->element[index]->Z;
+        if (A != NULL) *A = physics->element[index]->A;
+        if (I != NULL) *I = physics->element[index]->I;
+
+        return PUMAS_RETURN_SUCCESS;
+}
+
 /* Public library functions: materials handling. */
 enum pumas_return pumas_physics_material_name(
     const struct pumas_physics * physics, int index, const char ** material)
@@ -2291,6 +2361,34 @@ enum pumas_return pumas_physics_material_index(
         material_index(physics, material, index, error_);
 
         return ERROR_RAISE();
+}
+
+enum pumas_return pumas_physics_material_properties(
+    const struct pumas_physics * physics, int material, int * length,
+    double * density, int * components, double * fractions)
+{
+        ERROR_INITIALISE(pumas_physics_material_properties);
+
+        if (physics == NULL) {
+                return ERROR_NOT_INITIALISED();
+        }
+
+        const int i0 = physics->n_materials;
+        if ((material < 0) || (material > i0 - 1)) {
+                return ERROR_INVALID_MATERIAL(material);
+        }
+
+        if (length != NULL) *length = physics->elements_in[material];
+        if (density != NULL) *density = physics->material_density[material];
+        int i;
+        for (i = 0; i < physics->elements_in[material]; i++) {
+                const struct material_component * component =
+                    &physics->composition[material][i];
+                if (components != NULL) components[i] = component->element;
+                if (fractions != NULL) fractions[i] = component->fraction;
+        }
+
+        return PUMAS_RETURN_SUCCESS;
 }
 
 int pumas_physics_material_length(const struct pumas_physics * physics)
@@ -2350,7 +2448,7 @@ clean_and_exit:
 
 enum pumas_return pumas_physics_composite_properties(
     const struct pumas_physics * physics, int material, int * length,
-    double * density, int * components, double * fractions)
+    int * components, double * fractions)
 {
         ERROR_INITIALISE(pumas_physics_composite_properties);
 
@@ -2366,7 +2464,6 @@ enum pumas_return pumas_physics_composite_properties(
         const int icomp =
             material - physics->n_materials + physics->n_composites;
         if (length != NULL) *length = physics->composite[icomp]->n_components;
-        if (density != NULL) *density = physics->material_density[material];
         int i;
         for (i = 0; i < physics->composite[icomp]->n_components; i++) {
                 struct composite_component * component =
@@ -7924,36 +8021,16 @@ void compute_cel_integrals(struct pumas_physics * physics, int material)
 }
 
 /**
- * Computation of mixture weights for composite materials.
+ * Computation of mixture atomic weights for composite materials.
  *
  * @param Physics  Handle for physics tables.
  * @param material The material index of the composite to compute.
  */
 void compute_composite_weights(struct pumas_physics * physics, int material)
 {
-        /* Compute the effective mass number (normalisation). */
         const int icomp =
             material - physics->n_materials + physics->n_composites;
         int i;
-        double M = 0.;
-        for (i = 0; i < physics->composite[icomp]->n_components; i++) {
-                const struct composite_component * component =
-                    physics->composite[icomp]->component + i;
-                const int imat = component->material;
-                int j;
-                double Mi_inv = 0.;
-                for (j = 0; j < physics->elements_in[imat]; j++) {
-                        const struct material_component * component =
-                            physics->composition[imat] + j;
-                        const struct atomic_element * element =
-                            physics->element[component->element];
-                        Mi_inv += component->fraction / element->A;
-                }
-                M += component->fraction * Mi_inv;
-        }
-        M = 1. / M;
-
-        /* Compute the materials and atomic elements weights. */
         for (i = 0; i < physics->elements_in[material]; i++) {
                 struct material_component * component =
                     physics->composition[material] + i;
@@ -7965,16 +8042,6 @@ void compute_composite_weights(struct pumas_physics * physics, int material)
                     physics->composite[icomp]->component + i;
                 const int imat = component->material;
                 int j;
-                double Mi_inv = 0.;
-                for (j = 0; j < physics->elements_in[imat]; j++) {
-                        const struct material_component * component =
-                            physics->composition[imat] + j;
-                        const struct atomic_element * element =
-                            physics->element[component->element];
-                        Mi_inv += component->fraction / element->A;
-                }
-                component->weight = component->fraction * M * Mi_inv;
-
                 for (j = 0; j < physics->elements_in[imat]; j++) {
                         const struct material_component * cij =
                             physics->composition[imat] + j;
@@ -7984,7 +8051,7 @@ void compute_composite_weights(struct pumas_physics * physics, int material)
                                     physics->composition[material] + k;
                                 if (c->element == cij->element) {
                                         c->fraction +=
-                                            component->weight * cij->fraction;
+                                            component->fraction * cij->fraction;
                                         break;
                                 }
                         }
@@ -8073,14 +8140,14 @@ void compute_composite_tables(struct pumas_physics * physics, int material)
                 for (row = 0; row < physics->n_kinetics; row++) {
                         *table_get_dE(physics, 0, material, row) +=
                             *table_get_dE(physics, 0, imat, row) *
-                            component->weight;
+                            component->fraction;
                         *table_get_dE(physics, 1, material, row) +=
                             *table_get_dE(physics, 1, imat, row) *
-                            component->weight;
+                            component->fraction;
                         const double k = *table_get_K(physics, row);
                         const double cs =
                             (k < kt) ? 0. : *table_get_CS(physics, imat, row) *
-                                component->weight;
+                                component->fraction;
                         *table_get_CS(physics, material, row) += cs;
                 }
 
@@ -8113,7 +8180,7 @@ void compute_composite_tables(struct pumas_physics * physics, int material)
                                             physics, ip, j0 + j, row);
                                         *table_get_CSf(physics, ip, k0 + k,
                                             row) += cs_tot * (csf - csf_last) *
-                                            component->weight;
+                                            component->fraction;
                                         csf_last = csf;
                                 }
                         }
@@ -8121,11 +8188,11 @@ void compute_composite_tables(struct pumas_physics * physics, int material)
 
                 /* Maximum tabulated energy loss parameters. */
                 *table_get_a_max(physics, material) +=
-                    *table_get_a_max(physics, imat) * component->weight;
+                    *table_get_a_max(physics, imat) * component->fraction;
                 *table_get_b_max(physics, 0, material) +=
-                    *table_get_b_max(physics, 0, imat) * component->weight;
+                    *table_get_b_max(physics, 0, imat) * component->fraction;
                 *table_get_b_max(physics, 1, material) +=
-                    *table_get_b_max(physics, 1, imat) * component->weight;
+                    *table_get_b_max(physics, 1, imat) * component->fraction;
         }
 
         /* Normalise the fractional contributions to the cross section. */
@@ -8565,7 +8632,7 @@ enum pumas_return compute_coulomb_parameters(struct pumas_physics * physics,
                         /* Base material soft scattering. */
                         invlb1 += (*table_get_Ms1(physics, imat, row) +
                                       delta_invlb1) *
-                            c->weight;
+                            c->fraction;
                 }
                 *table_get_Ms1(physics, material, row) = invlb1;
         }

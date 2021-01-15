@@ -1087,6 +1087,80 @@ PUMAS_API enum pumas_return pumas_physics_property_cross_section(
     double * cross_section);
 
 /**
+ * The total number of atomic elements.
+ *
+ * @param physics    Handle for the Physics tables.
+ * @return The total number of known atomic elements.
+ */
+PUMAS_API int pumas_physics_element_length(
+    const struct pumas_physics * physics);
+
+/**
+ * Get the properties of an atomic element.
+ *
+ * @param physics    Handle for the Physics tables.
+ * @param index      The element index.
+ * @param Z          The element charge number.
+ * @param A          The element mass number in g/mol.
+ * @param I          The element mean excitation energy in GeV.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
+ *
+ * Get the properties of an atomic element. `Z`, `A` or `I` can be `NULL`
+ * in which case the corresponding property is not retrieved.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INDEX_ERROR               The provided index is not valid.
+ *
+ *     PUMAS_RETURN_PHYSICS_ERROR             The Physics is not initialised.
+ */
+PUMAS_API enum pumas_return pumas_physics_element_properties(
+    const struct pumas_physics * physics, int index, double * Z, double * A,
+    double * I);
+
+/**
+ * The name of an atomic element given its index.
+ *
+ * @param physics    Handle for the Physics tables.
+ * @param index      The atomic element index.
+ * @param element    The corresponding element name.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
+ *
+ * The atomic element name is defined in the Material Description File (MDF).
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INDEX_ERROR               The provided index is not valid.
+ *
+ *     PUMAS_RETURN_PHYSICS_ERROR             The Physics is not initialised.
+ */
+PUMAS_API enum pumas_return pumas_physics_element_name(
+    const struct pumas_physics * physics, int index, const char ** element);
+
+/**
+ * The index of an atomic element given its name.
+ *
+ * @param physics     Handle for the Physics tables.
+ * @param element     The element name.
+ * @param index       The corresponding index.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
+ *
+ * The element index corresponds to the order of declaration specified in the
+ * Material Description File (MDF).
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_PHYSICS_ERROR             The Physics is not initialised.
+ *
+ *     PUMAS_RETURN_UNKNOWN_MATERIAL          The material is not defined.
+ */
+PUMAS_API enum pumas_return pumas_physics_element_index(
+    const struct pumas_physics * physics, const char * element, int * index);
+
+/**
  * The name of a material given its index.
  *
  * @param physics    Handle for the Physics tables.
@@ -1131,10 +1205,36 @@ PUMAS_API enum pumas_return pumas_physics_material_index(
  * The total number of materials.
  *
  * @param physics    Handle for the Physics tables.
- * @return The total number of known materials, basic plus composite.
+ * @return The total number of known materials, base plus composite.
  */
 PUMAS_API int pumas_physics_material_length(
     const struct pumas_physics * physics);
+
+/**
+ * Get the properties of a base material.
+ *
+ * @param physics    Handle for the Physics tables.
+ * @param index      The material index.
+ * @param length     The number of atomic elements.
+ * @param density    The material reference density.
+ * @param components The vector of indices of the atomic elements.
+ * @param fractions  The vector of mass fractions of the atomic elements.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
+ *
+ * Get the properties of a base material. `length`, `density`,
+ * `components` or `fractions` can be `NULL` in which case the corresponding
+ * property is not retrieved.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INDEX_ERROR               The provided index is not valid.
+ *
+ *     PUMAS_RETURN_PHYSICS_ERROR             The Physics is not initialised.
+ */
+PUMAS_API enum pumas_return pumas_physics_material_properties(
+    const struct pumas_physics * physics, int index, int * length,
+    double * density, int * components, double * fractions);
 
 /**
  * The number of composite materials.
@@ -1177,16 +1277,15 @@ PUMAS_API enum pumas_return pumas_physics_composite_update(
  * @param physics    Handle for the Physics tables.
  * @param index      The composite material index.
  * @param length     The number of base material components of the composite.
- * @param density    The composite material reference density.
  * @param components The vector of indices of the base materials.
  * @param fractions  The vector of mass fractions of the base materials
  *                   components.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * Get the properties of a composite material. `length`, `density`,
- * `components` or `fractions` can be `NULL` in which case the corresponding
- * property is not retrieved.
+ * Get the properties of a composite material. `length`, `components` or
+ * `fractions` can be `NULL` in which case the corresponding property is not
+ * retrieved.
  *
  * __Error codes__
  *
@@ -1196,7 +1295,7 @@ PUMAS_API enum pumas_return pumas_physics_composite_update(
  */
 PUMAS_API enum pumas_return pumas_physics_composite_properties(
     const struct pumas_physics * physics, int index, int * length,
-    double * density, int * components, double * fractions);
+    int * components, double * fractions);
 
 /**
  * Accessor to the tabulated Physics data.
@@ -1432,9 +1531,9 @@ struct pumas_physics_element {
 struct pumas_physics_material {
         /** The material index. */
         int index;
-        /** The material density. */
+        /** The material density in kg / m^3. */
         double density;
-        /** The mean excitation energy. */
+        /** The mean excitation energy in GeV. */
         double I;
         /** The material state. */
         enum pumas_physics_state state;

@@ -376,12 +376,84 @@ START_TEST(test_api_memory)
 }
 END_TEST
 
+/* Test the element API */
+START_TEST(test_api_element)
+{
+        int i, index, length;
+        const char * name;
+        double Z, A, I;
+
+        /* Check the initialisation error */
+        reset_error();
+        pumas_physics_element_index(physics, "H", &index);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
+
+        reset_error();
+        pumas_physics_element_name(physics, 0, &name);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
+
+        index = pumas_physics_element_length(physics);
+        ck_assert_int_eq(index, 0);
+
+        reset_error();
+        pumas_physics_element_properties(
+            physics, 0, NULL, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
+
+        /* Load the muon data */
+        load_muon();
+
+        /* Check the number of elements */
+        index = pumas_physics_element_length(physics);
+        ck_assert_int_eq(index, 6);
+
+        /* Check the invalid material case */
+        reset_error();
+        pumas_physics_element_index(physics, "Strawberry", &index);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_UNKNOWN_ELEMENT);
+
+        reset_error();
+        pumas_physics_element_name(physics, 6, &name);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
+
+        reset_error();
+        pumas_physics_element_properties(physics, 6, &Z, &A, &I);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
+
+        /* Check the elements mapping */
+        const char * names[] = {"Hydrogen", "Carbon", "Nitrogen", "Oxygen",
+            "StandardRock", "Argon"};
+        for (i = 0; i < sizeof(names) / sizeof(*names); i++) {
+                reset_error();
+                pumas_physics_element_index(physics, names[i], &index);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_int_eq(index, i);
+
+                reset_error();
+                pumas_physics_element_name(physics, i, &name);
+                ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+                ck_assert_str_eq(name, names[i]);
+        }
+
+        /* Check the properties getter */
+        reset_error();
+        pumas_physics_element_properties(physics, 0, &Z, &A, &I);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_double_eq(Z, 1);
+        ck_assert_double_eq(A, 1.008);
+        ck_assert_double_eq_tol(I * 1E+09, 21.8, 1E-06);
+
+        pumas_physics_destroy(&physics);
+}
+END_TEST
+
 /* Test the materials API */
 START_TEST(test_api_material)
 {
-        int i, index;
+        int i, index, length, components[2];
         const char * name;
         const char * names[] = { "StandardRock", "Water", "Air" };
+        double density, fractions[2];
 
         /* Check the initialisation error */
         reset_error();
@@ -394,6 +466,11 @@ START_TEST(test_api_material)
 
         index = pumas_physics_material_length(physics);
         ck_assert_int_eq(index, 0);
+
+        reset_error();
+        pumas_physics_material_properties(
+            physics, 0, NULL, NULL, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         /* Load the muon data */
         load_muon();
@@ -414,6 +491,11 @@ START_TEST(test_api_material)
         pumas_physics_material_name(physics, 4, &name);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
+        reset_error();
+        pumas_physics_material_properties(
+            physics, 4, &length, &density, components, fractions);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
+
         /* Check the materials mapping */
         for (i = 0; i < sizeof(names) / sizeof(*names); i++) {
                 reset_error();
@@ -427,6 +509,29 @@ START_TEST(test_api_material)
                 ck_assert_str_eq(name, names[i]);
         }
 
+        /* Check the properties getter */
+        double wH = 0.111894, wO = 0.888106;
+
+        reset_error();
+        pumas_physics_material_properties(
+            physics, 0, &length, &density, components, fractions);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_int_eq(length, 1);
+        ck_assert_double_eq(density, 2.65E+03);
+        ck_assert_double_eq(components[0], 4);
+        ck_assert_double_eq(fractions[0], 1);
+
+        reset_error();
+        pumas_physics_material_properties(
+            physics, 1, &length, &density, components, fractions);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_int_eq(length, 2);
+        ck_assert_double_eq(density, 1E+03);
+        ck_assert_double_eq(components[0], 0);
+        ck_assert_double_eq(components[1], 3);
+        ck_assert_double_eq(fractions[0], wH);
+        ck_assert_double_eq(fractions[1], wO);
+
         pumas_physics_destroy(&physics);
 }
 END_TEST
@@ -434,15 +539,14 @@ END_TEST
 /* Test the composites API */
 START_TEST(test_api_composite)
 {
-        int i, index, length, components[2];
+        int i, index, length, components[3];
         const char * name;
         const char * names[] = { "Water", "StandardRock", "WetRock" };
-        double density, fractions[2];
+        double density, fractions[3];
 
         /* Check the initialisation error */
         reset_error();
-        pumas_physics_composite_properties(
-            physics, 0, NULL, NULL, NULL, NULL);
+        pumas_physics_composite_properties(physics, 0, NULL, NULL, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         reset_error();
@@ -477,29 +581,40 @@ START_TEST(test_api_composite)
 
         /* Check the properties getter */
         reset_error();
-        pumas_physics_composite_properties(
-            physics, 0, NULL, NULL, NULL, NULL);
+        pumas_physics_composite_properties(physics, 0, NULL, NULL, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
-        pumas_physics_composite_properties(
-            physics, 2, NULL, NULL, NULL, NULL);
+        pumas_physics_composite_properties(physics, 2, NULL, NULL, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
 
         double density0 = TEST_ROCK_DENSITY, density1 = 1.00E+03;
         double fraction0 = 0.5, fraction1 = 0.5;
         double rho = 1. / (fraction0 / density0 + fraction1 / density1);
+        double wH = 0.111894, wO = 0.888106;
 
         reset_error();
         pumas_physics_composite_properties(
-            physics, 2, &length, &density, components, fractions);
+            physics, 2, &length, components, fractions);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(length, 2);
-        ck_assert_double_eq(density, rho);
         ck_assert_double_eq(components[0], 1);
         ck_assert_double_eq(components[1], 0);
         ck_assert_double_eq(fractions[0], fraction0);
         ck_assert_double_eq(fractions[1], fraction1);
+
+        reset_error();
+        pumas_physics_material_properties(
+            physics, 2, &length, &density, components, fractions);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_int_eq(length, 3);
+        ck_assert_double_eq(density, rho);
+        ck_assert_double_eq(components[0], 2);
+        ck_assert_double_eq(components[1], 0);
+        ck_assert_double_eq(components[2], 1);
+        ck_assert_double_eq(fractions[0], fraction0);
+        ck_assert_double_eq(fractions[1], fraction1 * wH);
+        ck_assert_double_eq(fractions[2], fraction1 * wO);
 
         /* Check the properties setter */
         reset_error();
@@ -508,14 +623,19 @@ START_TEST(test_api_composite)
 
         reset_error();
         pumas_physics_composite_properties(
-            physics, 2, &length, &density, components, fractions);
+            physics, 2, &length, components, fractions);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(length, 2);
-        ck_assert_double_eq(density, rho);
         ck_assert_double_eq(components[0], 1);
         ck_assert_double_eq(components[1], 0);
         ck_assert_double_eq(fractions[0], fraction0);
         ck_assert_double_eq(fractions[1], fraction1);
+
+        reset_error();
+        pumas_physics_material_properties(
+            physics, 2, NULL, &density, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_double_eq(density, rho);
 
         fraction0 = 0.3, fraction1 = 0.7;
         rho = 1. / (fraction0 / density0 + fraction1 / density1);
@@ -528,14 +648,26 @@ START_TEST(test_api_composite)
 
         reset_error();
         pumas_physics_composite_properties(
-            physics, 2, &length, &density, components, fractions);
+            physics, 2, &length, components, fractions);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(length, 2);
-        ck_assert_double_eq(density, rho);
         ck_assert_double_eq(components[0], 1);
         ck_assert_double_eq(components[1], 0);
         ck_assert_double_eq(fractions[0], fraction0);
         ck_assert_double_eq(fractions[1], fraction1);
+
+        reset_error();
+        pumas_physics_material_properties(
+            physics, 2, &length, &density, components, fractions);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_int_eq(length, 3);
+        ck_assert_double_eq(density, rho);
+        ck_assert_double_eq(components[0], 2);
+        ck_assert_double_eq(components[1], 0);
+        ck_assert_double_eq(components[2], 1);
+        ck_assert_double_eq(fractions[0], fraction0);
+        ck_assert_double_eq(fractions[1], fraction1 * wH);
+        ck_assert_double_eq(fractions[2], fraction1 * wO);
 
         pumas_physics_destroy(&physics);
 }
@@ -4736,6 +4868,7 @@ Suite * create_suite(void)
         tcase_add_test(tc_api, test_api_constant);
         tcase_add_test(tc_api, test_api_init);
         tcase_add_test(tc_api, test_api_memory);
+        tcase_add_test(tc_api, test_api_element);
         tcase_add_test(tc_api, test_api_material);
         tcase_add_test(tc_api, test_api_composite);
         tcase_add_test(tc_api, test_api_property);
