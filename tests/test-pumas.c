@@ -282,6 +282,7 @@ START_TEST(test_api_init)
         reset_error();
         dump_tau();
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        pumas_physics_destroy(&physics);
 
         /* Check the load */
         reset_error();
@@ -453,7 +454,8 @@ START_TEST(test_api_material)
         int i, index, length, components[2];
         const char * name;
         const char * names[] = { "StandardRock", "Water", "Air" };
-        double density, fractions[2];
+        double density, I, fractions[2];
+        struct pumas_physics_density_effect density_effect;
 
         /* Check the initialisation error */
         reset_error();
@@ -469,7 +471,7 @@ START_TEST(test_api_material)
 
         reset_error();
         pumas_physics_material_properties(
-            physics, 0, NULL, NULL, NULL, NULL);
+            physics, 0, NULL, NULL, NULL, NULL, NULL, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         /* Load the muon data */
@@ -492,8 +494,8 @@ START_TEST(test_api_material)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
-        pumas_physics_material_properties(
-            physics, 4, &length, &density, components, fractions);
+        pumas_physics_material_properties(physics, 4, &length, &density, &I,
+            &density_effect, components, fractions);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         /* Check the materials mapping */
@@ -513,20 +515,28 @@ START_TEST(test_api_material)
         double wH = 0.111894, wO = 0.888106;
 
         reset_error();
-        pumas_physics_material_properties(
-            physics, 0, &length, &density, components, fractions);
+        pumas_physics_material_properties(physics, 0, &length, &density, &I,
+            &density_effect, components, fractions);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(length, 1);
         ck_assert_double_eq(density, 2.65E+03);
+        ck_assert_double_eq(I, 136.4);
+        ck_assert_double_eq(density_effect.a, 0.0830);
+        ck_assert_double_eq(density_effect.k, 3.4120);
+        ck_assert_double_eq(density_effect.x0, 0.0492);
+        ck_assert_double_eq(density_effect.x1, 3.0549);
+        ck_assert_double_eq(density_effect.Cbar, 3.7738);
+        ck_assert_double_eq(density_effect.delta0, 0.);
         ck_assert_double_eq(components[0], 4);
         ck_assert_double_eq(fractions[0], 1);
 
         reset_error();
-        pumas_physics_material_properties(
-            physics, 1, &length, &density, components, fractions);
+        pumas_physics_material_properties(physics, 1, &length, &density, &I,
+            &density_effect, components, fractions);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(length, 2);
         ck_assert_double_eq(density, 1E+03);
+        ck_assert_double_eq(I, 79.7);
         ck_assert_double_eq(components[0], 0);
         ck_assert_double_eq(components[1], 3);
         ck_assert_double_eq(fractions[0], wH);
@@ -605,7 +615,7 @@ START_TEST(test_api_composite)
 
         reset_error();
         pumas_physics_material_properties(
-            physics, 2, &length, &density, components, fractions);
+            physics, 2, &length, &density, NULL, NULL, components, fractions);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(length, 3);
         ck_assert_double_eq(density, rho);
@@ -633,7 +643,7 @@ START_TEST(test_api_composite)
 
         reset_error();
         pumas_physics_material_properties(
-            physics, 2, NULL, &density, NULL, NULL);
+            physics, 2, NULL, &density, NULL, NULL, NULL, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq(density, rho);
 
@@ -658,7 +668,7 @@ START_TEST(test_api_composite)
 
         reset_error();
         pumas_physics_material_properties(
-            physics, 2, &length, &density, components, fractions);
+            physics, 2, &length, &density, NULL, NULL, components, fractions);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(length, 3);
         ck_assert_double_eq(density, rho);
@@ -4810,13 +4820,13 @@ START_TEST(test_tabulation)
         ck_assert_double_eq(data.elements->fraction, 1);
 
         ck_assert_double_eq_tol(data.material.I, 136.4E-09, 10);
-        ck_assert_double_eq(data.material.x0, 0.2);
-        ck_assert_double_eq(data.material.x1, 3);
+        ck_assert_double_eq(data.material.density_effect.x0, 0.2);
+        ck_assert_double_eq(data.material.density_effect.x1, 3);
 
         data.material.index = 1;
         data.material.density = 1E+03;
         data.material.state = PUMAS_PHYSICS_STATE_LIQUID;
-        data.material.a = 0;
+        data.material.density_effect.a = 0;
         pumas_physics_tabulate(physics, &data);
 
         ck_assert_ptr_nonnull(data.elements);
@@ -4832,7 +4842,7 @@ START_TEST(test_tabulation)
         data.material.index = 0;
         data.material.density = 1.;
         data.material.state = PUMAS_PHYSICS_STATE_GAZ;
-        data.material.a = 0;
+        data.material.density_effect.a = 0;
         pumas_physics_tabulate(physics, &data);
 
         ck_assert_ptr_eq(data.elements, rock_element);
@@ -4842,8 +4852,8 @@ START_TEST(test_tabulation)
         ck_assert_double_eq(data.elements->fraction, 1);
 
         ck_assert_double_eq_tol(data.material.I, 136.4E-09, 10);
-        ck_assert_double_eq(data.material.x0, 1.8);
-        ck_assert_double_eq(data.material.x1, 4);
+        ck_assert_double_eq(data.material.density_effect.x0, 1.8);
+        ck_assert_double_eq(data.material.density_effect.x1, 4);
 
         pumas_physics_tabulation_clear(physics, &data);
         ck_assert_ptr_null(data.elements);

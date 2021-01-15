@@ -685,6 +685,10 @@ struct pumas_physics {
         double * material_density;
         /** The relative electronic density of a material. */
         double * material_ZoA;
+        /** The mean excitation energy of a base material. */
+        double * material_I;
+        /** The density effect parameters of a base material. */
+        struct pumas_physics_density_effect * material_density_effect;
         /** The properties of an atomic element . */
         struct atomic_element ** element;
         /** The composition of a base material. */
@@ -1163,7 +1167,7 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         FILE * fid_mdf = NULL;
         struct mdf_buffer * mdf = NULL;
         const int pad_size = sizeof(*((*physics_ptr)->data));
-#define N_DATA_POINTERS 27
+#define N_DATA_POINTERS 29
         int size_data[N_DATA_POINTERS];
 
         /* Check the particle type. */
@@ -1303,6 +1307,13 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         /* material_ZoA */
         size_data[imem++] =
             memory_padded_size(sizeof(double) * settings.n_materials, pad_size);
+        /* material_I */
+        size_data[imem++] = memory_padded_size(sizeof(double) *
+            (settings.n_materials - settings.n_composites), pad_size);
+        /* material_density_effect */
+        size_data[imem++] = memory_padded_size(
+            sizeof(struct pumas_physics_density_effect) *
+            (settings.n_materials - settings.n_composites), pad_size);
         /* element. */
         const int n_dcs = (N_DEL_PROCESSES - 1) *
             (DCS_MODEL_ORDER_P + DCS_MODEL_ORDER_Q + 1 + DCS_SAMPLING_N) *
@@ -2365,7 +2376,9 @@ enum pumas_return pumas_physics_material_index(
 
 enum pumas_return pumas_physics_material_properties(
     const struct pumas_physics * physics, int material, int * length,
-    double * density, int * components, double * fractions)
+    double * density, double * I,
+    struct pumas_physics_density_effect * density_effect, int * components,
+    double * fractions)
 {
         ERROR_INITIALISE(pumas_physics_material_properties);
 
@@ -2373,13 +2386,23 @@ enum pumas_return pumas_physics_material_properties(
                 return ERROR_NOT_INITIALISED();
         }
 
-        const int i0 = physics->n_materials;
+        int i0 = physics->n_materials;
+        if ((I != NULL) || (density_effect != NULL)) {
+                i0 -= physics->n_composites;
+        }
+
         if ((material < 0) || (material > i0 - 1)) {
                 return ERROR_INVALID_MATERIAL(material);
         }
 
         if (length != NULL) *length = physics->elements_in[material];
         if (density != NULL) *density = physics->material_density[material];
+        if (I != NULL) *I = physics->material_I[material];
+        if (density_effect != NULL) {
+                struct pumas_physics_density_effect * const d =
+                    physics->material_density_effect + material;
+                memcpy(density_effect, d, sizeof(*density_effect));
+        }
         int i;
         for (i = 0; i < physics->elements_in[material]; i++) {
                 const struct material_component * component =
@@ -6410,13 +6433,31 @@ enum pumas_return io_parse_dedx_file(struct pumas_physics * physics, FILE * fid,
 {
         char * buffer = NULL;
 
-        /* Skip the header lines. */
-        int line = 0;
+        /* Parse the Stenheimer coefficients from the header lines. */
+        int line = 0, read_coef = 0;
         int i;
         for (i = 0; i < physics->n_energy_loss_header; i++) {
                 io_read_line(fid, &buffer, filename, line, error_);
                 line++;
                 if (error_->code != PUMAS_RETURN_SUCCESS) return error_->code;
+
+                if (read_coef) {
+                        double * const d =
+                            (double * const)(
+                                &physics->material_density_effect[material]);
+                        double * const I =
+                            (double * const)(
+                                &physics->material_I[material]);
+                        if (sscanf(buffer, "%lf %lf %lf %lf %lf %lf %lf",
+                            d, d + 1, d + 2, d + 3, I, d + 4, d + 5) != 7) {
+                                return ERROR_REGISTER(
+                                    PUMAS_RETURN_FORMAT_ERROR,
+                                    "could not read Sternheimer coef");
+                        }
+                        read_coef = 0;
+                } else if (strstr(buffer, "Sternheimer coef") != NULL) {
+                        read_coef = 1;
+                }
         }
 
         /* Initialise the new table. */
@@ -10512,14 +10553,16 @@ static void electronic_density_effect(const struct pumas_physics * physics,
         const double c = 2. * log(10.);
         const double r = kinetic / physics->mass;
         const double x = 0.5 * log10(r * (r + 2.));
-        if (x < m->x0)
-                *delta = m->delta0 > 0. ?
-                    m->delta0 * pow(10., 2. * (x - m->x0)) :
+        const struct pumas_physics_density_effect * const d =
+            &m->density_effect;
+        if (x < d->x0)
+                *delta = d->delta0 > 0. ?
+                    d->delta0 * pow(10., 2. * (x - d->x0)) :
                     0.;
-        else if (x < m->x1)
-                *delta = c * x - m->Cbar + m->a * pow(m->x1 - x, m->k);
+        else if (x < d->x1)
+                *delta = c * x - d->Cbar + d->a * pow(d->x1 - x, d->k);
         else
-                *delta = c * x - m->Cbar;
+                *delta = c * x - d->Cbar;
 }
 
 /* The average energy loss from atomic electrons. */
@@ -10657,46 +10700,49 @@ enum pumas_return pumas_physics_tabulate(
         }
 
         /* Compute the density effect coefficients, if not provided. */
-        if (m->a <= 0.) {
+        if (m->density_effect.a <= 0.) {
+                struct pumas_physics_density_effect * const d =
+                    &m->density_effect;
+
                 /* Use the Sternheimer and Peierls recipee. */
-                m->k = 3.;
+                d->k = 3.;
                 const double hwp = 28.816E-09 *
                     sqrt(m->density * 1E-03 * physics->material_ZoA[m->index]);
-                m->Cbar = 2. * log(m->I / hwp);
+                d->Cbar = 2. * log(m->I / hwp);
                 if (m->state == PUMAS_PHYSICS_STATE_GAZ) {
-                        if (m->Cbar < 10.) {
-                                m->x0 = 1.6, m->x1 = 4.;
-                        } else if (m->Cbar < 10.5) {
-                                m->x0 = 1.7, m->x1 = 4.;
-                        } else if (m->Cbar < 11.) {
-                                m->x0 = 1.8, m->x1 = 4.;
-                        } else if (m->Cbar < 11.5) {
-                                m->x0 = 1.9, m->x1 = 4.;
-                        } else if (m->Cbar < 12.25) {
-                                m->x0 = 2.0, m->x1 = 4.;
-                        } else if (m->Cbar < 13.804) {
-                                m->x0 = 2.0, m->x1 = 5.;
+                        if (d->Cbar < 10.) {
+                                d->x0 = 1.6, d->x1 = 4.;
+                        } else if (d->Cbar < 10.5) {
+                                d->x0 = 1.7, d->x1 = 4.;
+                        } else if (d->Cbar < 11.) {
+                                d->x0 = 1.8, d->x1 = 4.;
+                        } else if (d->Cbar < 11.5) {
+                                d->x0 = 1.9, d->x1 = 4.;
+                        } else if (d->Cbar < 12.25) {
+                                d->x0 = 2.0, d->x1 = 4.;
+                        } else if (d->Cbar < 13.804) {
+                                d->x0 = 2.0, d->x1 = 5.;
                         } else {
-                                m->x0 = 0.326 * m->Cbar - 1.5;
-                                m->x1 = 5.0;
+                                d->x0 = 0.326 * d->Cbar - 1.5;
+                                d->x1 = 5.0;
                         }
                 } else {
                         if (m->I < 100.E-09) {
-                                m->x1 = 2.;
-                                if (m->Cbar < 3.681)
-                                        m->x0 = 0.2;
+                                d->x1 = 2.;
+                                if (d->Cbar < 3.681)
+                                        d->x0 = 0.2;
                                 else
-                                        m->x0 = 0.326 * m->Cbar - 1.;
+                                        d->x0 = 0.326 * d->Cbar - 1.;
                         } else {
-                                m->x1 = 3.;
-                                if (m->Cbar < 5.215)
-                                        m->x0 = 0.2;
+                                d->x1 = 3.;
+                                if (d->Cbar < 5.215)
+                                        d->x0 = 0.2;
                                 else
-                                        m->x0 = 0.326 * m->Cbar - 1.5;
+                                        d->x0 = 0.326 * d->Cbar - 1.5;
                         }
                 }
-                const double dx = m->x1 - m->x0;
-                m->a = (m->Cbar - 2. * log(10.) * m->x0) / (dx * dx * dx);
+                const double dx = d->x1 - d->x0;
+                d->a = (d->Cbar - 2. * log(10.) * d->x0) / (dx * dx * dx);
         }
 
         /*
@@ -10763,9 +10809,11 @@ enum pumas_return pumas_physics_tabulate(
             physics->material_ZoA[m->index]);
         fprintf(stream, " Sternheimer coef:  a     k=m_s   x_0    x_1    "
                         "I[eV]   Cbar  delta0\n");
+        const struct pumas_physics_density_effect * const d =
+            &m->density_effect;
         fprintf(stream, "                %7.4lf %7.4lf %7.4lf %7.4lf %6.1lf "
                         "%7.4lf %.2lf\n",
-            m->a, m->k, m->x0, m->x1, m->I * 1E+09, m->Cbar, m->delta0);
+            d->a, d->k, d->x0, d->x1, m->I * 1E+09, d->Cbar, d->delta0);
         fprintf(stream, "\n *** Table generated with PUMAS v%.2f ***\n\n",
             PUMAS_VERSION);
         fprintf(stream,
@@ -10829,6 +10877,9 @@ enum pumas_return pumas_physics_tabulate(
 void pumas_physics_tabulation_clear(const struct pumas_physics * physics,
     struct pumas_physics_tabulation_data * data)
 {
+        deallocate(data->path);
+        data->path = NULL;
+
         struct pumas_physics_element * e;
         for (e = data->elements; e != NULL;) {
                 struct pumas_physics_element * prev = e->prev;
