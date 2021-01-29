@@ -266,7 +266,7 @@ START_TEST(test_api_init)
         /* Check the initialisation and dump */
         reset_error();
         pumas_physics_create(&physics, PUMAS_PARTICLE_MUON,
-            "materials/mdf/standard.xml", "materials/dedx/muon");
+            "materials/mdf/examples/standard.xml", "materials/dedx/muon");
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
 
         reset_error();
@@ -276,7 +276,7 @@ START_TEST(test_api_init)
 
         reset_error();
         pumas_physics_create(&physics, PUMAS_PARTICLE_TAU,
-            "materials/mdf/wet-rock.xml", "materials/dedx/tau");
+            "materials/mdf/examples/wet-rock.xml", "materials/dedx/tau");
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
 
         reset_error();
@@ -422,8 +422,7 @@ START_TEST(test_api_element)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         /* Check the elements mapping */
-        const char * names[] = {"Hydrogen", "Carbon", "Nitrogen", "Oxygen",
-            "StandardRock", "Argon"};
+        const char * names[] = {"H", "C", "N", "O", "Rk", "Ar"};
         for (i = 0; i < sizeof(names) / sizeof(*names); i++) {
                 reset_error();
                 pumas_physics_element_index(physics, names[i], &index);
@@ -441,8 +440,8 @@ START_TEST(test_api_element)
         pumas_physics_element_properties(physics, 0, &Z, &A, &I);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq(Z, 1);
-        ck_assert_double_eq(A, 1.008);
-        ck_assert_double_eq_tol(I * 1E+09, 21.8, 1E-06);
+        ck_assert_double_eq(A, 1.0087);
+        ck_assert_double_eq_tol(I * 1E+09, 19.2, 1E-06);
 
         pumas_physics_destroy(&physics);
 }
@@ -537,10 +536,10 @@ START_TEST(test_api_material)
         ck_assert_int_eq(length, 2);
         ck_assert_double_eq(density, 1E+03);
         ck_assert_double_eq(I, 79.7);
-        ck_assert_double_eq(components[0], 0);
-        ck_assert_double_eq(components[1], 3);
-        ck_assert_double_eq(fractions[0], wH);
-        ck_assert_double_eq(fractions[1], wO);
+        ck_assert_double_eq(components[0], 3);
+        ck_assert_double_eq(components[1], 0);
+        ck_assert_double_eq(fractions[0], wO);
+        ck_assert_double_eq(fractions[1], wH);
 
         pumas_physics_destroy(&physics);
 }
@@ -551,7 +550,7 @@ START_TEST(test_api_composite)
 {
         int i, index, length, components[3];
         const char * name;
-        const char * names[] = { "Water", "StandardRock", "WetRock" };
+        const char * names[] = { "StandardRock", "Water", "WetRock" };
         double density, fractions[3];
 
         /* Check the initialisation error */
@@ -608,8 +607,8 @@ START_TEST(test_api_composite)
             physics, 2, &length, components, fractions);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(length, 2);
-        ck_assert_double_eq(components[0], 1);
-        ck_assert_double_eq(components[1], 0);
+        ck_assert_double_eq(components[0], 0);
+        ck_assert_double_eq(components[1], 1);
         ck_assert_double_eq(fractions[0], fraction0);
         ck_assert_double_eq(fractions[1], fraction1);
 
@@ -620,11 +619,11 @@ START_TEST(test_api_composite)
         ck_assert_int_eq(length, 3);
         ck_assert_double_eq(density, rho);
         ck_assert_double_eq(components[0], 2);
-        ck_assert_double_eq(components[1], 0);
-        ck_assert_double_eq(components[2], 1);
+        ck_assert_double_eq(components[1], 1);
+        ck_assert_double_eq(components[2], 0);
         ck_assert_double_eq(fractions[0], fraction0);
-        ck_assert_double_eq(fractions[1], fraction1 * wH);
-        ck_assert_double_eq(fractions[2], fraction1 * wO);
+        ck_assert_double_eq(fractions[1], fraction1 * wO);
+        ck_assert_double_eq(fractions[2], fraction1 * wH);
 
         /* Check the properties setter */
         reset_error();
@@ -636,8 +635,8 @@ START_TEST(test_api_composite)
             physics, 2, &length, components, fractions);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(length, 2);
-        ck_assert_double_eq(components[0], 1);
-        ck_assert_double_eq(components[1], 0);
+        ck_assert_double_eq(components[0], 0);
+        ck_assert_double_eq(components[1], 1);
         ck_assert_double_eq(fractions[0], fraction0);
         ck_assert_double_eq(fractions[1], fraction1);
 
@@ -661,8 +660,8 @@ START_TEST(test_api_composite)
             physics, 2, &length, components, fractions);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(length, 2);
-        ck_assert_double_eq(components[0], 1);
-        ck_assert_double_eq(components[1], 0);
+        ck_assert_double_eq(components[0], 0);
+        ck_assert_double_eq(components[1], 1);
         ck_assert_double_eq(fractions[0], fraction0);
         ck_assert_double_eq(fractions[1], fraction1);
 
@@ -673,11 +672,11 @@ START_TEST(test_api_composite)
         ck_assert_int_eq(length, 3);
         ck_assert_double_eq(density, rho);
         ck_assert_double_eq(components[0], 2);
-        ck_assert_double_eq(components[1], 0);
-        ck_assert_double_eq(components[2], 1);
+        ck_assert_double_eq(components[1], 1);
+        ck_assert_double_eq(components[2], 0);
         ck_assert_double_eq(fractions[0], fraction0);
-        ck_assert_double_eq(fractions[1], fraction1 * wH);
-        ck_assert_double_eq(fractions[2], fraction1 * wO);
+        ck_assert_double_eq(fractions[1], fraction1 * wO);
+        ck_assert_double_eq(fractions[2], fraction1 * wH);
 
         pumas_physics_destroy(&physics);
 }
@@ -4796,8 +4795,8 @@ END_TEST
 
 START_TEST(test_tabulation)
 {
-        pumas_physics_create_tabulation(
-            &physics, PUMAS_PARTICLE_MUON, "materials/mdf/standard.xml");
+        pumas_physics_create_tabulation(&physics, PUMAS_PARTICLE_MUON,
+            "materials/mdf/examples/standard.xml");
 
         double kinetic[2] = { 1E-01, 1E+01 };
         struct pumas_physics_tabulation_data data = {.n_kinetics = 2,
@@ -4810,7 +4809,7 @@ START_TEST(test_tabulation)
 
         pumas_physics_tabulate(physics, &data);
 
-        ck_assert_str_eq(data.path, "./standard-rock.txt");
+        ck_assert_str_eq(data.path, "./standard_rock.txt");
 
         void * rock_element = data.elements;
         ck_assert_ptr_nonnull(rock_element);
@@ -4832,11 +4831,11 @@ START_TEST(test_tabulation)
         ck_assert_ptr_nonnull(data.elements);
         ck_assert_ptr_nonnull(data.elements->prev);
         ck_assert_ptr_null(data.elements->next);
-        ck_assert_int_eq(data.elements->index, 3);
+        ck_assert_int_eq(data.elements->index, 0);
         ck_assert_double_eq_tol(data.elements->fraction, 0.888106, 6);
         ck_assert_ptr_eq(data.elements->prev->next, data.elements);
         ck_assert_ptr_eq(data.elements->prev->prev, rock_element);
-        ck_assert_int_eq(data.elements->prev->index, 0);
+        ck_assert_int_eq(data.elements->prev->index, 3);
         ck_assert_double_eq_tol(data.elements->fraction, 0.111894, 6);
 
         data.material.index = 0;
