@@ -41,9 +41,6 @@
 /* The name of the medium's material */
 #define MATERIAL_NAME "StandardRock"
 
-/* The medium uniform density, in kg / m^3 */
-#define MEDIUM_DENSITY 2.65E+03
-
 #ifndef M_PI
 /* Define pi, if unknown */
 #define M_PI 3.14159265358979323846
@@ -73,21 +70,10 @@ static void handle_error(
         exit_gracefully(EXIT_FAILURE);
 }
 
-/* A uniform rock medium */
-static double locals_rock(struct pumas_medium * medium,
-    struct pumas_state * state, struct pumas_locals * locals)
-{
-        /* Set the medium density */
-        locals->density = MEDIUM_DENSITY;
-
-        /* Propose a maximum stepping distance. Returning zero or less indicates
-         * a uniform medium
-         */
-        return 0.;
-}
-
-/* The medium container */
-static struct pumas_medium medium = { 0, &locals_rock };
+/* The medium container. The locals callback is set to `NULL` resulting in
+ * the default material density being used with a null magnetic field
+ */
+static struct pumas_medium medium = { 0, NULL };
 
 /* A basic medium callback providing an infinite single medium */
 static enum pumas_step medium1(struct pumas_context * context,

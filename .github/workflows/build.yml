@@ -54,13 +54,12 @@ jobs:
       uses: actions/checkout@v2
       with:
         repository: niess/pumas-materials
-        ref: 'f26020c31e673b773cb6921c8b9bd318aac1fbba'
         path: materials
 
     - if: matrix.OS_TAG == 'OSX'
       name: Examples
       run: |
-        ./build/pumas-example-load materials/mdf/standard.xml \
+        ./build/pumas-example-load materials/mdf/examples/standard.xml \
                                    materials/dedx/muon \
                                    materials/dump
         ./build/pumas-example-straight 10 10 1

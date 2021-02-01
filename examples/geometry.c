@@ -79,7 +79,8 @@ static void handle_error(
 static double locals_rock(struct pumas_medium * medium,
     struct pumas_state * state, struct pumas_locals * locals)
 {
-        /* Set the medium density */
+        /* Set the medium density, in kg / m3. Setting zero or less results in
+         * the default material density being used */
         locals->density = 2.65E+03;
 
         /* Propose a maximum stepping distance. Returning zero or less indicates

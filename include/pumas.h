@@ -267,7 +267,9 @@ struct pumas_state {
  * The local properties of a propagation medium.
  */
 struct pumas_locals {
-        /** The material local density, in kg/m^3. */
+        /** The material local density, in kg/m^3. Setting a null or negative
+         * value results in the material's default density being used.
+         */
         double density;
         /** The local magnetic field components, in T. */
         double magnet[3];
@@ -314,6 +316,8 @@ struct pumas_medium {
         int material;
         /**
          * The user supplied callback for setting the medium local properties.
+         * Setting a `NULL` callback results in the material's default density
+         * being used with no magnetic field.
          */
         pumas_locals_cb * locals;
 };

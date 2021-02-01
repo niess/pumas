@@ -351,6 +351,8 @@ struct medium_locals {
         struct pumas_locals api;
         /** A flag telling if the material has a magnetic field or not. */
         int magnetized;
+        /** The local's physics */
+        const struct pumas_physics * physics;
 };
 /**
  * The local data managed by a simulation context.
@@ -963,7 +965,8 @@ static enum pumas_return step_transport(const struct pumas_physics * physics,
     struct pumas_context * context, struct pumas_state * state, int straight,
     struct pumas_medium * medium, struct medium_locals * locals,
     double grammage_max, double step_max_medium, enum pumas_step step_max_type,
-    double * step_max_locals, struct pumas_medium ** out_medium);
+    double * step_max_locals, struct pumas_medium ** out_medium,
+    struct error_context * error_);
 static void step_fluctuate(const struct pumas_physics * physics,
     struct pumas_context * context, struct pumas_state * state, int material,
     double Xtot, double dX, double * kf, double * dE);
@@ -2212,7 +2215,7 @@ enum pumas_return pumas_context_transport(struct pumas_context * context,
         } else if ((step_max_medium > 0.) &&
             (step_max_type == PUMAS_STEP_APPROXIMATE))
                 step_max_medium += 0.5 * STEP_MIN;
-        struct medium_locals locals = { { 0., { 0., 0., 0. } } };
+        struct medium_locals locals = { { 0., { 0., 0., 0. }}, 0, physics };
         const double step_max_locals =
             transport_set_locals(medium, state, &locals);
         if ((step_max_locals > 0.) && (step_max_locals < step_max_medium))
@@ -4017,7 +4020,8 @@ enum pumas_event transport_with_stepping(const struct pumas_physics * physics,
                 struct pumas_medium * new_medium = NULL;
                 if (step_transport(physics, context, state, straight, medium,
                         locals, grammage_max, step_max_medium, step_max_type,
-                        &step_max_locals, &new_medium) != PUMAS_RETURN_SUCCESS)
+                        &step_max_locals, &new_medium, error_)
+                        != PUMAS_RETURN_SUCCESS)
                         return context_->step_event;
                 step_index++;
 
@@ -4155,7 +4159,8 @@ enum pumas_event transport_with_stepping(const struct pumas_physics * physics,
                                         break;
                                 material = medium->material;
                                 context->medium(context, state, NULL, NULL);
-                                memset(locals, 0x0, sizeof(*locals));
+                                memset(&locals->api, 0x0, sizeof(locals->api));
+                                locals->magnetized = 0;
                                 step_max_locals =
                                     transport_set_locals(medium, state, locals);
                                 if (locals->api.density <= 0.) {
@@ -4261,11 +4266,25 @@ double transport_set_locals(struct pumas_medium * medium,
     struct pumas_state * state, struct medium_locals * locals)
 {
         struct pumas_locals * loc = (struct pumas_locals *)locals;
-        const double step_max = medium->locals(medium, state, loc);
-        const double * const b = loc->magnet;
-        locals->magnetized =
-            ((b[0] != 0.) || (b[1] != 0.) || (b[2] != 0.)) ? 1 : 0;
-        return step_max;
+        if (medium->locals == NULL) {
+                loc->density =
+                    locals->physics->material_density[medium->material];
+                memset(loc->magnet, 0x0, sizeof(loc->magnet));
+                locals->magnetized = 0;
+
+                return 0;
+        } else {
+                const double step_max = medium->locals(medium, state, loc);
+                if (loc->density <= 0) {
+                        loc->density =
+                            locals->physics->material_density[medium->material];
+                }
+
+                const double * const b = loc->magnet;
+                locals->magnetized =
+                    ((b[0] != 0.) || (b[1] != 0.) || (b[2] != 0.)) ? 1 : 0;
+                return step_max;
+        }
 }
 
 /**
@@ -5067,7 +5086,7 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
     struct pumas_medium * medium, struct medium_locals * locals,
     double grammage_max, double step_max_medium,
     enum pumas_step step_max_type, double * step_max_locals,
-    struct pumas_medium ** out_medium)
+    struct pumas_medium ** out_medium, struct error_context * error_)
 {
         /* Unpack the data. */
         struct simulation_context * const context_ =
@@ -5270,8 +5289,11 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
             (event != PUMAS_EVENT_MEDIUM))) {
                 /* Update the locals. */
                 *step_max_locals = transport_set_locals(medium, state, locals);
-                if (locals->api.density <= 0.)
+                if (locals->api.density <= 0.) {
+                        ERROR_REGISTER_NEGATIVE_DENSITY(
+                            physics->material_name[medium->material]);
                         return PUMAS_RETURN_DENSITY_ERROR;
+                }
         }
 
         /* Offset the end step position for a boundary crossing. */
