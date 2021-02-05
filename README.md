@@ -25,8 +25,10 @@ A compilation of materials for PUMAS is hosted on GitHub as a separate project,
 [pumas-materials](https://github.com/niess/pumas-materials). These tables have
 been generated with the PUMAS library. For muons one can also use the whole set
 of tabulations provided online by the
-[PDG](http://pdg.lbl.gov/2019/AtomicNuclearProperties/index.html).  Note however
-that those are slightly less accurate than PUMAS ones above 100 TeV.
+[PDG](https://pdg.lbl.gov/2020/AtomicNuclearProperties/index.html). Note however
+that those are less accurate than PUMAS ones above 100 TeV due to improvements
+on the photonuclear cross-section (see e.g.
+[Sokalski _et al._](https://arxiv.org/abs/hep-ph/0201122)).
 
 ## Documentation
 

@@ -35,7 +35,7 @@ extern "C" {
 #endif
 
 /**
- * Particle types supported by the PUMAS transport engine.
+ * Particle types managed by the PUMAS transport engine.
  */
 enum pumas_particle {
         /** The muon or anti-muon lepton. */
@@ -305,7 +305,7 @@ typedef double pumas_locals_cb (struct pumas_medium * medium,
  *
  * - a `material` composition with a uniform relative content.
  * - `pumas_locals` properties set by a user provided `pumas_locals_cb`
- * callback.
+ * callback or `NULL` e.g. if using the material's default density.
  */
 struct pumas_medium {
         /**
@@ -462,6 +462,49 @@ typedef void pumas_handler_cb (enum pumas_return rc, pumas_function_t * caller,
  */
 typedef double pumas_random_cb (struct pumas_context * context);
 
+/** Mode flags for the Monte Carlo transport. */
+struct pumas_context_mode {
+        /**
+        * The scheme used for the computation of energy losses. Default
+        * is `PUMAS_MOED_DETAILED`.
+        */
+        enum pumas_mode energy_loss;
+        /**
+        * The mode for handling decays. Default is `PUMAS_MODE_WEIGHT`
+        * for a muon or `PUMAS_MODE_DECAY` for a tau. Set this to
+        * `PUMAS_MODE_STABLE` in order to disable decays at all.
+        */
+        enum pumas_mode decay;
+        /**
+        * Direction of the Monte Carlo flow. Default is
+        * `PUMAS_MODE_FORWARD`. Set this to `PUMAS_MODE_BACKWARD` for a
+        * reverse Monte Carlo.
+        */
+        enum pumas_mode direction;
+        /**
+        * Algorithm for the simulation of the scattering. Default is
+        * `PUMAS_MODE_FULL_SPACE`. Other option is
+        * `PUMAS_MODE_LONGITUDNAL` which neglects any transverse
+        * scattering.
+        */
+        enum pumas_mode scattering;
+};
+
+/** External limits for the Monte Carlo transport. */
+struct pumas_context_limit {
+        /**
+         * The minimum kinetic energy for forward transport, or the
+         * maximum one for backward transport, in GeV.
+         */
+        double kinetic;
+        /** The maximum travelled distance, in m. */
+        double distance;
+        /** The maximum travelled grammage, in kg/m^2. */
+        double grammage;
+        /** The maximum travelled proper time, in m/c. */
+        double time;
+};
+
 /**
  * A handle for a simulation stream.
  *
@@ -493,32 +536,7 @@ struct pumas_context {
         void * user_data;
 
         /** Monte Carlo transport mode. */
-        struct {
-                /**
-                * The scheme used for the computation of energy losses. Default
-                * is `PUMAS_SCHEME_DETAILED`.
-                */
-                enum pumas_mode energy_loss;
-                /**
-                * The mode for handling decays. Default is `PUMAS_MODE_WEIGHT`
-                * for a muon or `PUMAS_MODE_DECAY` for a tau. Set this to
-                * `PUMAS_MODE_STABLE` in order to disable decays at all.
-                */
-                enum pumas_mode decay;
-                /**
-                * Direction of the Monte Carlo flow. Default is
-                * `PUMAS_MODE_FORWARD`. Set this to `PUMAS_MODE_BACKWARD` for a
-                * reverse Monte Carlo.
-                */
-                enum pumas_mode direction;
-                /**
-                * Algorithm for the simulation of the scattering. Default is
-                * `PUMAS_MODE_FULL_SPACE`. Other option is
-                * `PUMAS_MODE_LONGITUDNAL` which neglects any transverse
-                * scattering.
-                */
-                enum pumas_mode scattering;
-        } mode;
+        struct pumas_context_mode mode;
         /**
          * The events that might stop the transport. Default is
          * `PUMAS_EVENT_NONE`, i.e. the transport stops only if the particle
@@ -527,19 +545,7 @@ struct pumas_context {
         enum pumas_event event;
 
         /** External limits for the Monte Carlo transport. */
-        struct {
-                /**
-                 * The minimum kinetic energy for forward transport, or the
-                 * maximum one for backward transport, in GeV.
-                 */
-                double kinetic;
-                /** The maximum travelled distance, in m. */
-                double distance;
-                /** The maximum travelled grammage, in kg / m^2. */
-                double grammage;
-                /** The maximum travelled proper time, in m. */
-                double time;
-        } limit;
+        struct pumas_context_limit limit;
 };
 
 /**
@@ -573,7 +579,7 @@ struct pumas_physics_density_effect {
  * @param m       The projectile rest mass, in GeV
  * @param K       The projectile kinetic energy, in GeV.
  * @param q       The projectile energy loss, in GeV.
- * @return The corresponding value of the atomic DCS, in m^2 / GeV.
+ * @return The corresponding value of the atomic DCS, in m^2/GeV.
  *
  * The `pumas_physics_dcs_get` function returns the current (default) DCS.
  * The `pumas_physics_dcs_set` functions allows to provide an alternative one.
@@ -790,7 +796,7 @@ PUMAS_API int pumas_version();
  *
  * @param physics       Handle for the Physics tables.
  * @param particle      The type of the transported particle or `NULL`.
- * @param lifetime      The type of the transported particle, in m, or `NULL`.
+ * @param lifetime      The proper lifetime, in m/c, or `NULL`.
  * @param mass          The mass of the transported particle, in GeV, or `NULL`.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
@@ -941,8 +947,8 @@ PUMAS_API const struct pumas_physics * pumas_context_physics_get(
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * The energy loss scheme must be one of `PUMAS_SCHEME_CSDA` or
- * `PUMAS_SCHEME_HYBRID`. For a uniform medium, divide the return value by the
+ * The energy loss scheme must be one of `PUMAS_MODE_CSDA` or
+ * `PUMAS_MODE_HYBRID`. For a uniform medium, divide the return value by the
  * density in order to get the corresponding total travelled distance.
  *
  * __Error codes__
@@ -967,8 +973,8 @@ PUMAS_API enum pumas_return pumas_physics_property_grammage(
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * The energy loss scheme must be one of `PUMAS_SCHEME_CSDA` or
- * `PUMAS_SCHEME_HYBRID`. Divide the returned value by the medium density
+ * The energy loss scheme must be one of `PUMAS_MODE_CSDA` or
+ * `PUMAS_MODE_HYBRID`. Divide the returned value by the medium density
  * times *c* in order to get the proper time in unit of time.
  *
  * __Error codes__
@@ -1018,8 +1024,8 @@ PUMAS_API enum pumas_return pumas_physics_property_magnetic_rotation(
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- *  The energy loss scheme must be one of `PUMAS_SCHEME_CSDA` or
- * `PUMAS_SCHEME_HYBRID`.
+ *  The energy loss scheme must be one of `PUMAS_MODE_CSDA` or
+ * `PUMAS_MODE_HYBRID`.
  *
  * __Error codes__
  *
@@ -1043,8 +1049,8 @@ PUMAS_API enum pumas_return pumas_physics_property_kinetic_energy(
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * The energy loss scheme must be one of `PUMAS_SCHEME_CSDA` or
- * `PUMAS_SCHEME_HYBRID`.
+ * The energy loss scheme must be one of `PUMAS_MODE_CSDA` or
+ * `PUMAS_MODE_HYBRID`.
  *
  * __Error codes__
  *
