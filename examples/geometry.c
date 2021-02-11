@@ -28,7 +28,7 @@
 /* This example illustrates the backward computation of a transmitted through
  * a simple geometry composed of two layers: Standard Rock and Air. The Air
  * medium has an exponential density profile. If a maximum kinetic energy is
- * provided the flux is integrated between kinetic_min and kinetic_max.
+ * provided the flux is integrated between energy_min and energy_max.
  * Otherwise a point estimate of the flux is done, at the provided kinetic
  * energy.
  */
@@ -230,9 +230,9 @@ int main(int narg, char * argv[])
                 exit_gracefully(EXIT_FAILURE);
         }
         const double elevation = strtod(argv[2], NULL);
-        const double kinetic_min = strtod(argv[3], NULL);
-        const double kinetic_max =
-            (narg >= 5) ? strtod(argv[4], NULL) : kinetic_min;
+        const double energy_min = strtod(argv[3], NULL);
+        const double energy_max =
+            (narg >= 5) ? strtod(argv[4], NULL) : energy_min;
 
         /* Set the error handler callback. Whenever an error occurs during a
          * PUMAS function call, the supplied error handler will be evaluated,
@@ -271,12 +271,12 @@ int main(int narg, char * argv[])
         context->random = &uniform01;
 
         /* Enable external limit on the kinetic energy */
-        context->event |= PUMAS_EVENT_LIMIT_KINETIC;
+        context->event |= PUMAS_EVENT_LIMIT_ENERGY;
 
         /* Run the Monte-Carlo */
         const double cos_theta = cos((90. - elevation) / 180. * M_PI);
         const double sin_theta = sqrt(1. - cos_theta * cos_theta);
-        const double rk = log(kinetic_max / kinetic_min);
+        const double rk = log(energy_max / energy_min);
         double w = 0., w2 = 0.;
         const int n = 10000;
         int i;
@@ -289,24 +289,24 @@ int main(int narg, char * argv[])
                          * initialised according to this generating bias PDF,
                          * i.e. wf = 1 / PDF(kf).
                          */
-                        kf = kinetic_min * exp(rk * uniform01(context));
+                        kf = energy_min * exp(rk * uniform01(context));
                         wf = kf * rk;
                 } else {
                         /* A point estimate is computed, for a fixed final
                          * state energy.
                          */
-                        kf = kinetic_min;
+                        kf = energy_min;
                         wf = 1;
                 }
                 struct pumas_state state = { .charge = -1.,
-                        .kinetic = kf,
+                        .energy = kf,
                         .weight = wf,
                         .direction = { -sin_theta, 0., -cos_theta } };
 
                 /* Transport the muon backwards */
-                const double kinetic_threshold = kinetic_max * 1E+03;
-                while (state.kinetic < kinetic_threshold - FLT_EPSILON) {
-                        if (state.kinetic < 1E+02 - FLT_EPSILON) {
+                const double energy_threshold = energy_max * 1E+03;
+                while (state.energy < energy_threshold - FLT_EPSILON) {
+                        if (state.energy < 1E+02 - FLT_EPSILON) {
                                 /* Below 100 GeV do a detailed simulation
                                  * à la Geant4, including transverse transport
                                  */
@@ -314,14 +314,14 @@ int main(int narg, char * argv[])
                                     PUMAS_MODE_DETAILED;
                                 context->mode.scattering =
                                     PUMAS_MODE_FULL_SPACE;
-                                context->limit.kinetic = 1E+02;
+                                context->limit.energy = 1E+02;
                         } else {
                                 /* Do a fast simulation à la MUM */
                                 context->mode.energy_loss =
                                     PUMAS_MODE_HYBRID;
                                 context->mode.scattering =
                                     PUMAS_MODE_LONGITUDINAL;
-                                context->limit.kinetic = kinetic_threshold;
+                                context->limit.energy = energy_threshold;
                         }
                         enum pumas_event event;
                         struct pumas_medium * medium[2];
@@ -334,12 +334,12 @@ int main(int narg, char * argv[])
                                         /* Update the integrated flux */
                                         const double wi = state.weight *
                                         flux_gccly(-state.direction[2],
-                                            state.kinetic);
+                                            state.energy);
                                         w += wi;
                                         w2 += wi * wi;
                                         break;
                                 }
-                        } else if (event != PUMAS_EVENT_LIMIT_KINETIC) {
+                        } else if (event != PUMAS_EVENT_LIMIT_ENERGY) {
                                 /* This should not happen */
                                 fprintf(stderr,
                                     "error: unexpected PUMAS event `%d`\n",

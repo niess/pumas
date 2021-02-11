@@ -174,8 +174,8 @@ enum pumas_return {
 enum pumas_event {
         /** No event occured or is foreseen. */
         PUMAS_EVENT_NONE = 0,
-        /** A kinetic limit was reached or is foreseen. */
-        PUMAS_EVENT_LIMIT_KINETIC = 1,
+        /** A kinetic energy limit was reached or is foreseen. */
+        PUMAS_EVENT_LIMIT_ENERGY = 1,
         /** A distance limit was reached or is foreseen. */
         PUMAS_EVENT_LIMIT_DISTANCE = 2,
         /** A grammage limit was reached or is foreseen. */
@@ -246,7 +246,7 @@ struct pumas_state {
          * i.e. different from 1 or -1, could be set. */
         double charge;
         /** The current kinetic energy, in GeV. */
-        double kinetic;
+        double energy;
         /** The total travelled distance, in m. */
         double distance;
         /** The total travelled grammage, in kg/m^2. */
@@ -496,7 +496,7 @@ struct pumas_context_limit {
          * The minimum kinetic energy for forward transport, or the
          * maximum one for backward transport, in GeV.
          */
-        double kinetic;
+        double energy;
         /** The maximum travelled distance, in m. */
         double distance;
         /** The maximum travelled grammage, in kg/m^2. */
@@ -519,9 +519,9 @@ struct pumas_context_limit {
  * + Depending on the level of detail of the simulation a random stream must
  * be provided by the user before any call to `pumas_transport`.
  *
- * + Note that for `kinetic`, `distance`, `grammage` or `time` external limits
- * to be taken into account, the corresponding events must be activated as well,
- * with the `event` flag.
+ * + Note that for `energy`, `distance`, `grammage` or `time` external
+ * limits to be taken into account, the corresponding events must be activated
+ * as well, with the `event` flag.
  */
 struct pumas_context {
         /** A medium callback. */
@@ -942,7 +942,7 @@ PUMAS_API const struct pumas_physics * pumas_context_physics_get(
  * @param physics     Handle for the Physics tables.
  * @param scheme      The energy loss scheme.
  * @param material    The material index.
- * @param kinetic     The initial kinetic energy, in GeV.
+ * @param energy      The initial kinetic energy, in GeV.
  * @param grammage    The grammage in kg/m^(2).
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
@@ -960,7 +960,7 @@ PUMAS_API const struct pumas_physics * pumas_context_physics_get(
  */
 PUMAS_API enum pumas_return pumas_physics_property_grammage(
     const struct pumas_physics * physics, enum pumas_mode scheme,
-    int material, double kinetic, double * grammage);
+    int material, double energy, double * grammage);
 
 /**
  * Get the normalised total proper time spent assuming continuous energy loss.
@@ -968,7 +968,7 @@ PUMAS_API enum pumas_return pumas_physics_property_grammage(
  * @param physics     Handle for the Physics tables.
  * @param scheme      The energy loss scheme.
  * @param material    The material index.
- * @param kinetic     The initial kinetic energy, in GeV.
+ * @param energy      The initial kinetic energy, in GeV.
  * @param time        The normalised proper time in kg/m^(2).
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
@@ -986,7 +986,7 @@ PUMAS_API enum pumas_return pumas_physics_property_grammage(
  */
 PUMAS_API enum pumas_return pumas_physics_property_proper_time(
     const struct pumas_physics * physics, enum pumas_mode scheme,
-    int material, double kinetic, double * time);
+    int material, double energy, double * time);
 
 /**
  * Get the normalised rotation angle due to a uniform magnetic field for
@@ -994,7 +994,7 @@ PUMAS_API enum pumas_return pumas_physics_property_proper_time(
  *
  * @param physics     Handle for the Physics tables.
  * @param material    The material index.
- * @param kinetic     The initial kinetic energy, in GeV.
+ * @param energy      The initial kinetic energy, in GeV.
  * @param angle       The normalised rotation angle in rad kg/m^(3)/T.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
@@ -1009,7 +1009,7 @@ PUMAS_API enum pumas_return pumas_physics_property_proper_time(
  *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_magnetic_rotation(
-    const struct pumas_physics * physics, int material, double kinetic,
+    const struct pumas_physics * physics, int material, double energy,
     double * angle);
 
 /**
@@ -1020,7 +1020,7 @@ PUMAS_API enum pumas_return pumas_physics_property_magnetic_rotation(
  * @param scheme      The energy loss scheme
  * @param material    The material index.
  * @param grammage    The requested grammage, in kg/m^(2).
- * @param kinetic     The required kinetic energy in GeV.
+ * @param energy      The required kinetic energy in GeV.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
@@ -1036,7 +1036,7 @@ PUMAS_API enum pumas_return pumas_physics_property_magnetic_rotation(
  */
 PUMAS_API enum pumas_return pumas_physics_property_kinetic_energy(
     const struct pumas_physics * physics, enum pumas_mode scheme,
-    int material, double grammage, double * kinetic);
+    int material, double grammage, double * energy);
 
 /**
  * Get the average energy loss per unit weight of material.
@@ -1044,7 +1044,7 @@ PUMAS_API enum pumas_return pumas_physics_property_kinetic_energy(
  * @param physics     Handle for the Physics tables.
  * @param scheme      The energy loss scheme
  * @param material    The material index.
- * @param kinetic     The kinetic energy, in GeV.
+ * @param energy      The kinetic energy, in GeV.
  * @param dedx        The computed energy loss in GeV/(kg/m^(2)).
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
@@ -1061,7 +1061,7 @@ PUMAS_API enum pumas_return pumas_physics_property_kinetic_energy(
  */
 PUMAS_API enum pumas_return pumas_physics_property_energy_loss(
     const struct pumas_physics * physics, enum pumas_mode scheme,
-    int material, double kinetic, double * dedx);
+    int material, double energy, double * dedx);
 
 /**
  * Get the Multiple SCattering (MSC) 1^(st) transport path length for a
@@ -1069,7 +1069,7 @@ PUMAS_API enum pumas_return pumas_physics_property_energy_loss(
  *
  * @param physics     Handle for the Physics tables.
  * @param material    The material index.
- * @param kinetic     The kinetic energy, in GeV.
+ * @param energy      The kinetic energy, in GeV.
  * @param length      The computed MSC length in kg/m^(2).
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
@@ -1087,7 +1087,7 @@ PUMAS_API enum pumas_return pumas_physics_property_energy_loss(
  *     PUMAS_RETURN_VALUE_ERROR             The MSC path length is infinite.
  */
 PUMAS_API enum pumas_return pumas_physics_property_scattering_length(
-    const struct pumas_physics * physics, int material, double kinetic,
+    const struct pumas_physics * physics, int material, double energy,
     double * length);
 
 /**
@@ -1095,7 +1095,7 @@ PUMAS_API enum pumas_return pumas_physics_property_scattering_length(
  *
  * @param physics          Handle for the Physics tables.
  * @param material         The material index.
- * @param kinetic          The kinetic energy, in GeV.
+ * @param energy           The kinetic energy, in GeV.
  * @param cross_section    The computed cross-section value.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
@@ -1111,7 +1111,7 @@ PUMAS_API enum pumas_return pumas_physics_property_scattering_length(
  *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_cross_section(
-    const struct pumas_physics * physics, int material, double kinetic,
+    const struct pumas_physics * physics, int material, double energy,
     double * cross_section);
 
 /**
@@ -1340,7 +1340,7 @@ PUMAS_API enum pumas_return pumas_physics_composite_properties(
  * @param property    The column index of a property of interest.
  * @param scheme      The energy loss scheme.
  * @param material    The material index.
- * @param row         The kinetic value row index in the table.
+ * @param row         The kinetic energy value row index in the table.
  * @param value       The corresponding table value.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
@@ -1364,7 +1364,7 @@ PUMAS_API enum pumas_return pumas_physics_table_value(
     enum pumas_mode scheme, int material, int row, double * value);
 
 /**
- * The depth, i.e. number of kinetic values, of the tabulated data.
+ * The depth, i.e. number of kinetic energy values, of the tabulated data.
  *
  * @param physics    Handle for the Physics tables.
  * @return The number of rows in data tables.
@@ -1585,9 +1585,9 @@ struct pumas_physics_material {
  */
 struct pumas_physics_tabulation_data {
         /** The number of kinetic energy values to tabulate. */
-        int n_kinetics;
+        int n_energies;
         /** Array of kinetic energy values to tabulate. */
-        double * kinetic;
+        double * energy;
         /** Flag to enable overwriting an existing energy loss file. */
         int overwrite;
         /** Path to a directory where the tabulation should be written. */

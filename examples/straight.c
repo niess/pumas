@@ -28,7 +28,7 @@
 /* This a basic example illustrating the backward computation of a transmitted
  * muon flux through a constant thickness of a uniform material, e.g.
  * Standard Rock. If a maximum kinetic energy is provided the flux is
- * integrated between kinetic_min and kinetic_max. Otherwise a point estimate
+ * integrated between energy_min and energy_max. Otherwise a point estimate
  * of the flux is done, at the provided kinetic energy.
  */
 
@@ -147,9 +147,9 @@ int main(int narg, char * argv[])
         /* Parse the arguments */
         const double rock_thickness = strtod(argv[1], NULL);
         const double elevation = strtod(argv[2], NULL);
-        const double kinetic_min = strtod(argv[3], NULL);
-        const double kinetic_max =
-            (narg >= 5) ? strtod(argv[4], NULL) : kinetic_min;
+        const double energy_min = strtod(argv[3], NULL);
+        const double energy_max =
+            (narg >= 5) ? strtod(argv[4], NULL) : energy_min;
 
         /* Set the error handler callback. Whenever an error occurs during a
          * PUMAS function call, the supplied error handler will be evaluated,
@@ -194,7 +194,7 @@ int main(int narg, char * argv[])
         /* Run the Monte-Carlo */
         const double cos_theta = cos((90. - elevation) / 180. * M_PI);
         const double sin_theta = sqrt(1. - cos_theta * cos_theta);
-        const double rk = log(kinetic_max / kinetic_min);
+        const double rk = log(energy_max / energy_min);
         double w = 0., w2 = 0.;
         const int n = 10000;
         int i;
@@ -207,17 +207,17 @@ int main(int narg, char * argv[])
                          * initialised according to this generating bias PDF,
                          * i.e. wf = 1 / PDF(kf).
                          */
-                        kf = kinetic_min * exp(rk * uniform01(context));
+                        kf = energy_min * exp(rk * uniform01(context));
                         wf = kf * rk;
                 } else {
                         /* A point estimate is computed, for a fixed final
                          * state energy.
                          */
-                        kf = kinetic_min;
+                        kf = energy_min;
                         wf = 1;
                 }
                 struct pumas_state state = { .charge = -1.,
-                        .kinetic = kf,
+                        .energy = kf,
                         .weight = wf,
                         .direction = { -sin_theta, 0., -cos_theta } };
 
@@ -226,7 +226,7 @@ int main(int narg, char * argv[])
 
                 /* Update the integrated flux */
                 const double wi = state.weight *
-                    flux_gccly(-state.direction[2], state.kinetic);
+                    flux_gccly(-state.direction[2], state.energy);
                 w += wi;
                 w2 += wi * wi;
         }
