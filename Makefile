@@ -2,7 +2,7 @@ CFLAGS := -O3 -std=c99 -pedantic -Wall -Wfatal-errors
 INCLUDES := -Iinclude
 LIBS := -Llib -lpumas -Wl,-rpath,$(PWD)/lib -lm
 
-.PHONY: lib clean examples tabulate
+.PHONY: lib clean examples
 
 lib: lib/libpumas.so
 	@rm -f *.o
