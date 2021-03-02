@@ -1529,8 +1529,8 @@ enum pumas_physics_state {
         PUMAS_PHYSICS_STATE_SOLID,
         /** Liquid physical state. */
         PUMAS_PHYSICS_STATE_LIQUID,
-        /** Gaz physical state. */
-        PUMAS_PHYSICS_STATE_GAZ,
+        /** Gas physical state. */
+        PUMAS_PHYSICS_STATE_GAS,
         /** The number of physical states. */
         PUMAS_PHYSICS_N_STATES
 };

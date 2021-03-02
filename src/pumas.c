@@ -10738,7 +10738,7 @@ enum pumas_return pumas_physics_tabulate(
                 const double hwp = 28.816E-09 *
                     sqrt(m->density * 1E-03 * physics->material_ZoA[m->index]);
                 d->Cbar = 2. * log(m->I / hwp);
-                if (m->state == PUMAS_PHYSICS_STATE_GAZ) {
+                if (m->state == PUMAS_PHYSICS_STATE_GAS) {
                         if (d->Cbar < 10.) {
                                 d->x0 = 1.6, d->x1 = 4.;
                         } else if (d->Cbar < 10.5) {

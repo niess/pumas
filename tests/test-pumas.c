@@ -4840,7 +4840,7 @@ START_TEST(test_tabulation)
 
         data.material.index = 0;
         data.material.density = 1.;
-        data.material.state = PUMAS_PHYSICS_STATE_GAZ;
+        data.material.state = PUMAS_PHYSICS_STATE_GAS;
         data.material.density_effect.a = 0;
         pumas_physics_tabulate(physics, &data);
 
