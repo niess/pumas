@@ -1,4 +1,4 @@
-CFLAGS := -O3 -std=c99 -pedantic -Wall -Wfatal-errors
+CFLAGS := -O0 -g -std=c99 -pedantic -Wall -Wfatal-errors
 INCLUDES := -Iinclude
 LIBS := -Llib -lpumas -Wl,-rpath,$(PWD)/lib -lm
 
@@ -19,3 +19,9 @@ examples: bin/example-straight bin/example-load bin/example-geometry
 bin/example-%: examples/%.c lib/libpumas.so
 	@mkdir -p bin
 	@$(CC) $(CFLAGS) $(INCLUDES) -o $@ $< $(LIBS)
+
+examples-turtle: bin/example-earth
+
+bin/example-earth: examples/earth.c lib/libpumas.so lib/libturtle.so
+	@mkdir -p bin
+	@$(CC) $(CFLAGS) $(INCLUDES) -o $@ $< $(LIBS) -lturtle
