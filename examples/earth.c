@@ -31,7 +31,6 @@
  */
 
 /* Standard library includes */
-#include <float.h> /* XXX needed? */
 #include <math.h>
 #include <stdlib.h>
 /* The PUMAS API */
@@ -81,25 +80,24 @@ static enum pumas_step earth_medium(struct pumas_context * context,
     double * step_ptr)
 {
         /* Do a `turtle_stepper` step. The stepper returns a tentative step
-         * length as well as the indices of the layers below
-         * and above the particle at the end step position. The corresponding
-         * elevations are also provided. Note that the particle is not moved
-         * however.
+         * length as well as the index of the topography layer at the end step
+         * position. Note that the particle is not moved however.
          *
-         * The `turtle_stepper` can provide extra informations like the particle
-         * latitude and longitude which is not used in this example.
+         * The `turtle_stepper` can provide extra informations that is not used
+         * in this example, e.g. the particle latitude, longitude and altitude,
+         * or the topography layer bottom and top elevations.
          */
-        double elevation[2], step;
-        int index[2];
+        double step;
+        int index[2]; /* Note that while index[1] is not used in this example
+                       * the index array must at least be of size 2.
+                       */
         turtle_stepper_step(stepper, state->position, NULL, NULL, NULL,
-            NULL, elevation, &step, index);
+            NULL, NULL, &step, index);
 
         if (step_ptr != NULL) *step_ptr = step;
 
         if (medium_ptr != NULL) {
-                if ((index[0] >= 0) && (index[0] < NUMBER_OF_LAYERS) &&
-                    (elevation[1] != DBL_MAX)) {
-                        /* XXX is elevation needed? */
+                if ((index[0] >= 0) && (index[0] < NUMBER_OF_LAYERS)) {
                         *medium_ptr = earth_media + index[0];
                 } else {
                         *medium_ptr = NULL;
