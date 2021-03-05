@@ -1581,12 +1581,21 @@ struct pumas_physics_material {
  * This structure gathers data related to the tabulation of the energy loss of
  * materials with the `pumas_physics_tabulate` function. **Note** that the two
  * last parameters: *path* and *elements* should not be set directly. They are
- * filled in (updated) by the `pumas_physics_tabulate` function.
+ * filled in (updated) by the `pumas_physics_tabulate` function. Note also
+ * that if no energy grid is provided then a default one is set.
+ *
+ * **Warning**: the energy grid should not be changed between successive calls
+ * to `pumas_physics_tabulate`. If a new energy grid is needed then a new
+ * `pumas_physics_tabulation_data` object must be created.
  */
 struct pumas_physics_tabulation_data {
-        /** The number of kinetic energy values to tabulate. */
+        /** The number of kinetic energy values to tabulate. Providing a value
+         * of zero or less results in a default energy grid being set.
+         */
         int n_energies;
-        /** Array of kinetic energy values to tabulate. */
+        /** Array of kinetic energy values to tabulate. Providing a `NULL`
+         * value results in a default energy grid being set.
+         */
         double * energy;
         /** Flag to enable overwriting an existing energy loss file. */
         int overwrite;

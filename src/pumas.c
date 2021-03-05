@@ -10713,11 +10713,65 @@ enum pumas_return pumas_physics_tabulate(
 {
         ERROR_INITIALISE(pumas_physics_create);
 
+        /* Check the material index */
         struct pumas_physics_material * m = &data->material;
         if ((m->index < 0) ||
             (m->index >= physics->n_materials - physics->n_composites)) {
                 return ERROR_FORMAT(PUMAS_RETURN_INDEX_ERROR,
                     "invalid material index [%d]", m->index);
+        }
+
+        /* Set the energy grid */
+        if ((data->n_energies <= 0) || (data->energy == NULL)) {
+                static double energy_[201];
+                data->energy = energy_;
+
+                if (physics->particle == PUMAS_PARTICLE_MUON) {
+                        /* For muons the PDG energy grid is used by default. */
+                        energy_[0] = 1.000E-03;
+                        energy_[1] = 1.200E-03;
+                        energy_[2] = 1.400E-03;
+                        energy_[3] = 1.700E-03;
+                        energy_[4] = 2.000E-03;
+                        energy_[5] = 2.500E-03;
+                        energy_[6] = 3.000E-03;
+                        energy_[7] = 3.500E-03;
+                        energy_[8] = 4.000E-03;
+                        energy_[9] = 4.500E-03;
+                        energy_[10] = 5.000E-03;
+                        energy_[11] = 5.500E-03;
+                        energy_[12] = 6.000E-03;
+                        energy_[13] = 7.000E-03;
+                        energy_[14] = 8.000E-03;
+                        energy_[15] = 9.000E-03;
+
+                        const int n_per_decade = 16;
+                        const int n_decades = 8;
+                        data->n_energies = (n_decades + 1) * n_per_decade + 1;
+
+                        int i;
+                        for (i = 1; i <= n_decades; i++) {
+                                int j;
+                                for (j = 0; j < n_per_decade; j++) {
+                                        energy_[i * n_per_decade + j] = 10 *
+                                            energy_[(i - 1) * n_per_decade + j];
+                                }
+                        }
+                        energy_[(n_decades + 1) * n_per_decade] = 10 *
+                            energy_[n_decades * n_per_decade];
+                } else {
+                        /* For taus a logarithmic energy grid is used by
+                         * default.
+                         */
+                        data->n_energies = 201;
+                        double emin = 1E+02, emax = 1E+12;
+                        const double dlnk = log(emax / emin) /
+                            (data->n_energies - 1);
+                        int i;
+                        for (i = 0; i < data->n_energies; i++) {
+                                energy_[i] = emin * exp(dlnk * i);
+                        }
+                }
         }
 
         /* Compute the mean excitation energy, if not provided. */
