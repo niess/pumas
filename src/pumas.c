@@ -7389,18 +7389,6 @@ enum pumas_return mdf_parse_materials(struct pumas_physics * physics,
                                         size_name = size_new;
                                 }
                                 strcpy(filename + offset_dir, node.at2.file);
-
-                                double rho;
-                                if ((sscanf(node.at3.density, "%lf", &rho) != 1)
-                                    || (rho <= 0.)) {
-                                        ERROR_VREGISTER(
-                                            PUMAS_RETURN_VALUE_ERROR,
-                                            "invalid value for density [%s]",
-                                           node.at3.density);
-                                        break;
-                                }
-                                rho *= 1E+03; /* g/cm^3 -> kg/m^3 */
-                                physics->material_density[imat] = rho;
                         } else {
                                 int n = strlen(node.at2.file) + 1;
                                 physics->dedx_filename[imat] = allocate(n);
@@ -7411,6 +7399,19 @@ enum pumas_return mdf_parse_materials(struct pumas_physics * physics,
                                 memcpy(physics->dedx_filename[imat],
                                     node.at2.file, n);
                         }
+
+                        /* Parse the default density. */
+                        double rho;
+                        if ((sscanf(node.at3.density, "%lf", &rho) != 1)
+                            || (rho <= 0.)) {
+                                ERROR_VREGISTER(
+                                    PUMAS_RETURN_VALUE_ERROR,
+                                    "invalid value for density [%s]",
+                                   node.at3.density);
+                                break;
+                        }
+                        rho *= 1E+03; /* g/cm^3 -> kg/m^3 */
+                        physics->material_density[imat] = rho;
                 }
 
                 /* Skip other closings. */
@@ -10710,7 +10711,14 @@ static struct pumas_physics_element * tabulation_element_get(
 enum pumas_return pumas_physics_tabulate(
     struct pumas_physics * physics, struct pumas_physics_tabulation_data * data)
 {
+        ERROR_INITIALISE(pumas_physics_create);
+
         struct pumas_physics_material * m = &data->material;
+        if ((m->index < 0) ||
+            (m->index >= physics->n_materials - physics->n_composites)) {
+                return ERROR_FORMAT(PUMAS_RETURN_INDEX_ERROR,
+                    "invalid material index [%d]", m->index);
+        }
 
         /* Compute the mean excitation energy, if not provided. */
         if (m->I <= 0.) {
@@ -10735,8 +10743,9 @@ enum pumas_return pumas_physics_tabulate(
 
                 /* Use the Sternheimer and Peierls recipee. */
                 d->k = 3.;
+                const double density = physics->material_density[m->index];
                 const double hwp = 28.816E-09 *
-                    sqrt(m->density * 1E-03 * physics->material_ZoA[m->index]);
+                    sqrt(density * 1E-03 * physics->material_ZoA[m->index]);
                 d->Cbar = 2. * log(m->I / hwp);
                 if (m->state == PUMAS_PHYSICS_STATE_GAS) {
                         if (d->Cbar < 10.) {

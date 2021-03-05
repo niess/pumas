@@ -1567,8 +1567,6 @@ struct pumas_physics_element {
 struct pumas_physics_material {
         /** The material index. */
         int index;
-        /** The material density in kg / m^3. */
-        double density;
         /** The mean excitation energy in GeV. */
         double I;
         /** The material state. */
@@ -1580,8 +1578,10 @@ struct pumas_physics_material {
 /**
  * Handle for tabulation data.
  *
- * This structure gathers data required for tabulating the energy loss of
- * materials with the `pumas_physics_tabulate` function.
+ * This structure gathers data related to the tabulation of the energy loss of
+ * materials with the `pumas_physics_tabulate` function. **Note** that the two
+ * last parameters: *path* and *elements* should not be set directly. They are
+ * filled in (updated) by the `pumas_physics_tabulate` function.
  */
 struct pumas_physics_tabulation_data {
         /** The number of kinetic energy values to tabulate. */
@@ -1620,6 +1620,8 @@ struct pumas_physics_tabulation_data {
  * This function is **not** thread safe.
  *
  * __Error codes__
+ *
+ *     PUMAS_RETURN_INDEX_ERROR     The material index is not valid.
  *
  *     PUMAS_RETURN_IO_ERROR        The output file already exists.
  *

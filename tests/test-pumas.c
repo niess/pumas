@@ -4804,7 +4804,6 @@ START_TEST(test_tabulation)
                 .overwrite = 1,
                 .outdir = ".",
                 .material = {.index = 0,
-                    .density = 2.65E+03,
                     .state = PUMAS_PHYSICS_STATE_SOLID } };
 
         pumas_physics_tabulate(physics, &data);
@@ -4823,7 +4822,6 @@ START_TEST(test_tabulation)
         ck_assert_double_eq(data.material.density_effect.x1, 3);
 
         data.material.index = 1;
-        data.material.density = 1E+03;
         data.material.state = PUMAS_PHYSICS_STATE_LIQUID;
         data.material.density_effect.a = 0;
         pumas_physics_tabulate(physics, &data);
@@ -4839,7 +4837,6 @@ START_TEST(test_tabulation)
         ck_assert_double_eq_tol(data.elements->fraction, 0.111894, 6);
 
         data.material.index = 0;
-        data.material.density = 1.;
         data.material.state = PUMAS_PHYSICS_STATE_GAS;
         data.material.density_effect.a = 0;
         pumas_physics_tabulate(physics, &data);
@@ -4851,7 +4848,7 @@ START_TEST(test_tabulation)
         ck_assert_double_eq(data.elements->fraction, 1);
 
         ck_assert_double_eq_tol(data.material.I, 136.4E-09, 10);
-        ck_assert_double_eq(data.material.density_effect.x0, 1.8);
+        ck_assert_double_eq(data.material.density_effect.x0, 1.6);
         ck_assert_double_eq(data.material.density_effect.x1, 4);
 
         pumas_physics_tabulation_clear(physics, &data);
