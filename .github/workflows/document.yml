@@ -39,7 +39,7 @@ jobs:
           cd ..
           LLVM_CONFIG=llvm-config-8 ./docs/update.sh
           cd docs
-          git checkout HEAD~1 -- docs/index.html docs/js/docurium.js
+          git checkout HEAD~1 -- docs/docs/api/index.html docs/docs/api/js/docurium.js
           git commit -a --amend --no-edit
           cd ..
 

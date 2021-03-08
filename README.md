@@ -1,4 +1,4 @@
-# PUMAS ![Build](https://github.com/niess/pumas/workflows/Build/badge.svg) [![codecov](https://codecov.io/gh/niess/pumas/branch/master/graph/badge.svg)](https://codecov.io/gh/niess/pumas) [![Documentation](https://github.com/niess/pumas/workflows/Documentation/badge.svg)](https://niess.github.io/pumas-docs)
+# PUMAS ![Build](https://github.com/niess/pumas/workflows/Build/badge.svg) [![codecov](https://codecov.io/gh/niess/pumas/branch/master/graph/badge.svg)](https://codecov.io/gh/niess/pumas) [![Documentation](https://readthedocs.org/projects/pumas/badge/?version=latest)](https://pumas.readthedocs.io/en/latest/?badge=latest)
 ( **S**emi **A**nalytical **MU**ons -or taus- **P**ropagation, *backwards* )
 
 ## Description
@@ -17,7 +17,8 @@ Building the library requires only the files [pumas.h](include/pumas.h) and
 [pumas.c](src/pumas.c). On UNIX you might directly use the provided
 [Makefile](Makefile). Alternatively, or on other platforms, CMake can be used
 with the provided [CMakeLists.txt](CMakeLists.txt). More detailed instructions
-can be found on the [wiki](https://github.com/niess/pumas/wiki/Installation).
+can be found in the
+[documentation](https://pumas.readthedocs.io/en/latest/installation).
 
 ## Materials
 
@@ -32,10 +33,11 @@ on the photonuclear cross-section (see e.g.
 
 ## Documentation
 
-The API documentation can be found
-[here](https://niess.github.io/pumas-docs). For tutorials one can check the
-[wiki](https://github.com/niess/pumas/wiki/Tutorials). You might also directly
-browse the provided [examples](examples).
+The documentation is available online from
+[ReadTheDocs](https://pumas.readthedocs.io/en/latest). It contains a description
+of the library [API](https://pumas.readthedocs.io/en/latest/api) as well as
+[tutorials](https://pumas.readthedocs.io/en/latest/tutorials). You might also
+directly browse the [examples](examples) provided with the source.
 
 _**Note** that for the examples to work you need the corresponding MDF and
 energy loss tables. Those can be downloaded with git, as following:_
