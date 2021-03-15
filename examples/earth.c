@@ -107,14 +107,6 @@ static enum pumas_step earth_medium(struct pumas_context * context,
         return PUMAS_STEP_APPROXIMATE;
 }
 
-/* A basic Pseudo Random Number Generator (PRNG) providing a uniform
- * distribution over [0, 1]
- */
-static double uniform01(struct pumas_context * context)
-{
-        return rand() / (double)RAND_MAX;
-}
-
 /* Print the given Monte Carlo state to stdout */
 static void print_state(struct pumas_state * state)
 {
@@ -184,9 +176,6 @@ int main(int narg, char * argv[])
 
         /* Set the medium callback */
         context->medium = &earth_medium;
-
-        /* Provide a PRNG for the Monte-Carlo simulation */
-        context->random = &uniform01;
 
         /* Configure the transport for stopping at each change of medium */
         context->event |= PUMAS_EVENT_MEDIUM;

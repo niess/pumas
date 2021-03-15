@@ -19,8 +19,13 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
 
-/* The PuMAS API. */
+/* The PUMAS API. */
 #include "pumas.h"
+
+#ifdef _WIN32
+/* For rand_s on Windows */
+#define _CRT_RAND_S
+#endif
 
 /* The C standard library. */
 #include <assert.h>
@@ -355,6 +360,16 @@ struct medium_locals {
         const struct pumas_physics * physics;
 };
 /**
+ *  Data for the default per context PRNG
+ */
+struct pumas_random_data {
+        /** Index in the PRNG buffer */
+        int index;
+#define MT_PERIOD 624
+        /** PRNG buffer (Mersenne Twister) */
+        unsigned long buffer[MT_PERIOD];
+};
+/**
  * The local data managed by a simulation context.
  */
 struct simulation_context {
@@ -388,6 +403,8 @@ struct simulation_context {
         double step_rLarmor;
         /** The magnetic transverse direction of the previous step. */
         double step_uT[3];
+        /** Data for the default PRNG. */
+        struct pumas_random_data * random_data;
         /** Flag for the parity check of the Gaussian random generator.
          *
          * Gaussian variates are generated in pair using the Box-Muller
@@ -1633,6 +1650,7 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_context_transport)
         TOSTRING(pumas_physics_particle)
         TOSTRING(pumas_context_create)
+        TOSTRING(pumas_context_random_initialise)
         TOSTRING(pumas_recorder_create)
         TOSTRING(pumas_physics_element_name)
         TOSTRING(pumas_physics_element_index)
@@ -1711,6 +1729,119 @@ enum pumas_return pumas_error_raise(void)
         return ERROR_RAISE();
 }
 
+/* Set the MT initial state */
+enum pumas_return pumas_context_random_initialise(
+    struct pumas_context * context, const unsigned long * seed_ptr)
+{
+        ERROR_INITIALISE(pumas_context_random_initialise);
+
+        unsigned long seed;
+        if (seed_ptr == NULL) {
+                /* Sample the seed from the OS */
+#ifdef _WIN32
+                unsigned int tmp;
+                if (rand_s(&tmp) != 0) {
+                        return ERROR_MESSAGE(PUMAS_RETURN_PATH_ERROR,
+                                "could not read from `rand_s'");
+                } else {
+                        seed = tmp;
+                }
+#else
+                size_t count = 0;
+                FILE * fid = fopen("/dev/urandom", "r");
+                if (fid != NULL) {
+                        count = fread(&seed, sizeof seed, 1, fid);
+                        fclose(fid);
+                }
+
+                if (count == 0) {
+                        return ERROR_MESSAGE(PUMAS_RETURN_PATH_ERROR,
+                                "could not read from `/dev/urandom'");
+                }
+#endif
+        } else {
+                seed = *seed_ptr;
+        }
+
+        struct simulation_context * context_ = (void *)context;
+        if (context_->random_data == NULL) {
+                context_->random_data =
+                    allocate(sizeof(*context_->random_data));
+                if (context_->random_data == NULL) {
+                        return ERROR_MESSAGE(PUMAS_RETURN_MEMORY_ERROR,
+                            "could not allocate memory");
+                }
+        }
+        struct pumas_random_data * data = context_->random_data;
+
+        data->buffer[0] = seed & 0xffffffffUL;
+        int j;
+        for (j = 1; j < MT_PERIOD; j++) {
+                data->buffer[j] = (1812433253UL *
+                        (data->buffer[j - 1] ^
+                        (data->buffer[j - 1] >> 30)) +
+                    j);
+                data->buffer[j] &= 0xffffffffUL;
+        }
+        data->index = MT_PERIOD;
+
+        return PUMAS_RETURN_SUCCESS;
+}
+
+/* Uniform pseudo random distribution from a Mersenne Twister */
+static double random_uniform01(struct pumas_context * context)
+{
+        /* Lazy initialisation of the MT if not already done */
+        struct simulation_context * context_ = (void *)context;
+        if (context_->random_data == NULL) {
+                if (pumas_context_random_initialise(context, NULL) !=
+                    PUMAS_RETURN_SUCCESS) return -1.;
+
+        }
+        struct pumas_random_data * data = context_->random_data;
+
+        /* Check the buffer */
+        if (data->index < MT_PERIOD - 1) {
+                data->index++;
+        } else {
+                /* Update the MT state */
+                const int M = 397;
+                const unsigned long UPPER_MASK = 0x80000000UL;
+                const unsigned long LOWER_MASK = 0x7fffffffUL;
+                static unsigned long mag01[2] = { 0x0UL, 0x9908b0dfUL };
+                unsigned long y;
+                int kk;
+                for (kk = 0; kk < MT_PERIOD - M; kk++) {
+                        y = (data->buffer[kk] & UPPER_MASK) |
+                            (data->buffer[kk + 1] & LOWER_MASK);
+                        data->buffer[kk] = data->buffer[kk + M] ^
+                            (y >> 1) ^ mag01[y & 0x1UL];
+                }
+                for (; kk < MT_PERIOD - 1; kk++) {
+                        y = (data->buffer[kk] & UPPER_MASK) |
+                            (data->buffer[kk + 1] & LOWER_MASK);
+                        data->buffer[kk] =
+                            data->buffer[kk + (M - MT_PERIOD)] ^
+                            (y >> 1) ^ mag01[y & 0x1UL];
+                }
+                y = (data->buffer[MT_PERIOD - 1] & UPPER_MASK) |
+                    (data->buffer[0] & LOWER_MASK);
+                data->buffer[MT_PERIOD - 1] =
+                    data->buffer[M - 1] ^ (y >> 1) ^ mag01[y & 0x1UL];
+                data->index = 0;
+        }
+
+        /* Tempering */
+        unsigned long y = data->buffer[data->index];
+        y ^= (y >> 11);
+        y ^= (y << 7) & 0x9d2c5680UL;
+        y ^= (y << 15) & 0xefc60000UL;
+        y ^= (y >> 18);
+
+        /* Convert to a floating point and return */
+        return y * (1.0 / 4294967295.0);
+}
+
 /* Public library functions: simulation context management. */
 enum pumas_return pumas_context_create(struct pumas_context ** context_,
     const struct pumas_physics * physics, int extra_memory)
@@ -1753,8 +1884,10 @@ enum pumas_return pumas_context_create(struct pumas_context ** context_,
         context->index_K_last[0] = context->index_K_last[1] = imax;
         context->index_X_last[0] = context->index_X_last[1] = imax;
 
+        context->random_data = NULL;
+        (*context_)->random = &random_uniform01;
+
         (*context_)->medium = NULL;
-        (*context_)->random = NULL;
         (*context_)->recorder = NULL;
 
         (*context_)->mode.decay = (physics->particle == PUMAS_PARTICLE_MUON) ?
@@ -1786,6 +1919,8 @@ void pumas_context_destroy(struct pumas_context ** context)
         if ((context == NULL) || (*context == NULL)) return;
 
         /* Release the memory */
+        struct simulation_context * context_ = (void *)(*context);
+        deallocate(context_->random_data);
         deallocate(*context);
         *context = NULL;
 }

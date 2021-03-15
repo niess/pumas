@@ -453,12 +453,15 @@ typedef void pumas_handler_cb (enum pumas_return rc, pumas_function_t * caller,
  * @param context The simulation context requiring a random number.
  * @return A uniform pseudo random number in [0;1].
  *
- * **Note** : this is the only random stream used by PUMAS. The user must unsure
- * proper behaviour, i.e. that a flat distribution in [0;1] is indeed returned.
+ * **Note** : this is the only random stream used by PUMAS. If overriding the
+ * default `pumas_context` callback then the user must unsure proper behaviour,
+ * i.e. that a flat distribution in [0;1] is indeed returned.
  *
- * **Warning** : if multiple contexts are used the user must ensure that this
- * callback is thread safe, e.g. by using independant streams for each context
- * or a locking mechanism in order to share a single random stream.
+ * **Warning** : if multiple contexts are used the user must also ensure that
+ * this callback is thread safe, e.g. by using independant streams for each
+ * context or a locking mechanism in order to share a single random stream.
+ * The default `pumas_context` random callback uses distinct random streams per
+ * context which ensures thread safety.
  */
 typedef double pumas_random_cb (struct pumas_context * context);
 
@@ -516,8 +519,13 @@ struct pumas_context_limit {
  * + The `medium` field must be set after any initialisation with
  * `pumas_context_create` and prior to any call to `pumas_transport`.
  *
- * + Depending on the level of detail of the simulation a random stream must
- * be provided by the user before any call to `pumas_transport`.
+ * + The newly created context is configured with a default pseudo random engine
+ * using the Mersenne Twister algorithm. The engine can be explictly seeded with
+ * the `pumas_context_random_initialise` function. Note that two contexts seeded
+ * with the same value are 100% correlated by construction. If no seed is
+ * provided one is picked randomly from the OS, e.g. from `/dev/urandom` on
+ * UNIX. A custom random engine can be used instead of the default one by
+ * overriding the *random* callback.
  *
  * + Note that for `energy`, `distance`, `grammage` or `time` external
  * limits to be taken into account, the corresponding events must be activated
@@ -911,6 +919,25 @@ PUMAS_API enum pumas_return pumas_error_raise(void);
 PUMAS_API enum pumas_return pumas_context_create(
     struct pumas_context ** context, const struct pumas_physics * physics,
     int extra_memory);
+
+/**
+ * Initialise the default random stream of a simulation context.
+ *
+ * @param context         A handle for the simulation context.
+ * @param seed            The random seed or `NULL`.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
+ *
+ * Set the seed for the default pseudo random engine. If `NULL` is provided
+ * the seed is initialised from the OS, e.g. using `/dev/urandom` on UNIX.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_PATH_ERROR              The OS random stream could not be
+ * read.
+ */
+PUMAS_API enum pumas_return pumas_context_random_initialise(
+    struct pumas_context * context, const unsigned long * seed);
 
 /**
  * Destroy a simulation context.

@@ -157,6 +157,7 @@ START_TEST(test_api_error)
          */
         CHECK_STRING(pumas_constant);
         CHECK_STRING(pumas_context_create);
+        CHECK_STRING(pumas_context_random_initialise);
         CHECK_STRING(pumas_context_destroy);
         CHECK_STRING(pumas_context_physics_get);
         CHECK_STRING(pumas_context_transport);
@@ -1128,7 +1129,7 @@ START_TEST(test_api_context)
         /* Test the initialisation of a muon context */
         ck_assert_ptr_eq(pumas_context_physics_get(context), physics);
         ck_assert_ptr_null(context->medium);
-        ck_assert_ptr_null(context->random);
+        ck_assert_ptr_nonnull(context->random);
         ck_assert_ptr_null(context->recorder);
         ck_assert_int_eq(context->mode.scattering, PUMAS_MODE_FULL_SPACE);
         ck_assert_int_eq(context->mode.direction, PUMAS_MODE_FORWARD);
@@ -1157,7 +1158,7 @@ START_TEST(test_api_context)
 
         ck_assert_ptr_eq(pumas_context_physics_get(context), physics);
         ck_assert_ptr_null(context->medium);
-        ck_assert_ptr_null(context->random);
+        ck_assert_ptr_nonnull(context->random);
         ck_assert_ptr_null(context->recorder);
         ck_assert_int_eq(context->mode.scattering, PUMAS_MODE_FULL_SPACE);
         ck_assert_int_eq(context->mode.direction, PUMAS_MODE_FORWARD);
@@ -1921,13 +1922,14 @@ START_TEST(test_csda_straight)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_MEDIUM_ERROR);
         context->medium = &geometry_medium;
 
+        pumas_random_cb * prng = context->random;
         context->random = NULL;
         context->mode.decay = PUMAS_MODE_DECAY;
         reset_error();
         initialise_state();
         pumas_context_transport(context, state, NULL, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_MISSING_RANDOM);
-        context->random = &uniform01;
+        context->random = prng;
         context->mode.decay = PUMAS_MODE_WEIGHT;
 
         /* Check the forward full path transport */
@@ -2911,7 +2913,8 @@ static void hybrid_setup(void)
         context->medium = &geometry_medium;
         context->mode.scattering = PUMAS_MODE_LONGITUDINAL;
         context->mode.energy_loss = PUMAS_MODE_HYBRID;
-        context->random = &uniform01;
+        unsigned long seed = 0;
+        pumas_context_random_initialise(context, &seed);
 }
 
 static void hybrid_teardown(void)
@@ -2935,10 +2938,11 @@ START_TEST(test_hybrid_straight)
 
         /* Check the missing random engine case */
         reset_error();
+        pumas_random_cb * prng = context->random;
         context->random = NULL;
         pumas_context_transport(context, state, NULL, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_MISSING_RANDOM);
-        context->random = &uniform01;
+        context->random = prng;
 
         /* Check the forward full path transport */
         double X, d, t0;
@@ -3861,7 +3865,8 @@ static void detailed_setup(void)
         context->medium = &geometry_medium;
         context->mode.scattering = PUMAS_MODE_FULL_SPACE;
         context->mode.energy_loss = PUMAS_MODE_DETAILED;
-        context->random = &uniform01;
+        unsigned long seed = 0;
+        pumas_context_random_initialise(context, &seed);
 }
 
 static void detailed_teardown(void)
@@ -3887,10 +3892,11 @@ START_TEST(test_detailed_straight)
 
         /* Check the missing random engine case */
         reset_error();
+        pumas_random_cb * prng = context->random;
         context->random = NULL;
         pumas_context_transport(context, state, NULL, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_MISSING_RANDOM);
-        context->random = &uniform01;
+        context->random = prng;
 
         /* Check the forward full path transport */
         double X, d, t0;
@@ -4036,14 +4042,14 @@ START_TEST(test_detailed_straight)
                 pumas_context_transport(context, state, event, media);
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_le(state->energy, context->limit.energy);
-                ck_assert_double_le(state->distance, d - d1);
-                ck_assert_double_le(state->grammage, X - X1);
-                ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
+                ck_assert_double_le(state->distance, (d - d1) * 1.25);
+                ck_assert_double_le(state->grammage, (X - X1) * 1.25);
+                ck_assert_double_le(state->time, (t0 - t1) * 1.25);
                 ck_assert_double_eq_tol(
                     state->weight, exp(-state->time / ctau), FLT_EPSILON);
                 ck_assert_double_eq(state->position[0], 0.);
                 ck_assert_double_eq(state->position[1], 0.);
-                ck_assert_double_le(state->position[2], d - d1 + FLT_EPSILON);
+                ck_assert_double_le(state->position[2], (d - d1) * 1.25);
                 ck_assert_double_eq(state->direction[0], 0.);
                 ck_assert_double_eq(state->direction[1], 0.);
                 ck_assert_double_eq(state->direction[2], 1.);
@@ -4128,7 +4134,7 @@ START_TEST(test_detailed_straight)
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_le(state->distance, d - d1);
                 ck_assert_double_le(state->grammage, X - X1);
-                ck_assert_double_eq_tol(state->time / (t0 - t1), 1, 0.1);
+                ck_assert_double_eq_tol(state->time / (t0 - t1), 1, 0.25);
                 ck_assert_double_eq_tol(
                     state->weight, exp(-state->time / ctau), FLT_EPSILON);
                 ck_assert_double_eq(state->position[0], 0.);
@@ -4746,7 +4752,8 @@ static void tau_setup(void)
         geometry.uniform = 1;
         pumas_context_create(&context, physics, 0);
         context->medium = &geometry_medium;
-        context->random = &uniform01;
+        unsigned long seed = 0;
+        pumas_context_random_initialise(context, &seed);
 }
 
 static void tau_teardown(void)

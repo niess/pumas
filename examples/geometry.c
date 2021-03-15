@@ -169,14 +169,6 @@ static enum pumas_step medium2(struct pumas_context * context,
         return PUMAS_STEP_EXACT;
 }
 
-/* A basic Pseudo Random Number Generator (PRNG) providing a uniform
- * distribution over [0, 1]
- */
-static double uniform01(struct pumas_context * context)
-{
-        return rand() / (double)RAND_MAX;
-}
-
 /* Gaisser's flux model, see e.g. the PDG */
 static double flux_gaisser(double cos_theta, double Emu)
 {
@@ -267,9 +259,6 @@ int main(int narg, char * argv[])
         /* Set the medium callback */
         context->medium = &medium2;
 
-        /* Provide a PRNG for the Monte-Carlo simulation */
-        context->random = &uniform01;
-
         /* Enable external limit on the kinetic energy */
         context->event |= PUMAS_EVENT_LIMIT_ENERGY;
 
@@ -289,7 +278,7 @@ int main(int narg, char * argv[])
                          * initialised according to this generating bias PDF,
                          * i.e. wf = 1 / PDF(kf).
                          */
-                        kf = energy_min * exp(rk * uniform01(context));
+                        kf = energy_min * exp(rk * context->random(context));
                         wf = kf * rk;
                 } else {
                         /* A point estimate is computed, for a fixed final
