@@ -912,9 +912,9 @@ PUMAS_API enum pumas_return pumas_error_raise(void);
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
- *
  *     PUMAS_RETURN_MEMORY_ERROR            Couldn't allocate memory.
+ *
+ *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_context_create(
     struct pumas_context ** context, const struct pumas_physics * physics,
@@ -933,11 +933,62 @@ PUMAS_API enum pumas_return pumas_context_create(
  *
  * __Error codes__
  *
+ *     PUMAS_RETURN_MEMORY_ERROR            Couldn't allocate memory.
+ *
  *     PUMAS_RETURN_PATH_ERROR              The OS random stream could not be
  * read.
  */
 PUMAS_API enum pumas_return pumas_context_random_initialise(
     struct pumas_context * context, const unsigned long * seed);
+
+/**
+ * Load the random engine state from a stream.
+ *
+ * @param context         A handle for the simulation context.
+ * @param stream          The stream to load from.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
+ *
+ * Restore the context default random engine state from a stream. See the
+ * `pumas_context_random_dump` function for dumping the random engine state
+ * to a file.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_FORMAT_ERROR            The binary dump is not compatible
+ * with the current version.
+ *
+ *     PUMAS_RETURN_MEMORY_ERROR            Couldn't allocate memory.
+ *
+ *     PUMAS_RETURN_IO_ERROR                Couldn't read from the stream.
+ *
+ *     PUMAS_RETURN_PATH_ERROR              The input stream in invalid (null).
+ */
+PUMAS_API enum pumas_return pumas_context_random_load(
+    struct pumas_context * context, FILE * stream);
+
+/**
+ * Dump the random engine state to a stream.
+ *
+ * @param context         A handle for the simulation context.
+ * @param stream          The stream to dump to.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
+ *
+ * Save the context default random engine state to a stream. See the
+ * `pumas_context_random_load` function for loading back the random engine
+ * state from a file.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_MEMORY_ERROR            Couldn't allocate memory.
+ *
+ *     PUMAS_RETURN_IO_ERROR                Couldn't write to the stream.
+ *
+ *     PUMAS_RETURN_PATH_ERROR              The input stream in invalid (null).*
+ */
+PUMAS_API enum pumas_return pumas_context_random_dump(
+    struct pumas_context * context, FILE * stream);
 
 /**
  * Destroy a simulation context.

@@ -1177,6 +1177,46 @@ START_TEST(test_api_context)
 }
 END_TEST
 
+/* Test the random API */
+START_TEST(test_api_random)
+{
+        /* Load the muon data */
+        load_muon();
+
+        /* Test the random seed init */
+        pumas_context_create(&context, physics, 0);
+        unsigned long seed = 0;
+        pumas_context_random_initialise(context, &seed);
+        const double u1 = context->random(context);
+        pumas_context_random_initialise(context, &seed);
+        ck_assert_double_eq(context->random(context), u1);
+
+        pumas_context_destroy(&context);
+        pumas_context_create(&context, physics, 0);
+        ck_assert_double_le(fabs(context->random(context)), 1.);
+
+        /* Test random dump & load */
+#define TEST_PRNG_DUMP "random.state"
+        FILE * stream = fopen(TEST_PRNG_DUMP, "w+");
+        reset_error();
+        pumas_context_random_dump(context, stream);
+        fclose(stream);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        const double u2 = context->random(context);
+
+        stream = fopen(TEST_PRNG_DUMP, "r");
+        reset_error();
+        pumas_context_random_load(context, stream);
+        fclose(stream);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_double_eq(context->random(context), u2);
+
+        /* Free the data */
+        pumas_context_destroy(&context);
+        pumas_physics_destroy(&physics);
+}
+END_TEST
+
 /* Test the recorder API */
 START_TEST(test_api_recorder)
 {
@@ -4887,6 +4927,7 @@ Suite * create_suite(void)
         tcase_add_test(tc_api, test_api_property);
         tcase_add_test(tc_api, test_api_table);
         tcase_add_test(tc_api, test_api_context);
+        tcase_add_test(tc_api, test_api_random);
         tcase_add_test(tc_api, test_api_recorder);
         tcase_add_test(tc_api, test_api_print);
         tcase_add_test(tc_api, test_api_dcs);

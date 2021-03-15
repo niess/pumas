@@ -363,6 +363,11 @@ struct medium_locals {
  *  Data for the default per context PRNG
  */
 struct pumas_random_data {
+/*
+ * Version tag for the random data format. Increment whenever the
+ * structure changes.
+ */
+#define RANDOM_BINARY_DUMP_TAG 0
         /** Index in the PRNG buffer */
         int index;
 #define MT_PERIOD 624
@@ -617,10 +622,10 @@ struct del_info {
  */
 struct pumas_physics {
 /*
- * Version tag for the shared data format. Increment whenever the
+ * Version tag for the physics data format. Increment whenever the
  * structure changes.
  */
-#define BINARY_DUMP_TAG 3
+#define PHYSICS_BINARY_DUMP_TAG 3
 
         /** The total byte size of the shared data. */
         int size;
@@ -1527,7 +1532,7 @@ enum pumas_return pumas_physics_load(
         struct pumas_physics * physics = NULL;
         int tag;
         if (fread(&tag, sizeof(tag), 1, stream) != 1) goto error;
-        if (tag != BINARY_DUMP_TAG) {
+        if (tag != PHYSICS_BINARY_DUMP_TAG) {
                 ERROR_REGISTER(PUMAS_RETURN_FORMAT_ERROR,
                     "incompatible version of binary dump");
                 goto error;
@@ -1606,7 +1611,7 @@ enum pumas_return pumas_physics_dump(
                     PUMAS_RETURN_PATH_ERROR, "invalid output stream (null)");
 
         /* Dump the configuration. */
-        int tag = BINARY_DUMP_TAG;
+        int tag = PHYSICS_BINARY_DUMP_TAG;
         if (fwrite(&tag, sizeof(tag), 1, stream) != 1) goto error;
         if (fwrite(&physics->size, sizeof(physics->size), 1, stream) != 1)
                 goto error;
@@ -1618,7 +1623,7 @@ error:
         return ERROR_MESSAGE(
             PUMAS_RETURN_IO_ERROR, "could not write to dump file");
 
-#undef BINARY_DUMP_TAG
+#undef PHYSICS_BINARY_DUMP_TAG
 }
 
 void pumas_physics_destroy(struct pumas_physics ** physics_ptr)
@@ -1651,6 +1656,8 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_physics_particle)
         TOSTRING(pumas_context_create)
         TOSTRING(pumas_context_random_initialise)
+        TOSTRING(pumas_context_random_load)
+        TOSTRING(pumas_context_random_dump)
         TOSTRING(pumas_recorder_create)
         TOSTRING(pumas_physics_element_name)
         TOSTRING(pumas_physics_element_index)
@@ -1730,18 +1737,16 @@ enum pumas_return pumas_error_raise(void)
 }
 
 /* Set the MT initial state */
-enum pumas_return pumas_context_random_initialise(
-    struct pumas_context * context, const unsigned long * seed_ptr)
+static enum pumas_return random_initialise(struct pumas_context * context,
+    const unsigned long * seed_ptr, struct error_context * error_)
 {
-        ERROR_INITIALISE(pumas_context_random_initialise);
-
         unsigned long seed;
         if (seed_ptr == NULL) {
                 /* Sample the seed from the OS */
 #ifdef _WIN32
                 unsigned int tmp;
                 if (rand_s(&tmp) != 0) {
-                        return ERROR_MESSAGE(PUMAS_RETURN_PATH_ERROR,
+                        return ERROR_REGISTER(PUMAS_RETURN_PATH_ERROR,
                                 "could not read from `rand_s'");
                 } else {
                         seed = tmp;
@@ -1755,7 +1760,7 @@ enum pumas_return pumas_context_random_initialise(
                 }
 
                 if (count == 0) {
-                        return ERROR_MESSAGE(PUMAS_RETURN_PATH_ERROR,
+                        return ERROR_REGISTER(PUMAS_RETURN_PATH_ERROR,
                                 "could not read from `/dev/urandom'");
                 }
 #endif
@@ -1768,12 +1773,12 @@ enum pumas_return pumas_context_random_initialise(
                 context_->random_data =
                     allocate(sizeof(*context_->random_data));
                 if (context_->random_data == NULL) {
-                        return ERROR_MESSAGE(PUMAS_RETURN_MEMORY_ERROR,
-                            "could not allocate memory");
+                        return ERROR_REGISTER_MEMORY();
                 }
         }
         struct pumas_random_data * data = context_->random_data;
 
+        memset(data, 0x0, sizeof (*data));
         data->buffer[0] = seed & 0xffffffffUL;
         int j;
         for (j = 1; j < MT_PERIOD; j++) {
@@ -1788,13 +1793,98 @@ enum pumas_return pumas_context_random_initialise(
         return PUMAS_RETURN_SUCCESS;
 }
 
+enum pumas_return pumas_context_random_initialise(
+    struct pumas_context * context, const unsigned long * seed_ptr)
+{
+        ERROR_INITIALISE(pumas_context_random_initialise);
+
+        random_initialise(context, seed_ptr, error_);
+
+        return ERROR_RAISE();
+}
+
+enum pumas_return pumas_context_random_dump(
+    struct pumas_context * context, FILE * stream)
+{
+        ERROR_INITIALISE(pumas_context_random_dump);
+
+        /* Check the input stream */
+        if (stream == NULL)
+                return ERROR_MESSAGE(
+                    PUMAS_RETURN_PATH_ERROR, "invalid input stream (null)");
+
+        /* Write the version tag */
+        const int tag = RANDOM_BINARY_DUMP_TAG;
+        if (fwrite(&tag, sizeof(tag), 1, stream) != 1) goto error;
+
+        /* Initialise the random engine if needed */
+        struct simulation_context * context_ = (void *)context;
+        if (context_->random_data == NULL) {
+                enum pumas_return rc = random_initialise(context, NULL, error_);
+                if (rc != PUMAS_RETURN_SUCCESS)
+                        return ERROR_RAISE();
+        }
+
+        /* Dump the data */
+        if (fwrite(context_->random_data, sizeof (*context_->random_data), 1,
+            stream) != 1) goto error;
+
+        return PUMAS_RETURN_SUCCESS;
+
+error:
+        return ERROR_MESSAGE(
+            PUMAS_RETURN_IO_ERROR, "could not not write to stream");
+}
+
+enum pumas_return pumas_context_random_load(
+    struct pumas_context * context, FILE * stream)
+{
+        ERROR_INITIALISE(pumas_context_random_load);
+
+        /* Check the input stream */
+        if (stream == NULL)
+                return ERROR_MESSAGE(
+                    PUMAS_RETURN_PATH_ERROR, "invalid input stream (null)");
+
+        /* Check the binary dump tag */
+        int tag;
+        if (fread(&tag, sizeof(tag), 1, stream) != 1) goto error;
+        if (tag != RANDOM_BINARY_DUMP_TAG) {
+                ERROR_REGISTER(PUMAS_RETURN_FORMAT_ERROR,
+                    "incompatible version of binary dump");
+        }
+
+        /* Allocate memory if needed */
+        struct simulation_context * context_ = (void *)context;
+        if (context_->random_data == NULL) {
+                context_->random_data =
+                    allocate(sizeof(*context_->random_data));
+                if (context_->random_data == NULL) {
+                        return ERROR_MESSAGE(PUMAS_RETURN_MEMORY_ERROR,
+                            "could not allocate memory");
+                }
+        }
+
+        /* Load the data */
+        if (fread(context_->random_data, sizeof (*context_->random_data), 1,
+            stream) != 1) goto error;
+
+        return PUMAS_RETURN_SUCCESS;
+
+error:
+        return ERROR_MESSAGE(
+            PUMAS_RETURN_IO_ERROR, "could not not read from stream");
+
+#undef RANDOM_BINARY_DUMP_TAG
+}
+
 /* Uniform pseudo random distribution from a Mersenne Twister */
 static double random_uniform01(struct pumas_context * context)
 {
         /* Lazy initialisation of the MT if not already done */
         struct simulation_context * context_ = (void *)context;
         if (context_->random_data == NULL) {
-                if (pumas_context_random_initialise(context, NULL) !=
+                if (random_initialise(context, NULL, NULL) !=
                     PUMAS_RETURN_SUCCESS) return -1.;
 
         }
@@ -6529,6 +6619,8 @@ int memory_padded_size(int size, int pad_size)
 static enum pumas_return error_format(struct error_context * error_,
     enum pumas_return rc, const char * file, int line, const char * format, ...)
 {
+        if (error_ == NULL) return rc;
+
         error_->code = rc;
         if ((s_error.handler == NULL) || (rc == PUMAS_RETURN_SUCCESS))
                 return rc;
