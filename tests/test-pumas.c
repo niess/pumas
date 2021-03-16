@@ -157,7 +157,10 @@ START_TEST(test_api_error)
          */
         CHECK_STRING(pumas_constant);
         CHECK_STRING(pumas_context_create);
-        CHECK_STRING(pumas_context_random_initialise);
+        CHECK_STRING(pumas_context_random_dump);
+        CHECK_STRING(pumas_context_random_load);
+        CHECK_STRING(pumas_context_random_seed_get);
+        CHECK_STRING(pumas_context_random_seed_set);
         CHECK_STRING(pumas_context_destroy);
         CHECK_STRING(pumas_context_physics_get);
         CHECK_STRING(pumas_context_transport);
@@ -1185,11 +1188,14 @@ START_TEST(test_api_random)
 
         /* Test the random seed init */
         pumas_context_create(&context, physics, 0);
-        unsigned long seed = 0;
-        pumas_context_random_initialise(context, &seed);
+        unsigned long seed = 1;
+        pumas_context_random_seed_set(context, &seed);
         const double u1 = context->random(context);
-        pumas_context_random_initialise(context, &seed);
+        pumas_context_random_seed_set(context, &seed);
         ck_assert_double_eq(context->random(context), u1);
+
+        pumas_context_random_seed_get(context, &seed);
+        ck_assert_uint_eq(seed, 1);
 
         pumas_context_destroy(&context);
         pumas_context_create(&context, physics, 0);
@@ -1210,6 +1216,12 @@ START_TEST(test_api_random)
         fclose(stream);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq(context->random(context), u2);
+
+        pumas_context_destroy(&context);
+        pumas_context_create(&context, physics, 0);
+        reset_error();
+        pumas_context_random_seed_get(context, &seed);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
 
         /* Free the data */
         pumas_context_destroy(&context);
@@ -2954,7 +2966,7 @@ static void hybrid_setup(void)
         context->mode.scattering = PUMAS_MODE_LONGITUDINAL;
         context->mode.energy_loss = PUMAS_MODE_HYBRID;
         unsigned long seed = 0;
-        pumas_context_random_initialise(context, &seed);
+        pumas_context_random_seed_set(context, &seed);
 }
 
 static void hybrid_teardown(void)
@@ -3906,7 +3918,7 @@ static void detailed_setup(void)
         context->mode.scattering = PUMAS_MODE_FULL_SPACE;
         context->mode.energy_loss = PUMAS_MODE_DETAILED;
         unsigned long seed = 0;
-        pumas_context_random_initialise(context, &seed);
+        pumas_context_random_seed_set(context, &seed);
 }
 
 static void detailed_teardown(void)
@@ -4793,7 +4805,7 @@ static void tau_setup(void)
         pumas_context_create(&context, physics, 0);
         context->medium = &geometry_medium;
         unsigned long seed = 0;
-        pumas_context_random_initialise(context, &seed);
+        pumas_context_random_seed_set(context, &seed);
 }
 
 static void tau_teardown(void)

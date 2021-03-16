@@ -368,6 +368,8 @@ struct pumas_random_data {
  * structure changes.
  */
 #define RANDOM_BINARY_DUMP_TAG 0
+        /** The initial seed */
+        unsigned long seed;
         /** Index in the PRNG buffer */
         int index;
 #define MT_PERIOD 624
@@ -1655,9 +1657,10 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_context_transport)
         TOSTRING(pumas_physics_particle)
         TOSTRING(pumas_context_create)
-        TOSTRING(pumas_context_random_initialise)
-        TOSTRING(pumas_context_random_load)
         TOSTRING(pumas_context_random_dump)
+        TOSTRING(pumas_context_random_load)
+        TOSTRING(pumas_context_random_seed_get)
+        TOSTRING(pumas_context_random_seed_set)
         TOSTRING(pumas_recorder_create)
         TOSTRING(pumas_physics_element_name)
         TOSTRING(pumas_physics_element_index)
@@ -1788,19 +1791,38 @@ static enum pumas_return random_initialise(struct pumas_context * context,
                     j);
                 data->buffer[j] &= 0xffffffffUL;
         }
+        data->seed = seed;
         data->index = MT_PERIOD;
 
         return PUMAS_RETURN_SUCCESS;
 }
 
-enum pumas_return pumas_context_random_initialise(
+enum pumas_return pumas_context_random_seed_set(
     struct pumas_context * context, const unsigned long * seed_ptr)
 {
-        ERROR_INITIALISE(pumas_context_random_initialise);
+        ERROR_INITIALISE(pumas_context_random_seed_set);
 
         random_initialise(context, seed_ptr, error_);
 
         return ERROR_RAISE();
+}
+
+enum pumas_return pumas_context_random_seed_get(
+    struct pumas_context * context, unsigned long * seed_ptr)
+{
+        ERROR_INITIALISE(pumas_context_random_seed_get);
+
+        struct simulation_context * context_ = (void *)context;
+        if (context_->random_data == NULL) {
+                enum pumas_return rc = random_initialise(context, NULL, error_);
+                if (rc != PUMAS_RETURN_SUCCESS) {
+                        *seed_ptr = 0;
+                        return ERROR_RAISE();
+                }
+        }
+        *seed_ptr = context_->random_data->seed;
+
+        return PUMAS_RETURN_SUCCESS;
 }
 
 enum pumas_return pumas_context_random_dump(

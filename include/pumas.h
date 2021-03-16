@@ -921,7 +921,7 @@ PUMAS_API enum pumas_return pumas_context_create(
     int extra_memory);
 
 /**
- * Initialise the default random stream of a simulation context.
+ * Set the random seed of a simulation context.
  *
  * @param context         A handle for the simulation context.
  * @param seed            The random seed or `NULL`.
@@ -938,8 +938,30 @@ PUMAS_API enum pumas_return pumas_context_create(
  *     PUMAS_RETURN_PATH_ERROR              The OS random stream could not be
  * read.
  */
-PUMAS_API enum pumas_return pumas_context_random_initialise(
+PUMAS_API enum pumas_return pumas_context_random_seed_set(
     struct pumas_context * context, const unsigned long * seed);
+
+/**
+ * Get the random seed of a simulation context.
+ *
+ * @param context         A handle for the simulation context.
+ * @param seed            The random seed.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
+ *
+ * Get the seed for the default pseudo random engine. Note that if no seed
+ * was explicitly provided, e.g. using `pumas_context_random_seed_set`, then
+ * the seed is initialised from the OS, e.g. using `/dev/urandom` on UNIX.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_MEMORY_ERROR            Couldn't allocate memory.
+ *
+ *     PUMAS_RETURN_PATH_ERROR              The OS random stream could not be
+ * read.
+ */
+PUMAS_API enum pumas_return pumas_context_random_seed_get(
+    struct pumas_context * context, unsigned long * seed);
 
 /**
  * Load the random engine state from a stream.
