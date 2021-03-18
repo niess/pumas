@@ -523,7 +523,7 @@ START_TEST(test_api_material)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(length, 1);
         ck_assert_double_eq(density, 2.65E+03);
-        ck_assert_double_eq(I, 136.4);
+        ck_assert_double_eq(I, 136.4E-09);
         ck_assert_double_eq(density_effect.a, 0.0830);
         ck_assert_double_eq(density_effect.k, 3.4120);
         ck_assert_double_eq(density_effect.x0, 0.0492);
@@ -539,7 +539,7 @@ START_TEST(test_api_material)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(length, 2);
         ck_assert_double_eq(density, 1E+03);
-        ck_assert_double_eq(I, 79.7);
+        ck_assert_double_eq(I, 79.7E-09);
         ck_assert_double_eq(components[0], 3);
         ck_assert_double_eq(components[1], 0);
         ck_assert_double_eq(fractions[0], wO);

@@ -6726,6 +6726,7 @@ enum pumas_return io_parse_dedx_file(struct pumas_physics * physics, FILE * fid,
                                     PUMAS_RETURN_FORMAT_ERROR,
                                     "could not read Sternheimer coef");
                         }
+                        physics->material_I[material] *= 1E-09;
                         read_coef = 0;
                 } else if (strstr(buffer, "Sternheimer coef") != NULL) {
                         read_coef = 1;

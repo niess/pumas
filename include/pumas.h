@@ -1344,7 +1344,7 @@ PUMAS_API int pumas_physics_material_length(
  * @param physics           Handle for the Physics tables.
  * @param index             The material index.
  * @param length            The number of atomic elements.
- * @param density           The material reference density.
+ * @param density           The material reference density in kg/m^(3).
  * @param I                 The material mean excitation energy in GeV.
  * @param density_effect    The density effect parameters.
  * @param components        The vector of indices of the atomic elements.
