@@ -9406,6 +9406,10 @@ int dcs_get_index(dcs_function_t * dcs_func)
 double default_dcs_bremsstrahlung(
     double Z, double A, double mu, double K, double q)
 {
+        if ((Z <= 0) || (A <= 0) || (mu <= 0) || (K <= 0) || (q <= 0) ||
+            (q >= K + mu))
+                return 0.;
+
         const double me = ELECTRON_MASS;
         const double sqrte = 1.648721271;
         const double phie_factor = mu / (me * me * sqrte);
@@ -9472,6 +9476,9 @@ double dcs_bremsstrahlung(const struct pumas_physics * physics,
 double default_dcs_pair_production(
     double Z, double A_, double mass, double K, double q)
 {
+        if ((Z <= 0) || (A_ <= 0) || (mass <= 0) || (K <= 0) || (q <= 0))
+                return 0.;
+
 /*
  * Coefficients for the Gaussian quadrature from:
  * https://pomax.github.io/bezierinfo/legendre-gauss.html.
@@ -9766,6 +9773,8 @@ double dcs_photonuclear_d2(double A, double ml, double K, double q, double Q2)
 double default_dcs_photonuclear(
     double Z, double A, double ml, double K, double q)
 {
+        if ((Z <= 0) || (A <= 0) || (ml <= 0) || (K <= 0) || (q <= 0))
+                return 0.;
 /*
  * Coefficients for the Gaussian quadrature from:
  * https://pomax.github.io/bezierinfo/legendre-gauss.html.
