@@ -127,8 +127,13 @@ static enum pumas_step medium2(struct pumas_context * context,
 
         /* Check the muon position and direction */
         const double z = state->position[2];
-        const double uz = state->direction[2];
-
+        const double sgn = (context->mode.direction == PUMAS_MODE_FORWARD) ?
+            1 : -1;
+        const double uz = state->direction[2] * sgn; /* Note that in backward
+                                                      * mode the muon propagates
+                                                      * reverse to the state
+                                                      * direction
+                                                      */
         double step = 1E+03;
         if (z < 0.) {
                 /* The muon is outside of the simulation area */
@@ -137,23 +142,23 @@ static enum pumas_step medium2(struct pumas_context * context,
         } else if (z < rock_thickness) {
                 if (medium_ptr != NULL) *medium_ptr = media;
                 if (uz > FLT_EPSILON)
-                        /* The muon is backward downgoing. The next boundary is
-                         * the rock bottom. */
-                        step = z / uz;
-                else if (uz < -FLT_EPSILON)
-                        /* The muon is backward upgoing. The next boundary is
+                        /* The muon is (backward) upgoing. The next boundary is
                          * the rock-air interface. */
-                        step = (z - rock_thickness) / uz;
+                        step = (rock_thickness - z) / uz;
+                else if (uz < -FLT_EPSILON)
+                        /* The muon is (backward) downgoing. The next boundary
+                         * is the rock bottom. */
+                        step = -z / uz;
         } else if (z < PRIMARY_ALTITUDE) {
                 if (medium_ptr != NULL) *medium_ptr = media + 1;
                 if (uz > FLT_EPSILON)
-                        /* The muon is backward downgoing. The next boundary is
-                         * the rock-air interface. */
-                        step = (z - rock_thickness) / uz;
-                else if (uz < -FLT_EPSILON)
-                        /* The muon is backward upgoing. The next boundary is
+                        /* The muon is (backward) upgoing. The next boundary is
                          * the air top. */
-                        step = (z - PRIMARY_ALTITUDE) / uz;
+                        step = (PRIMARY_ALTITUDE - z) / uz;
+                else if (uz < -FLT_EPSILON)
+                        /* The muon is (backward) downgoing. The next boundary
+                         * is the rock-air interface. */
+                        step = (rock_thickness - z) / uz;
         } else {
                 /* The muon is outside of the simulation area */
                 if (medium_ptr != NULL) *medium_ptr = NULL;

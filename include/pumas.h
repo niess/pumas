@@ -423,6 +423,11 @@ enum pumas_step {
  *
  * **Warning** : it is an error to return zero or less for any state if the
  * extension is finite.
+ *
+ * **Warning** : in backward Monte Carlo mode the particle is propagated reverse
+ * to the state direction. The user must take care to provide a *step* size
+ * accordingly, i.e. consistent with the geometry in both forward and backward
+ * modes.
  */
 typedef enum pumas_step pumas_medium_cb (
     struct pumas_context * context, struct pumas_state * state,
