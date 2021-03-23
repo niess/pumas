@@ -25,12 +25,11 @@
  * For more information, please refer to <http://unlicense.org>
  */
 
-/* This example illustrates the backward computation of a transmitted through
- * a simple geometry composed of two layers: Standard Rock and Air. The Air
- * medium has an exponential density profile. If a maximum kinetic energy is
- * provided the flux is integrated between energy_min and energy_max.
- * Otherwise a point estimate of the flux is done, at the provided kinetic
- * energy.
+/* This example illustrates the backward computation of a transmitted muon flux
+ * through a simple geometry composed of two layers: Standard Rock and Air. The
+ * Air medium has an exponential density profile. If a maximum kinetic energy is
+ * provided the flux is integrated between energy_min and energy_max.  Otherwise
+ * a point estimate of the flux is done, at the provided kinetic energy.
  */
 
 /* Standard library includes */
