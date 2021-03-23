@@ -128,7 +128,9 @@ enum pumas_return {
         PUMAS_RETURN_DECAY_ERROR,
         /** Some medium has a wrong density value. */
         PUMAS_RETURN_DENSITY_ERROR,
-        /** Some data file is not complete. */
+        /** Some medium has a wrong density value. */
+        PUMAS_RETURN_DIRECTION_ERROR,
+        /** A non unit direction is provided. */
         PUMAS_RETURN_INCOMPLETE_FILE,
         /** Some index is out of validity range. */
         PUMAS_RETURN_INDEX_ERROR,
@@ -257,7 +259,7 @@ struct pumas_state {
         double weight;
         /** The absolute location, in m. */
         double position[3];
-        /** The momentum's direction. */
+        /** The momentum's unit direction. Must be normalised to one. */
         double direction[3];
         /** Status flag telling if the particle has decayed or not.  */
         int decayed;
@@ -740,10 +742,15 @@ PUMAS_API enum pumas_return pumas_physics_load(
  * contain the initial (`media[0]`) and final (`media[1]`) media crossed by the
  * particle.
  *
+ * **Note**: the state direction must be a unit vector. Otherwise an error
+ * is returned (see below).
+ *
  * __Error codes__
  *
  *     PUMAS_RETURN_DENSITY_ERROR           A null or negative density was
  * encountered.
+ *
+ *     PUMAS_RETURN_DIRECTION_ERROR         A non unit direction was provided.
  *
  *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initalised.
  *

@@ -1958,6 +1958,12 @@ START_TEST(test_csda_straight)
 
         reset_error();
         initialise_state();
+        state->direction[0] = 10;
+        pumas_context_transport(context, state, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_DIRECTION_ERROR);
+
+        reset_error();
+        initialise_state();
         state->decayed = 1;
         pumas_context_transport(context, state, NULL, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);

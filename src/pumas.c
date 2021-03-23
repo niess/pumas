@@ -2430,6 +2430,18 @@ enum pumas_return pumas_context_transport(struct pumas_context * context,
                 return PUMAS_RETURN_SUCCESS;
         }
 
+        /* Check the direction norm */
+        {
+                const double * const u = state->direction;
+                const double norm2 = u[0] * u[0] + u[1] * u[1] + u[2] * u[2];
+                if (fabs(norm2 - 1) > FLT_EPSILON) {
+                        return ERROR_FORMAT(
+                            PUMAS_RETURN_DIRECTION_ERROR,
+                            "bad norm for state direction (norm^2 - 1 = %g)",
+                            norm2 - 1);
+                }
+        }
+
         /* Check the configuration. */
         if (event != NULL) *event = PUMAS_EVENT_NONE;
         if (context->medium == NULL) {
