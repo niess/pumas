@@ -33,14 +33,15 @@ on the photonuclear cross-section (see e.g.
 
 ## Documentation
 
-The documentation is available online from
-[ReadTheDocs](https://pumas.readthedocs.io/en/latest). It contains a description
-of the library [API](https://pumas.readthedocs.io/en/latest/api) as well as
+The documentation is available online from [Read the
+Docs](https://pumas.readthedocs.io/en/latest). It contains a description of the
+library [API](https://pumas.readthedocs.io/en/latest/api) as well as
 [tutorials](https://pumas.readthedocs.io/en/latest/tutorials). You might also
 directly browse the [examples](examples) provided with the source.
 
-_**Note** that for the examples to work you need the corresponding MDF and
-energy loss tables. Those can be downloaded with git, as following:_
+_**Note** that for the examples to work you need their corresponding MDF and
+energy loss tables distributed separately. Those can be downloaded with git, as
+following:_
 ```bash
 git clone https://gitub.com/niess/pumas-materials materials
 ```

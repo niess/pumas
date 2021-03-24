@@ -16,9 +16,10 @@ clean:
 	@rm -rf lib bin
 
 
-examples: bin/example-straight bin/example-load bin/example-geometry
+examples: bin/example-dump bin/example-geometry bin/example-loader \
+	  bin/example-geometry
 
-bin/example-%: examples/%.c lib/libpumas.so
+bin/example-%: examples/pumas/%.c lib/libpumas.so
 	@mkdir -p bin
 	@$(CC) $(CFLAGS) $(INCLUDES) -o $@ $< $(LIBS)
 
@@ -39,7 +40,8 @@ bin/example-geant4-generate: examples/geant4/generate.cpp
 	@mkdir -p bin
 	@$(CXX) $(G4FLAGS) -o $@ examples/geant4/generate.cpp $(G4LIBS)
 
-bin/example-geant4-run: examples/geant4/run.cpp examples/geant4/g4pumas.cpp examples/geant4/g4pumas.h
+bin/example-geant4-run: examples/geant4/run.cpp examples/geant4/g4pumas.cpp \
+	                examples/geant4/g4pumas.h lib/libpumas.so
 	@mkdir -p bin
 	@$(CXX) $(G4FLAGS) $(INCLUDES) -o $@ examples/geant4/run.cpp \
 	    examples/geant4/g4pumas.cpp $(G4LIBS) $(LIBS)

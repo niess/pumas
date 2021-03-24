@@ -59,8 +59,7 @@ jobs:
     - if: matrix.OS_TAG == 'OSX'
       name: Examples
       run: |
-        ./build/pumas-example-load materials/mdf/examples/standard.xml \
-                                   materials/dedx/muon \
-                                   materials/dump
-        ./build/pumas-example-straight 10 10 1
+        ./build/pumas-example-dump
+        ./build/pumas-example-loader
         ./build/pumas-example-geometry 10 10 1
+        ./build/pumas-example-straight 10 10 1

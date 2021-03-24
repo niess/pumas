@@ -29,6 +29,13 @@
  * binary dump is found, PUMAS is initialised from it. Otherwise, PUMAS is
  * initialised from the MDF. In the later case, a binary dump is generated in
  * order to speed up further initialisations.
+ *
+ * This example also illustrates how to catch and raise errors issued by PUMAS.
+ *
+ * Note that for this example to work you need the corresponding MDF and energy
+ * loss tables. Those can be downloaded with git, as following:
+ *
+ * git clone https://gitub.com/niess/pumas-materials materials
  */
 
 /* Standard library includes */
@@ -85,25 +92,22 @@ static void print_error(
 }
 
 /* The executable main entry point */
-int main(int narg, char * argv[])
+int main(int argc, char * argv[])
 {
-        /* Check the number of arguments */
-        if (narg < 4) {
-                fprintf(stderr,
-                    "Usage: %s [path/to/mdf] [path/to/dedx] [path/to/dump]\n",
-                    argv[0]);
-                exit(EXIT_FAILURE);
-        }
+        /* Parse any arguments */
+        const char * mdf = (argc >= 2) ?
+            argv[1] : "materials/mdf/examples/standard.xml";
+        const char * dedx = (argc >= 3) ? argv[2] : "materials/dedx/muon";
+        const char * dump = (argc >= 4) ? argv[3] : "materials/examples.pumas";
 
         /* Redirect error messages to stderr */
         pumas_error_handler_set(&print_error);
 
-        /* Load and pre-compute the given material data */
+        /* Load or compute the material's physics data */
         struct pumas_physics * physics;
-        enum pumas_return rc = load_pumas_materials(
-            &physics, argv[1], argv[2], argv[3]);
+        load_pumas_materials(&physics, mdf, dedx, dump);
 
-        /* Finalise PUMAS and return to the OS */
+        /* Clear the physics */
         pumas_physics_destroy(&physics);
-        exit((rc == PUMAS_RETURN_SUCCESS) ? EXIT_SUCCESS : EXIT_FAILURE);
+        exit(EXIT_SUCCESS);
 }

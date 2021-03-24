@@ -30,8 +30,12 @@
  * A backward muon is transported through the geometry using a G4Navigator and
  * Monte Carlo steps are printed out.
  *
- * Note that the material names and properties defined in the GDML file must
- * be consistent with PUMAS ones (loaded from the physics dump).
+ * Note that this example requires a prior installation of Geant4 with GDML
+ * enabled (`-DGEANT4_USE_GDML=ON` CMake flag as well a `libxerces-c`).
+ * In addition, a PUMAS physics dump must have been generated first e.g. by
+ * running the `example-dump` program (under examples/pumas/dump.c). Note also
+ * that the material names and properties defined in the GDML file must
+ * be consistent with the ones used in the PUMAS MDF or physics dump.
  */
 
 /* PUMAS API */
@@ -92,7 +96,7 @@ struct DetectorConstruction : public G4VUserDetectorConstruction
         {
                 /* Load the GDML geometry */
                 G4GDMLParser gdml;
-                gdml.Read("examples/gdml/geometry.gdml");
+                gdml.Read("examples/data/geometry.gdml");
                 return gdml.GetWorldVolume();
         }
 };

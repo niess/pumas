@@ -30,6 +30,9 @@
  * i.e. standard rock, water and air. A simple geometry is defined containing
  * a 1 km thick water layer on top of 1 km of rocks within a world bow filled
  * with air.
+ *
+ * Note that this example requires a prior installation of Geant4 with GDML
+ * enabled (`-DGEANT4_USE_GDML=ON` CMake flag as well a `libxerces-c`).
  */
 
 #include "G4Box.hh"
@@ -96,7 +99,7 @@ int main ()
             "Sea", worldLogical, false, 0);
 
         G4GDMLParser gdml;
-        gdml.Write("examples/gdml/geometry.gdml", worldPhysical);
+        gdml.Write("examples/data/geometry.gdml", worldPhysical);
 
         exit(EXIT_SUCCESS);
 }
