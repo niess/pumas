@@ -104,7 +104,7 @@ static enum pumas_step medium2(struct pumas_context * context,
     double * step_ptr)
 {
         if ((medium_ptr == NULL) && (step_ptr == NULL))
-                return PUMAS_STEP_EXACT;
+                return PUMAS_STEP_RAW;
 
         /* Check the muon position and direction */
         const double z = state->position[2];
@@ -148,11 +148,14 @@ static enum pumas_step medium2(struct pumas_context * context,
 
         if (step_ptr != NULL) {
 #define STEP_EPSILON 1E-07
+                /* Offset slightly the step length in order to end in the new
+                 * medium
+                 */
                 if (step > 0) step += STEP_EPSILON;
                 *step_ptr = step;
         }
 
-        return PUMAS_STEP_EXACT;
+        return PUMAS_STEP_RAW;
 }
 
 /* The executable main entry point */

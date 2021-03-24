@@ -1469,7 +1469,7 @@ static enum pumas_step geometry_medium(struct pumas_context * context,
             sizeof geometry.last_position);
 
         if ((medium_ptr == NULL) && (step_ptr == NULL)) {
-                return PUMAS_STEP_APPROXIMATE;
+                return PUMAS_STEP_CHECK;
         }
 
         if (step_ptr == NULL) {
@@ -1506,13 +1506,13 @@ static enum pumas_step geometry_medium(struct pumas_context * context,
         if (geometry.uniform) {
                 if (medium_ptr != NULL) *medium_ptr = media;
                 if (step_ptr != NULL) *step_ptr = 0.;
-                return PUMAS_STEP_APPROXIMATE;
+                return PUMAS_STEP_CHECK;
         } else {
                 if (medium_ptr != NULL) *medium_ptr = NULL;
                 const double z = state->position[2];
                 if (z < -0.5 * TEST_ROCK_DEPTH) {
                         if (step_ptr != NULL) *step_ptr = 0.;
-                        return PUMAS_STEP_APPROXIMATE;
+                        return PUMAS_STEP_CHECK;
                 } else if (z < 0.5 * TEST_ROCK_DEPTH) {
                         if (medium_ptr != NULL) *medium_ptr = media;
 
@@ -1520,7 +1520,7 @@ static enum pumas_step geometry_medium(struct pumas_context * context,
                         const double dz2 = 0.5 * TEST_ROCK_DEPTH - z;
                         const double dz = dz1 < dz2 ? dz1 : dz2;
                         if (step_ptr != NULL) *step_ptr = dz > 0. ? dz : 1E-03;
-                        return PUMAS_STEP_APPROXIMATE;
+                        return PUMAS_STEP_CHECK;
                 } else if (z < TEST_MAX_ALTITUDE) {
                         if (medium_ptr != NULL) *medium_ptr = media + 1;
 
@@ -1530,7 +1530,7 @@ static enum pumas_step geometry_medium(struct pumas_context * context,
                         const double uz = state->direction[2] * sgn;
                         if (fabs(uz) < 1E-03) {
                                 if (step_ptr != NULL) *step_ptr = 1E+03;
-                                return PUMAS_STEP_APPROXIMATE;
+                                return PUMAS_STEP_CHECK;
                         }
 
                         double s;
@@ -1539,10 +1539,10 @@ static enum pumas_step geometry_medium(struct pumas_context * context,
                         else
                                 s = (0.5 * TEST_ROCK_DEPTH - z) / uz;
                         if (step_ptr != NULL) *step_ptr = s > 0. ? s : 1E-03;
-                        return PUMAS_STEP_APPROXIMATE;
+                        return PUMAS_STEP_CHECK;
                 } else {
                         if (step_ptr != NULL) *step_ptr = 0.;
-                        return PUMAS_STEP_APPROXIMATE;
+                        return PUMAS_STEP_CHECK;
                 }
         }
 }

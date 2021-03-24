@@ -403,10 +403,10 @@ struct pumas_recorder {
 
 /** Return codes for the `pumas_medium_cb` callback. */
 enum pumas_step {
-        /** An approximate geometric step is proposed */
-        PUMAS_STEP_APPROXIMATE = 0,
-        /** An exact geometric step is provided */
-        PUMAS_STEP_EXACT
+        /** The proposed step is cross-checked bu PUMAS */
+        PUMAS_STEP_CHECK = 0,
+        /** The raw proposed step is used by PUMAS */
+        PUMAS_STEP_RAW
 };
 
 /**
@@ -417,14 +417,21 @@ enum pumas_step {
  * @param medium    A pointer to store the medium or `NULL` if not requested.
  * @param step      The proposed step size or zero or less for an infinite
  *                    medium. If not requested this points to `NULL`.
- * @return If the proposed step size is guaranteed to lie on the boundary of
- * the current medium then `PUMAS_STEP_EXACT` can be returned otherwise
- * `PUMAS_STEP_APPROXIMATE` must be returned.
+ * @return If the proposed step size should be cross-checked by PUMAS
+ * `PUMAS_STEP_CHECK` should be returned otherwise `PUMAS_STEP_RAW`.
  *
  * If *step* is not `NULL`, this callback must propose a Monte-Carlo stepping
  * distance, in m, consistent with the geometry. Note that returning zero or
  * less signs that the corresponding medium has no boundaries. When *medium* is
  * not `NULL` it must be set to the located `pumas_medium`.
+ *
+ * In addition the user must return a `pumas_step` enum indicating if the
+ * proposed *step* needs to be cross-checked by PUMAS or if it should be used
+ * raw. Managing steps that end on a geometry boundary can be tricky
+ * numerically. Therefore it is recommended to return `PUMAS_STEP_CHECK` if you
+ * are unsure of what to do since it is more robust. The raw mode is usefull if
+ * your geometry engine already performs those checks in order to avoid double
+ * work.
  *
  * **Warning** : it is an error to return zero or less for any state if the
  * extension is finite.

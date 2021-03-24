@@ -98,7 +98,7 @@ enum pumas_step g4pumas::Medium(struct pumas_context * context,
                  */
                 if (mediumPtr != nullptr) *mediumPtr = nullptr;
                 if (stepPtr != nullptr) *stepPtr = 0;
-                return PUMAS_STEP_APPROXIMATE;
+                return PUMAS_STEP_CHECK;
         }
 
         /* Fetch the physical volume */
@@ -119,7 +119,7 @@ enum pumas_step g4pumas::Medium(struct pumas_context * context,
                                  */
                                 *mediumPtr = nullptr;
                                 if (stepPtr != nullptr) *stepPtr = 0;
-                                return PUMAS_STEP_APPROXIMATE;
+                                return PUMAS_STEP_CHECK;
                         }
 
                         /* Allocate and register the new medium */
@@ -140,7 +140,10 @@ enum pumas_step g4pumas::Medium(struct pumas_context * context,
                     r, u, kInfinity, safety) / CLHEP::m;
         }
 
-        return PUMAS_STEP_APPROXIMATE;
+        /* Note that Geant4 treatment of boundaries is not consistent with
+         * PUMAS algorithm. Therefore we cannot use PUMAS_STEP_RAW.
+         */
+        return PUMAS_STEP_CHECK;
 }
 
 

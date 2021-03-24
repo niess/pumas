@@ -75,7 +75,7 @@ static enum pumas_step medium1(struct pumas_context * context,
          */
         if (step_ptr != NULL) *step_ptr = 0.;
 
-        return PUMAS_STEP_APPROXIMATE;
+        return PUMAS_STEP_CHECK;
 }
 
 /* The executable main entry point */

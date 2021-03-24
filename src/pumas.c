@@ -2486,7 +2486,7 @@ enum pumas_return pumas_context_transport(struct pumas_context * context,
                             state);
                 return PUMAS_RETURN_SUCCESS;
         } else if ((step_max_medium > 0.) &&
-            (step_max_type == PUMAS_STEP_APPROXIMATE))
+            (step_max_type == PUMAS_STEP_CHECK))
                 step_max_medium += 0.5 * STEP_MIN;
         struct medium_locals locals = { { 0., { 0., 0., 0. }}, 0, physics };
         const double step_max_locals =
@@ -4286,7 +4286,7 @@ enum pumas_event transport_with_stepping(const struct pumas_physics * physics,
                         step_max_type = context->medium(
                             context, state, NULL, &step_max_medium);
                         if ((step_max_medium > 0.) &&
-                            (step_max_type == PUMAS_STEP_APPROXIMATE))
+                            (step_max_type == PUMAS_STEP_CHECK))
                                 step_max_medium += 0.5 * STEP_MIN;
                 }
 
@@ -5489,7 +5489,7 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
         context->medium(context, state, &end_medium, NULL);
         double end_position[3] = { position[0], position[1], position[2] };
         if (end_medium != medium) {
-                if (step_max_type == PUMAS_STEP_APPROXIMATE) {
+                if (step_max_type == PUMAS_STEP_CHECK) {
                         /* Check for an exact boundary. */
                         const double step_min =
                             (step < STEP_MIN) ? step : STEP_MIN;
@@ -5558,7 +5558,7 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
                 Bi[1] = locals->api.magnet[1];
                 Bi[2] = locals->api.magnet[2];
         }
-        if ((*step_max_locals > 0.) && ((step_max_type != PUMAS_STEP_EXACT) ||
+        if ((*step_max_locals > 0.) && ((step_max_type != PUMAS_STEP_RAW) ||
             (event != PUMAS_EVENT_MEDIUM))) {
                 /* Update the locals. */
                 *step_max_locals = transport_set_locals(medium, state, locals);

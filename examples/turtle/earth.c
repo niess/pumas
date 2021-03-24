@@ -83,7 +83,7 @@ static enum pumas_step earth_medium(struct pumas_context * context,
                 }
         }
 
-        return PUMAS_STEP_APPROXIMATE;
+        return PUMAS_STEP_CHECK;
 }
 
 /* Print the given Monte Carlo state to stdout */
