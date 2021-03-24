@@ -42,6 +42,8 @@
 #include <stdlib.h>
 /* The PUMAS API */
 #include "pumas.h"
+/* The atmospheric muon fluxes library */
+#include "flux.h"
 
 /* The name of the medium's material */
 #define MATERIAL_NAME "StandardRock"
@@ -94,39 +96,6 @@ static enum pumas_step medium1(struct pumas_context * context,
         if (step_ptr != NULL) *step_ptr = 0.;
 
         return PUMAS_STEP_APPROXIMATE;
-}
-
-/* Gaisser's flux model, see e.g. the PDG */
-static double flux_gaisser(double cos_theta, double Emu)
-{
-        const double ec = 1.1 * Emu * cos_theta;
-        const double rpi = 1. + ec / 115.;
-        const double rK = 1. + ec / 850.;
-        return 1.4E+03 * pow(Emu, -2.7) * (1. / rpi + 0.054 / rK);
-}
-
-/* Volkova's parameterization of cos(theta*) */
-static double cos_theta_star(double cos_theta)
-{
-        const double p[] = { 0.102573, -0.068287, 0.958633, 0.0407253,
-                0.817285 };
-        const double cs2 =
-            (cos_theta * cos_theta + p[0] * p[0] + p[1] * pow(cos_theta, p[2]) +
-                p[3] * pow(cos_theta, p[4])) /
-            (1. + p[0] * p[0] + p[1] + p[3]);
-        return cs2 > 0. ? sqrt(cs2) : 0.;
-}
-
-/*
- * Guan et al. parameterization of the sea level flux of atmospheric muons
- * Reference: https://arxiv.org/abs/1509.06176
- */
-static double flux_gccly(double cos_theta, double kinetic_energy)
-{
-        const double Emu = kinetic_energy + 0.10566;
-        const double cs = cos_theta_star(cos_theta);
-        return pow(1. + 3.64 / (Emu * pow(cs, 1.29)), -2.7) *
-            flux_gaisser(cs, Emu);
 }
 
 /* The executable main entry point */
@@ -210,7 +179,11 @@ int main(int narg, char * argv[])
                         kf = energy_min;
                         wf = 1;
                 }
-                struct pumas_state state = { .charge = -1.,
+                const double cf = (context->random(context) > 0.5) ? 1 : -1;
+                wf *= 2; /* Update the Monte Carlo weight according to the bias
+                          * PDF used for the charge randomisation, i.e. 1 / 0.5
+                          */
+                struct pumas_state state = { .charge = cf,
                         .energy = kf,
                         .weight = wf,
                         .direction = { -sin_theta, 0., -cos_theta } };
@@ -220,7 +193,7 @@ int main(int narg, char * argv[])
 
                 /* Update the integrated flux */
                 const double wi = state.weight *
-                    flux_gccly(-state.direction[2], state.energy);
+                    flux_gccly(-state.direction[2], state.energy, state.charge);
                 w += wi;
                 w2 += wi * wi;
         }

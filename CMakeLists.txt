@@ -60,18 +60,18 @@ endif ()
 
 # Build and install rules for the examples, if enabled
 if (PUMAS_BUILD_EXAMPLES)
-        macro (pumas_example __tag)
+        macro (pumas_example __tag __flux)
                 set (__name "pumas-example-${__tag}")
-                add_executable (${__name} "examples/pumas/${__tag}.c")
+                add_executable (${__name} "examples/pumas/${__tag}.c" ${__flux})
                 target_compile_definitions (${__name} PRIVATE ${PUMAS_API})
                 target_link_libraries (${__name} pumas)
                 install (TARGETS ${__name} DESTINATION ${PUMAS_BIN} OPTIONAL)
         endmacro ()
 
-        pumas_example (dump)
-        pumas_example (geometry)
-        pumas_example (loader)
-        pumas_example (straight)
+        pumas_example (dump "")
+        pumas_example (geometry "examples/pumas/flux.c")
+        pumas_example (loader "")
+        pumas_example (straight "examples/pumas/flux.c")
 endif ()
 
 # Build the test(s), if enabled

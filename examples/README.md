@@ -12,7 +12,7 @@ git clone https://gitub.com/niess/pumas-materials materials
 This folder contains several examples of usage of the PUMAS library organized
 as follow:
 
--   The [pumas](pumas) folder contains 4 examples requiring only the PUMAS
+-   The [pumas](pumas) folder contains examples requiring only the PUMAS
     library.
 
     -   [pumas/dump.c](pumas/dump.c) shows how to generate a PUMAS physics dump
@@ -28,7 +28,7 @@ as follow:
     -   [pumas/loader.c](pumas/straight.c) is an example of smart loader for
         physics data using a dump whenever available or a MDF.
 
--   The [turtle](turtle) folder contains a single example of Earth geometry
+-   The [turtle](turtle) folder contains an example of Earth geometry
     using the [TURTLE](https://github.com/niess/turtle) library.
 
 -   The [geant4](geant4) folder contains examples of usage of PUMAS with

@@ -19,6 +19,18 @@ clean:
 examples: bin/example-dump bin/example-geometry bin/example-loader \
 	  bin/example-geometry
 
+bin/example-geometry: examples/pumas/geometry.c examples/pumas/flux.c \
+	              examples/pumas/flux.h lib/libpumas.so
+	@mkdir -p bin
+	@$(CC) $(CFLAGS) $(INCLUDES) -o $@ examples/pumas/geometry.c \
+	    examples/pumas/flux.c $(LIBS)
+
+bin/example-straight: examples/pumas/straight.c examples/pumas/flux.c \
+	              examples/pumas/flux.h lib/libpumas.so
+	@mkdir -p bin
+	@$(CC) $(CFLAGS) $(INCLUDES) -o $@ examples/pumas/straight.c \
+	    examples/pumas/flux.c $(LIBS)
+
 bin/example-%: examples/pumas/%.c lib/libpumas.so
 	@mkdir -p bin
 	@$(CC) $(CFLAGS) $(INCLUDES) -o $@ $< $(LIBS)
