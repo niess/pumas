@@ -83,14 +83,6 @@ static enum pumas_return load_pumas_materials(struct pumas_physics ** physics,
         return pumas_error_raise();
 }
 
-/* Dump any error summary to stderr */
-static void print_error(
-    enum pumas_return rc, pumas_function_t * caller, const char * message)
-{
-        fputs("pumas: library error. See details below\n", stderr);
-        fprintf(stderr, "error: %s\n", message);
-}
-
 /* The executable main entry point */
 int main(int argc, char * argv[])
 {
@@ -100,14 +92,12 @@ int main(int argc, char * argv[])
         const char * dedx = (argc >= 3) ? argv[2] : "materials/dedx/muon";
         const char * dump = (argc >= 4) ? argv[3] : "materials/examples.pumas";
 
-        /* Redirect error messages to stderr */
-        pumas_error_handler_set(&print_error);
-
         /* Load or compute the material's physics data */
         struct pumas_physics * physics;
         load_pumas_materials(&physics, mdf, dedx, dump);
 
-        /* Clear the physics */
+        /* Clean and exit to the OS */
         pumas_physics_destroy(&physics);
+
         exit(EXIT_SUCCESS);
 }

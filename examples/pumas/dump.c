@@ -41,14 +41,6 @@
 /* The PUMAS API */
 #include "pumas.h"
 
-/* Dump any error summary to stderr */
-static void print_error(
-    enum pumas_return rc, pumas_function_t * caller, const char * message)
-{
-        fputs("pumas: library error. See details below\n", stderr);
-        fprintf(stderr, "error: %s\n", message);
-}
-
 /* The executable main entry point */
 int main(int argc, char * argv[])
 {
@@ -57,9 +49,6 @@ int main(int argc, char * argv[])
             argv[1] : "materials/mdf/examples/standard.xml";
         const char * dedx = (argc >= 3) ? argv[2] : "materials/dedx/muon";
         const char * dump = (argc >= 4) ? argv[3] : "materials/examples.pumas";
-
-        /* Redirect error messages to stderr */
-        pumas_error_handler_set(&print_error);
 
         /* Compute the material's physics data */
         struct pumas_physics * physics;
@@ -77,7 +66,7 @@ int main(int argc, char * argv[])
                 exit(EXIT_FAILURE);
         }
 
-        /* Clear the physics */
+        /* Clean and exit to the OS */
         pumas_physics_destroy(&physics);
 
         exit(EXIT_SUCCESS);

@@ -111,11 +111,11 @@ END_TEST
 /* Test the error API */
 START_TEST(test_api_error)
 {
-        /* Check the initialisation */
+        /* Check the setters & getters  */
+        pumas_error_handler_set(NULL);
         pumas_handler_cb * handler = pumas_error_handler_get();
         ck_assert_ptr_null(handler);
 
-        /* Check the setters & getters  */
         pumas_error_handler_set(&handle_error);
         handler = pumas_error_handler_get();
         ck_assert_ptr_eq(handler, &handle_error);
@@ -5010,6 +5010,9 @@ int main(void)
 {
         /* Initialise the PRNG */
         srand(0);
+
+        /* Override the default error handler */
+        pumas_error_handler_set(&handle_error);
 
         /* Configure the tests and the runner */
         Suite * suite = create_suite();

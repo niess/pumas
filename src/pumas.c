@@ -743,13 +743,27 @@ struct error_context {
 };
 
 /**
+ * Default error handler.
+ */
+static void default_error_handler(
+    enum pumas_return rc, pumas_function_t * caller, const char * message)
+{
+        /* Dump the error summary */
+        fputs("pumas: library error. See details below\n", stderr);
+        fprintf(stderr, "error: %s\n", message);
+
+        /* Exit to the OS */
+        exit(EXIT_FAILURE);
+}
+
+/**
  * Shared data for the error handling.
  */
 static struct {
         pumas_handler_cb * handler;
         int catch;
         struct error_context catch_error;
-} s_error = { NULL, 0 };
+} s_error = { &default_error_handler, 0 };
 
 /* Prototypes of low level static functions. */
 /**

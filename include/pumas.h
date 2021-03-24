@@ -453,8 +453,9 @@ typedef void pumas_function_t (void);
  * @param caller      The API function where the error occured.
  * @param message     Brief description of the error.
  *
- * The user can provide its own error handler. It will be called at the
- * return of any PUMAS library function providing an error code.
+ * The user can override the PUMAS default error handler by providing its own
+ * error handler. It will be called at the return of any PUMAS library function
+ * providing an error code.
  */
 typedef void pumas_handler_cb (enum pumas_return rc, pumas_function_t * caller,
     const char * message);
@@ -853,8 +854,9 @@ PUMAS_API const char * pumas_error_function(pumas_function_t * function);
  *
  * @param handler    The error handler to set or `NULL`.
  *
- * Set the error handler callback for PUMAS library functions. If *handler* is
- * set to `NULL` error callbacks are disabled.
+ * Set the error handler callback for PUMAS library functions.  The user can
+ * override the PUMAS default error handler by providing its own error handler.
+ * If *handler* is set to `NULL` error callbacks are disabled.
  *
  * __Warnings__
  *
@@ -863,7 +865,9 @@ PUMAS_API const char * pumas_error_function(pumas_function_t * function);
 PUMAS_API void pumas_error_handler_set(pumas_handler_cb * handler);
 
 /**
- * Get the current error handler.
+ * Get the current error handler. By default PUMAS is configured to printout to
+ * stderr whenever an error occurs and to exit back to the OS. See
+ * `pumas_error_handler_set` in order to override this behaviour.
  *
  * @return The current error handler or `NULL` if none.
  */

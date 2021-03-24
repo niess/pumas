@@ -57,26 +57,6 @@
 static struct pumas_physics * physics = NULL;
 static struct pumas_context * context = NULL;
 
-/* Gracefully exit to the OS */
-static int exit_gracefully(int rc)
-{
-        pumas_context_destroy(&context);
-        pumas_physics_destroy(&physics);
-        exit(rc);
-}
-
-/* Error handler for PUMAS with a graceful exit */
-static void handle_error(
-    enum pumas_return rc, pumas_function_t * caller, const char * message)
-{
-        /* Dump the error summary */
-        fputs("pumas: library error. See details below\n", stderr);
-        fprintf(stderr, "error: %s\n", message);
-
-        /* Exit to the OS */
-        exit_gracefully(EXIT_FAILURE);
-}
-
 /* The medium container. The locals callback is set to `NULL` resulting in
  * the default material density being used with a null magnetic field
  */
@@ -107,7 +87,7 @@ int main(int narg, char * argv[])
                     "Usage: %s ROCK_THICKNESS ELEVATION "
                     "KINETIC_ENERGY[_MIN] [KINETIC_ENERGY_MAX]\n",
                     argv[0]);
-                exit_gracefully(EXIT_FAILURE);
+                exit(EXIT_FAILURE);
         }
 
         /* Parse the arguments */
@@ -117,14 +97,8 @@ int main(int narg, char * argv[])
         const double energy_max =
             (narg >= 5) ? strtod(argv[4], NULL) : energy_min;
 
-        /* Set the error handler callback. Whenever an error occurs during a
-         * PUMAS function call, the supplied error handler will be evaluated,
-         * resulting in an exit to the OS
-         */
-        pumas_error_handler_set(&handle_error);
-
-        /* Initialise PUMAS from a Material Description File (MDF). This can
-         * a few seconds, depending on the number of materials in the MDF.
+        /* Initialise PUMAS physics from a Material Description File (MDF). This
+         * can a few seconds, depending on the number of materials in the MDF.
          */
         pumas_physics_create(&physics, PUMAS_PARTICLE_MUON,
             "materials/mdf/examples/standard.xml", "materials/dedx/muon");
@@ -207,6 +181,9 @@ int main(int narg, char * argv[])
         printf("Flux : %.5lE \\pm %.5lE %sm^{-2} s^{-2} sr^{-1}\n", w, sigma,
             unit);
 
-        /* Exit to the OS */
-        exit_gracefully(EXIT_SUCCESS);
+        /* Clean and exit to the OS */
+        pumas_context_destroy(&context);
+        pumas_physics_destroy(&physics);
+
+        exit(EXIT_SUCCESS);
 }

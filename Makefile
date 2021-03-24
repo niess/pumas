@@ -36,9 +36,10 @@ bin/example-%: examples/pumas/%.c lib/libpumas.so
 	@$(CC) $(CFLAGS) $(INCLUDES) -o $@ $< $(LIBS)
 
 
-examples-turtle: bin/example-earth
+examples-turtle: bin/example-turtle-earth
 
-bin/example-earth: examples/earth.c lib/libpumas.so lib/libturtle.so
+bin/example-turtle-earth: examples/turtle/earth.c lib/libpumas.so \
+	                  lib/libturtle.so
 	@mkdir -p bin
 	@$(CC) $(CFLAGS) $(INCLUDES) -o $@ $< $(LIBS) -lturtle
 
