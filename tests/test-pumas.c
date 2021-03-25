@@ -177,6 +177,7 @@ START_TEST(test_api_error)
         CHECK_STRING(pumas_physics_composite_update);
         CHECK_STRING(pumas_physics_create);
         CHECK_STRING(pumas_physics_create_tabulation);
+        CHECK_STRING(pumas_physics_cutoff);
         CHECK_STRING(pumas_physics_dcs_get);
         CHECK_STRING(pumas_physics_dcs_set);
         CHECK_STRING(pumas_physics_destroy);
@@ -254,12 +255,12 @@ START_TEST(test_api_init)
 {
         /* Check the particle selection */
         reset_error();
-        pumas_physics_create(&physics, -1, NULL, NULL);
+        pumas_physics_create(&physics, -1, NULL, NULL, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_UNKNOWN_PARTICLE);
 
         /* Check the path error */
         reset_error();
-        pumas_physics_create(&physics, PUMAS_PARTICLE_MUON, NULL, NULL);
+        pumas_physics_create(&physics, PUMAS_PARTICLE_MUON, NULL, NULL, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_UNDEFINED_DEDX);
 
         /* Check the load error */
@@ -267,10 +268,35 @@ START_TEST(test_api_init)
         pumas_physics_load(&physics, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PATH_ERROR);
 
+        /* Check the cutoff error */
+        reset_error();
+        double cutoff = 0;
+        pumas_physics_create(&physics, PUMAS_PARTICLE_MUON,
+            "materials/mdf/examples/standard.xml", "materials/dedx/muon",
+            &cutoff);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_CUTOFF_ERROR);
+
+        reset_error();
+        cutoff = 1;
+        pumas_physics_create(&physics, PUMAS_PARTICLE_MUON,
+            "materials/mdf/examples/standard.xml", "materials/dedx/muon",
+            &cutoff);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_CUTOFF_ERROR);
+
+        /* Check the cutoff setter */
+        reset_error();
+        cutoff = 0.1;
+        pumas_physics_create(&physics, PUMAS_PARTICLE_MUON,
+            "materials/mdf/examples/standard.xml", "materials/dedx/muon",
+            &cutoff);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_double_eq(cutoff, pumas_physics_cutoff(physics));
+        pumas_physics_destroy(&physics);
+
         /* Check the initialisation and dump */
         reset_error();
         pumas_physics_create(&physics, PUMAS_PARTICLE_MUON,
-            "materials/mdf/examples/standard.xml", "materials/dedx/muon");
+            "materials/mdf/examples/standard.xml", "materials/dedx/muon", NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
 
         reset_error();
@@ -280,7 +306,7 @@ START_TEST(test_api_init)
 
         reset_error();
         pumas_physics_create(&physics, PUMAS_PARTICLE_TAU,
-            "materials/mdf/examples/wet-rock.xml", "materials/dedx/tau");
+            "materials/mdf/examples/wet-rock.xml", "materials/dedx/tau", NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
 
         reset_error();

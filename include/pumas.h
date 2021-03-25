@@ -124,6 +124,8 @@ enum pumas_return {
         PUMAS_RETURN_SUCCESS = 0,
         /** The requested accuracy is not valid. */
         PUMAS_RETURN_ACCURACY_ERROR,
+        /** The requested cutoff is not valid. */
+        PUMAS_RETURN_CUTOFF_ERROR,
         /** End of file was reached. */
         PUMAS_RETURN_END_OF_FILE,
         /** The specified decay mode is not valid. */
@@ -289,10 +291,10 @@ struct pumas_medium;
  * @param locals    A pointer to a `pumas_locals` structure to update.
  * @return The size of local inhomogeneities (see below).
  *
- * The callback must return a proposed Monte-Carlo stepping distance, in m,
- * consistent with the size of the propagation medium inhomogeneities,
- * e. g. &rho; / |&nabla; &rho;| for a density gradient. Returning zero or less
- * signs that the propagation medium is fully uniform.
+ * The callback must return a length, in m, consistent with the size of the
+ * propagation medium inhomogeneities, e. g. &rho; / |&nabla; &rho;| for a
+ * density gradient. Returning zero or less signs that the propagation medium is
+ * fully uniform.
  *
  * **Note** that inhomogeneities modelled by the `pumas_locals` callback must be
  * **continuous**. If the geometry has a density or magnetic field discontinuity
@@ -577,11 +579,12 @@ struct pumas_context {
         /** External limits for the Monte Carlo transport. */
         struct pumas_context_limit limit;
 
-        /** Relative accuracy of the Monte Carlo integration.
+        /** Tuning parameter for the accuracy of the Monte Carlo integration.
          *
          * The Monte Carlo transport is discretized in elementary steps. This
          * parameter directly controls the length of these steps. The smaller
-         * the accuracy the smaller the step length.
+         * the *accuracy* value the smaller the step length hence the longer
+         * the Monte Carlo simulation.
          */
         double accuracy;
 };
@@ -617,7 +620,7 @@ struct pumas_physics_density_effect {
  * @param m       The projectile rest mass, in GeV
  * @param K       The projectile kinetic energy, in GeV.
  * @param q       The projectile energy loss, in GeV.
- * @return The corresponding value of the atomic DCS, in m^2/GeV.
+ * @return The corresponding value of the atomic DCS, in m^(2)/GeV.
  *
  * The `pumas_physics_dcs_get` function returns the current (default) DCS.
  * The `pumas_physics_dcs_set` functions allows to provide an alternative one.
@@ -634,6 +637,8 @@ typedef double pumas_dcs_t (double Z, double A, double m, double K, double q);
  * @param particle     The type of the particle to transport.
  * @param mdf_path     The path to a Material Description File (MDF), or `NULL`.
  * @param dedx_path    The path to the energy loss tabulation(s), or `NULL`.
+ * @param cutoff       Relative cutoff between continous and discrete energy
+ *                       losses or `NULL`.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
@@ -642,12 +647,18 @@ typedef double pumas_dcs_t (double Z, double A, double m, double K, double q);
  * *dedx_path* can be set to `NULL`. If so the corresponding path is read from
  * the `PUMAS_MDF` or `PUMAS_DEDX` environment variable.
  *
+ * Optionaly a relative cutoff value between continuous and discrete energy
+ * losses can be specified. If `NULL` is provided then PUMAS default value is
+ * used which should perform well for most use cases.
+ *
  * Call `pumas_physics_destroy` in order to unload the Physics and release the
  * corresponding alocated memory.
  *
  * **Warnings** : this function is not thread safe.
  *
  * __Error codes__
+ *
+ *     PUMAS_RETURN_CUTOFF_ERROR            A bad cutoff value was provided.
  *
  *     PUMAS_RETURN_END_OF_FILE             And unexpected EOF occured.
  *
@@ -682,7 +693,7 @@ typedef double pumas_dcs_t (double Z, double A, double m, double K, double q);
  */
 PUMAS_API enum pumas_return pumas_physics_create(
     struct pumas_physics ** physics, enum pumas_particle particle,
-    const char * mdf_path, const char * dedx_path);
+    const char * mdf_path, const char * dedx_path, const double * cutoff);
 
 /**
  * Destroy a Physics instance.
@@ -752,6 +763,18 @@ PUMAS_API enum pumas_return pumas_physics_dump(
  */
 PUMAS_API enum pumas_return pumas_physics_load(
     struct pumas_physics ** physics, FILE * stream);
+
+/**
+ * Get the cutoff value used by the physics.
+ *
+ * @param context Handle for the physics tables.
+ * @return The cutoff value or -1 if the physics is not properly initialised.
+ *
+ * The cutoff value between continuous and discrete energy losses is specified
+ * during the physics initialisation with `pumas_physics_create`. It cannot be
+ * modified afterwards. Instead a new physics object must be created.
+ */
+PUMAS_API double pumas_physics_cutoff(const struct pumas_physics * physics);
 
 /**
  * Transport a particle according to the configured `pumas_context`.

@@ -63,7 +63,7 @@ static enum pumas_return load_pumas_materials(struct pumas_physics ** physics,
 
         /* If no binary dump, initialise from the MDF and dump */
         enum pumas_return rc;
-        if ((rc = pumas_physics_create(physics, particle, mdf, dedx)) !=
+        if ((rc = pumas_physics_create(physics, particle, mdf, dedx, NULL)) !=
             PUMAS_RETURN_SUCCESS)
                 return rc;
 

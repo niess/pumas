@@ -72,9 +72,9 @@
  */
 #define N_DEL_PROCESSES 4
 /**
- * Relative switch between Continuous Energy Loss (CEL) and DELs.
+ * Default cutoff between Continuous Energy Loss (CEL) and DELs.
  */
-#define X_FRACTION 5E-02
+#define DEFAULT_CUTOFF 5E-02
 /**
  * Exponents of the differential cross section approximation in Backward
  * Monte-Carlo (BMC).
@@ -619,7 +619,7 @@ struct pumas_physics {
  * Version tag for the physics data format. Increment whenever the
  * structure changes.
  */
-#define PHYSICS_BINARY_DUMP_TAG 3
+#define PHYSICS_BINARY_DUMP_TAG 4
 
         /** The total byte size of the shared data. */
         int size;
@@ -648,6 +648,8 @@ struct pumas_physics {
         double ctau;
         /** The transported particle rest mass, in GeV. */
         double mass;
+        /** The relative cutoff between CEL and DELs. */
+        double cutoff;
         /** Path to the current MDF. */
         char * mdf_path;
         /** Path where the dE/dX files are stored. */
@@ -1184,9 +1186,13 @@ void pumas_memory_deallocator(pumas_deallocate_cb * deallocator)
  */
 static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
     enum pumas_particle particle, const char * mdf_path, const char * dedx_path,
-    int dry_mode)
+    int dry_mode, const double * cutoff)
 {
         ERROR_INITIALISE(pumas_physics_create);
+        if (dry_mode) {
+                error_data.function =
+                    (pumas_function_t *)&pumas_physics_create_tabulation;
+        }
 
         /* Check if the Physics pointer is NULL. */
         if (physics_ptr == NULL) {
@@ -1429,6 +1435,20 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         physics->dcs_model_offset = settings.dcs_model_offset;
         strcpy(physics->mdf_path, file_mdf);
 
+        /* Set the cutoff */
+        if (cutoff == NULL) {
+                physics->cutoff = DEFAULT_CUTOFF;
+        } else {
+                if ((*cutoff <= 0) || (*cutoff >= 1)) {
+                        ERROR_VREGISTER(PUMAS_RETURN_CUTOFF_ERROR,
+                            "bad cutoff value (expected a value in ]0, 1[, "
+                            " got %g)", *cutoff);
+                        goto clean_and_exit;
+                } else {
+                        physics->cutoff = *cutoff;
+                }
+        }
+
         /* Allocate a new MDF buffer. */
         if ((mdf = allocate(sizeof(struct mdf_buffer) + size_mdf)) == NULL) {
                 ERROR_REGISTER_MEMORY();
@@ -1512,9 +1532,10 @@ clean_and_exit:
 
 /* The standard API initialisation. */
 enum pumas_return pumas_physics_create(struct pumas_physics ** physics,
-    enum pumas_particle particle, const char * mdf_path, const char * dedx_path)
+    enum pumas_particle particle, const char * mdf_path, const char * dedx_path,
+    const double * cutoff)
 {
-        return _initialise(physics, particle, mdf_path, dedx_path, 0);
+        return _initialise(physics, particle, mdf_path, dedx_path, 0, cutoff);
 }
 
 enum pumas_return pumas_physics_load(
@@ -1650,6 +1671,11 @@ void pumas_physics_destroy(struct pumas_physics ** physics_ptr)
         *physics_ptr = NULL;
 }
 
+double pumas_physics_cutoff(const struct pumas_physics * physics)
+{
+        return (physics == NULL) ? -1 : physics->cutoff;
+}
+
 const char * pumas_error_function(pumas_function_t * caller)
 {
 #define TOSTRING(function)                                                     \
@@ -1692,6 +1718,7 @@ const char * pumas_error_function(pumas_function_t * caller)
 
         /* Other library functions. */
         TOSTRING(pumas_constant)
+        TOSTRING(pumas_physics_cutoff)
         TOSTRING(pumas_physics_destroy)
         TOSTRING(pumas_physics_tabulation_clear)
         TOSTRING(pumas_context_destroy)
@@ -4900,7 +4927,7 @@ polar_function_t * del_randomise_forward(const struct pumas_physics * physics,
                 const double m1 = physics->mass - ELECTRON_MASS;
                 if (state->energy <= 0.5 * m1 * m1 / ELECTRON_MASS) {
                         state->energy = dcs_ionisation_randomise(physics,
-                            context, element, state->energy, X_FRACTION);
+                            context, element, state->energy, physics->cutoff);
                         *process = info.process;
                         return polar_get(info.process);
                 }
@@ -5009,7 +5036,7 @@ polar_function_t * del_randomise_reverse(const struct pumas_physics * physics,
     int * process)
 {
         /* Check for a pure CEL event. */
-        const double lnq0 = -log(X_FRACTION);
+        const double lnq0 = -log(physics->cutoff);
         const double kt = *table_get_Kt(physics, material);
         const double kf = state->energy;
         const double pCEL =
@@ -5019,7 +5046,7 @@ polar_function_t * del_randomise_reverse(const struct pumas_physics * physics,
                 return NULL;
         }
         const double xf =
-            (kf >= kt * (1. - X_FRACTION)) ? X_FRACTION : 1. - kf / kt;
+            (kf >= kt * (1. - physics->cutoff)) ? physics->cutoff : 1. - kf / kt;
 
         /* Randomise the initial energy with a bias model. */
         double xmax, alpha;
@@ -6051,7 +6078,7 @@ static double step_fluctuations2(
         const double g = 1. + kinetic / physics->mass;
         const double b2 = 1. - 1. / (g * g);
         double qmax = 2. * ELECTRON_MASS * b2 * g * g / (1. + r * (2. * g + r));
-        const double qcut = X_FRACTION * kinetic;
+        const double qcut = physics->cutoff * kinetic;
         if (qmax > qcut) qmax = qcut;
         return 1.535375E-05 * physics->material_ZoA[material] *
             (1. / b2 - 0.5) * qmax;
@@ -6500,7 +6527,7 @@ void coulomb_transport_coefficients(double mu, double fspin, double * screening,
 double transverse_transport_ionisation(const struct pumas_physics * physics,
     const struct atomic_element * element, double kinetic)
 {
-        /* Soft close interactions, restricted to X_FRACTION. */
+        /* Soft close interactions, restricted to physics->cutoff. */
         const double momentum2 = kinetic * (kinetic + 2. * physics->mass);
         const double E = kinetic + physics->mass;
         const double Wmax = 2. * ELECTRON_MASS * momentum2 /
@@ -6508,7 +6535,7 @@ double transverse_transport_ionisation(const struct pumas_physics * physics,
                                 ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
         const double W0 = 2. * momentum2 / ELECTRON_MASS;
         const double mu_max = Wmax / W0;
-        double mu3 = kinetic * X_FRACTION / W0;
+        double mu3 = kinetic * physics->cutoff / W0;
         if (mu3 > mu_max) mu3 = mu_max;
         const double mu2 = 0.62 * element->I / W0;
         if (mu2 >= mu3) return 0.;
@@ -6548,7 +6575,7 @@ double transverse_transport_photonuclear(const struct pumas_physics * physics,
 
         double xi, wi, lbipn = 0.;
         while (math_gauss_quad(0, &xi, &wi) == 0) { /* Stepping. */
-                const double nu = X_FRACTION * exp(xi);
+                const double nu = physics->cutoff * exp(xi);
                 const double q = nu * kinetic;
 
                 /* Analytical integration over mu. */
@@ -9122,10 +9149,10 @@ double * compute_cel_and_del(struct pumas_physics * physics, int row)
                 for (ip = 0; ip < N_DEL_PROCESSES; ip++) {
                         *table_get_CSn(physics, ip, iel, row) =
                             compute_dcs_integral(physics, 0, element, kinetic,
-                                dcs_get(ip), X_FRACTION, 180);
+                                dcs_get(ip), physics->cutoff, 180);
                         *table_get_cel(physics, ip, iel, row, cel_table) =
                             compute_dcs_integral(physics, 1, element, kinetic,
-                                dcs_get(ip), X_FRACTION, 180);
+                                dcs_get(ip), physics->cutoff, 180);
                 }
         }
 
@@ -9174,14 +9201,15 @@ once. */
                         dcs_function_t * dcs_func = dcs_get(ip);
                         for (row = it; row < physics->n_energies; row++) {
                                 const double k = *table_get_K(physics, row);
-                                double x = X_FRACTION;
+                                double x = physics->cutoff;
                                 while ((x < 1.) && (dcs_func(physics, element,
                                                         k, k * x) <= 0.))
                                         x *= 2;
                                 if (x >= 1.)
                                         x = 1.;
-                                else if (x > X_FRACTION) {
-                                        const double eps = 1E-02 * X_FRACTION;
+                                else if (x > physics->cutoff) {
+                                        const double eps = 1E-02 *
+                                            physics->cutoff;
                                         double x0 = 0.5 * x;
                                         double dcs = 0.;
                                         for (;;) {
@@ -9301,8 +9329,8 @@ enum pumas_return compute_dcs_model(struct pumas_physics * physics,
                 dcs_model_fit(0, 0, NULL, NULL, NULL, NULL);
                 return PUMAS_RETURN_SUCCESS;
         } else if (m <= 0) {
-                m = (int)(100. * log10(DCS_MODEL_MAX_FRACTION / X_FRACTION)) +
-                    1 + DCS_SAMPLING_N;
+                m = (int)(100. * log10(DCS_MODEL_MAX_FRACTION /
+                    physics->cutoff)) + 1 + DCS_SAMPLING_N;
                 if (m < 0) return PUMAS_RETURN_INTERNAL_ERROR;
                 tmp = allocate((3 * m + n + DCS_SAMPLING_N) * sizeof(double));
                 if (tmp == NULL) return ERROR_REGISTER_MEMORY();
@@ -9316,9 +9344,9 @@ enum pumas_return compute_dcs_model(struct pumas_physics * physics,
         const int index = dcs_get_index(dcs_func);
         const int nkeff = physics->n_energies - physics->dcs_model_offset;
         float * const coeff = table_get_dcs_coeff(physics, element, index, 0);
-        const double x0 = log(X_FRACTION);
-        const double dx =
-            log(DCS_MODEL_MAX_FRACTION / X_FRACTION) / (m - 1 - DCS_SAMPLING_N);
+        const double x0 = log(physics->cutoff);
+        const double dx = log(DCS_MODEL_MAX_FRACTION / physics->cutoff) /
+            (m - 1 - DCS_SAMPLING_N);
         int i;
         float * c;
         for (i = 0, c = coeff; i < nkeff; i++, c += n + DCS_SAMPLING_N) {
@@ -9917,7 +9945,7 @@ double dcs_ionisation(const struct pumas_physics * physics,
         const double Wmax = 2. * ELECTRON_MASS * P2 /
             (physics->mass * physics->mass +
                                 ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
-        if ((Wmax < X_FRACTION * K) || (q > Wmax)) return 0.;
+        if ((Wmax < physics->cutoff * K) || (q > Wmax)) return 0.;
         const double Wmin = 0.62 * element->I;
         if (q <= Wmin) return 0.;
 
@@ -9966,7 +9994,7 @@ double dcs_ionisation_integrate(const struct pumas_physics * physics, int mode,
         const double Wmax = 2. * ELECTRON_MASS * P2 /
             (physics->mass * physics->mass +
                                 ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
-        if (Wmax < X_FRACTION * K) return 0.;
+        if (Wmax < physics->cutoff * K) return 0.;
         double Wmin = 0.62 * element->I;
         const double qlow = K * xlow;
         if (qlow >= Wmin) Wmin = qlow;
@@ -10000,7 +10028,7 @@ double dcs_ionisation_randomise(const struct pumas_physics * physics,
         const double Wmax = 2. * ELECTRON_MASS * P2 /
             (physics->mass * physics->mass +
                                 ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
-        if (Wmax < X_FRACTION * K) return K;
+        if (Wmax < physics->cutoff * K) return K;
         double Wmin = 0.62 * element->I;
         const double qlow = K * xlow;
         if (qlow >= Wmin) Wmin = qlow;
@@ -10065,7 +10093,7 @@ double dcs_evaluate(const struct pumas_physics * physics,
         const double min_k = physics ?
             *table_get_K(physics, physics->dcs_model_offset) :
             DCS_MODEL_MIN_KINETIC;
-        if (!physics || (K <= min_k) || (q < X_FRACTION * K) ||
+        if (!physics || (K <= min_k) || (q < physics->cutoff * K) ||
             (q > DCS_MODEL_MAX_FRACTION * K))
                 return dcs_func(physics, element, K, q) * wj;
 
@@ -10862,7 +10890,7 @@ enum pumas_return pumas_physics_create_tabulation(
     struct pumas_physics ** physics, enum pumas_particle particle,
     const char * mdf_path)
 {
-        return _initialise(physics, particle, mdf_path, NULL, 1);
+        return _initialise(physics, particle, mdf_path, NULL, 1, NULL);
 }
 
 /* The density effect for the electronic energy loss. */

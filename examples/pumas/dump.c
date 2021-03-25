@@ -52,7 +52,7 @@ int main(int argc, char * argv[])
 
         /* Compute the material's physics data */
         struct pumas_physics * physics;
-        pumas_physics_create(&physics, PUMAS_PARTICLE_MUON, mdf, dedx);
+        pumas_physics_create(&physics, PUMAS_PARTICLE_MUON, mdf, dedx, NULL);
 
         /* Dump the physics data for subsquent usage */
         FILE * stream = fopen(dump, "wb");
