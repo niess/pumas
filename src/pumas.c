@@ -91,17 +91,9 @@
  */
 #define EHS_PATH_MAX 1E+09
 /**
- * Relative step length limit due to Multiple Scattering (MS).
+ * Default accuracy (relative step length limit) of the Monte Carlo integration.
  */
-#define RATIO_MSC 1E-02
-/**
- * Relative step length limit due to CEL.
- */
-#define RATIO_ENERGY_LOSS 1E-02
-/**
- * Relative step length limit due to magnetic bending.
- */
-#define RATIO_MAGNETIC 1E-02
+#define DEFAULT_ACCURACY 1E-02
 /**
  * Maximum deflection angle for a soft scattering event, in degrees.
  */
@@ -2024,10 +2016,12 @@ enum pumas_return pumas_context_create(struct pumas_context ** context_,
         (*context_)->mode.scattering = PUMAS_MODE_FULL_SPACE;
         (*context_)->event = PUMAS_EVENT_NONE;
 
-        (*context_)->limit.energy = 0.;   /* GeV */
+        (*context_)->limit.energy = 0.;    /* GeV */
         (*context_)->limit.distance = 0.;  /* m */
         (*context_)->limit.grammage = 0.;  /* kg/m^2 */
         (*context_)->limit.time = 0.;      /* m/c */
+
+        (*context_)->accuracy = DEFAULT_ACCURACY;
 
         /* Initialise the Gaussian transform of the random stream. */
         context->randn_done = 0;
@@ -2466,6 +2460,12 @@ enum pumas_return pumas_context_transport(struct pumas_context * context,
             (context->mode.decay == PUMAS_MODE_WEIGHT)) {
                 return ERROR_MESSAGE(PUMAS_RETURN_DECAY_ERROR,
                     "`PUMAS_MODE_WEIGHT' mode is not valid for forward taus");
+        }
+
+        if ((context->accuracy <= 0) || (context->accuracy > 1)) {
+                return ERROR_FORMAT(PUMAS_RETURN_ACCURACY_ERROR,
+                    "bad accuracy value (expected a value in ]0,1], got %g)",
+                    context->accuracy);
         }
 
         /* Get the start medium. */
@@ -5384,7 +5384,7 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
         double invlb1 = 0.;
         if (!straight) {
                 /* Compute the kinetic step length. */
-                double r = RATIO_ENERGY_LOSS;
+                double r = context->accuracy;
                 const double k_threshold = 1E+09;
                 if ((scheme == PUMAS_MODE_DETAILED) &&
                     (state->energy > k_threshold)) {
@@ -5406,7 +5406,7 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
                                 invlb1 *= density;
                         } else
                                 invlb1 = context_->step_invlb1;
-                        const double stepT = RATIO_MSC / invlb1;
+                        const double stepT = context->accuracy / invlb1;
                         if (stepT < step_loc) step_loc = stepT;
                 }
 
@@ -5444,7 +5444,7 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
 
                 /* Update the step length. */
                 if (rLarmor > 0.) {
-                        const double stepM = RATIO_MAGNETIC * rLarmor;
+                        const double stepM = context->accuracy * rLarmor;
                         if (stepM < step_loc) step_loc = stepM;
                 }
         } else {

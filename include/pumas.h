@@ -122,6 +122,8 @@ enum pumas_mode {
 enum pumas_return {
         /** Execution was successful. */
         PUMAS_RETURN_SUCCESS = 0,
+        /** The requested accuracy is not valid. */
+        PUMAS_RETURN_ACCURACY_ERROR,
         /** End of file was reached. */
         PUMAS_RETURN_END_OF_FILE,
         /** The specified decay mode is not valid. */
@@ -574,6 +576,14 @@ struct pumas_context {
 
         /** External limits for the Monte Carlo transport. */
         struct pumas_context_limit limit;
+
+        /** Relative accuracy of the Monte Carlo integration.
+         *
+         * The Monte Carlo transport is discretized in elementary steps. This
+         * parameter directly controls the length of these steps. The smaller
+         * the accuracy the smaller the step length.
+         */
+        double accuracy;
 };
 
 /**
@@ -764,6 +774,8 @@ PUMAS_API enum pumas_return pumas_physics_load(
  * is returned (see below).
  *
  * __Error codes__
+ *
+ *     PUMAS_RETURN_ACCURACY_ERROR          The requested accuracy is not valid.
  *
  *     PUMAS_RETURN_DENSITY_ERROR           A null or negative density was
  * encountered.

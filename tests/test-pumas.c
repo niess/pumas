@@ -1145,6 +1145,8 @@ START_TEST(test_api_context)
         ck_assert_double_eq(context->limit.grammage, 0.);
         ck_assert_double_eq(context->limit.time, 0.);
 
+        ck_assert_double_eq(context->accuracy, 1E-02);
+
         /* Test the context destruction */
         pumas_context_destroy(&context);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
@@ -1989,6 +1991,19 @@ START_TEST(test_csda_straight)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_MISSING_RANDOM);
         context->random = prng;
         context->mode.decay = PUMAS_MODE_WEIGHT;
+
+        const double accuracy = context->accuracy;
+        context->accuracy = 0;
+        reset_error();
+        initialise_state();
+        pumas_context_transport(context, state, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_ACCURACY_ERROR);
+        context->accuracy = 2;
+        reset_error();
+        initialise_state();
+        pumas_context_transport(context, state, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_ACCURACY_ERROR);
+        context->accuracy = accuracy;
 
         /* Check the forward full path transport */
         double X, d, t0;
