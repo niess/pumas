@@ -158,6 +158,18 @@
  * Avogadro's number
  */
 #define AVOGADRO_NUMBER 6.02214076E+23
+/**
+ * Default Bremsstrahlung model
+ */
+#define DEFAULT_BREMSSTRAHLUNG "KKP"
+/**
+ * Default pair production model
+ */
+#define DEFAULT_PAIR_PRODUCTION "KKP"
+/**
+ * Default photonuclear model
+ */
+#define DEFAULT_PHOTONUCLEAR "DRSS"
 
 /* Helper macros for managing errors. */
 #define ERROR_INITIALISE(caller)                                               \
@@ -619,7 +631,7 @@ struct pumas_physics {
  * Version tag for the physics data format. Increment whenever the
  * structure changes.
  */
-#define PHYSICS_BINARY_DUMP_TAG 4
+#define PHYSICS_BINARY_DUMP_TAG 5
 
         /** The total byte size of the shared data. */
         int size;
@@ -717,9 +729,15 @@ struct pumas_physics {
         struct composite_material ** composite;
         /** The material names. */
         char ** material_name;
+        /** The Bremsstrahlung model. */
+        char * model_bremsstrahlung;
+        /** The pair_production model. */
+        char * model_pair_production;
+        /** The photonuclear model. */
+        char * model_photonuclear;
         /** The Bremsstrahlung DCS. */
         pumas_dcs_t * dcs_bremsstrahlung;
-        /** The pair_creation DCS. */
+        /** The pair_production DCS. */
         pumas_dcs_t * dcs_pair_production;
         /** The photonuclear DCS. */
         pumas_dcs_t * dcs_photonuclear;
@@ -823,8 +841,6 @@ static double dcs_evaluate(const struct pumas_physics * physics,
 static void dcs_model_fit(int m, int n, const double * x, const double * y,
     const double * w, double * c);
 
-static double default_dcs_bremsstrahlung(
-    double Z, double A, double m, double K, double q);
 static double default_dcs_pair_production(
     double Z, double A, double m, double K, double q);
 static double default_dcs_photonuclear(
@@ -1180,13 +1196,17 @@ void pumas_memory_deallocator(pumas_deallocate_cb * deallocator)
  * Public library functions: initialisation and termination.
  */
 
+/* Routine for checking the validity of a DCS model name (forward decl.) */
+static enum pumas_return dcs_check_model(enum pumas_process process,
+     const char * model, struct error_context * error_);
+
 /*
  * Low level initialisation. If *dry_mode* is not null the energy loss tables
  * are not loaded and processed.
  */
 static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
     enum pumas_particle particle, const char * mdf_path, const char * dedx_path,
-    int dry_mode, const double * cutoff)
+    int dry_mode, const struct pumas_physics_settings * settings_)
 {
         ERROR_INITIALISE(pumas_physics_create);
         if (dry_mode) {
@@ -1208,7 +1228,7 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         FILE * fid_mdf = NULL;
         struct mdf_buffer * mdf = NULL;
         const int pad_size = sizeof(*((*physics_ptr)->data));
-#define N_DATA_POINTERS 29
+#define N_DATA_POINTERS 32
         int size_data[N_DATA_POINTERS];
 
         /* Check the particle type. */
@@ -1216,6 +1236,56 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
             (particle != PUMAS_PARTICLE_TAU)) {
                 return ERROR_FORMAT(PUMAS_RETURN_UNKNOWN_PARTICLE,
                     "invalid particle index `%d'", (int)particle);
+        }
+
+        /* Check and unpack any extra settings */
+        struct pumas_physics_settings opts = {
+                DEFAULT_CUTOFF,
+                DEFAULT_BREMSSTRAHLUNG,
+                DEFAULT_PAIR_PRODUCTION,
+                DEFAULT_PHOTONUCLEAR
+        };
+        if (settings_ != NULL) {
+                if (settings_->cutoff >= 1) {
+                        return ERROR_FORMAT(PUMAS_RETURN_CUTOFF_ERROR,
+                            "bad cutoff value (expected a value in ]0, 1[, "
+                            " got %g)", settings_->cutoff);
+                } else if (settings_->cutoff > 0) {
+                        opts.cutoff = settings_->cutoff;
+                }
+
+                if (settings_->bremsstrahlung != NULL) {
+                        if (dcs_check_model(PUMAS_PROCESS_BREMSSTRAHLUNG,
+                            settings_->bremsstrahlung, error_) ==
+                            PUMAS_RETURN_SUCCESS) {
+                                opts.bremsstrahlung =
+                                    settings_->bremsstrahlung;
+                        } else {
+                                return ERROR_RAISE();
+                        }
+                }
+
+                if (settings_->pair_production != NULL) {
+                        if (dcs_check_model(PUMAS_PROCESS_PAIR_PRODUCTION,
+                            settings_->pair_production, error_) ==
+                            PUMAS_RETURN_SUCCESS) {
+                                opts.pair_production =
+                                    settings_->pair_production;
+                        } else {
+                                return ERROR_RAISE();
+                        }
+                }
+
+                if (settings_->photonuclear != NULL) {
+                        if (dcs_check_model(PUMAS_PROCESS_PHOTONUCLEAR,
+                            settings_->photonuclear, error_) ==
+                            PUMAS_RETURN_SUCCESS) {
+                                opts.photonuclear =
+                                    settings_->photonuclear;
+                        } else {
+                                return ERROR_RAISE();
+                        }
+                }
         }
 
         /* Check the path to energy loss tables. */
@@ -1385,6 +1455,15 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
             memory_padded_size(sizeof(char *) * settings.n_materials +
                     settings.size_materials_names,
                 pad_size);
+        /* Bremsstrahlung model name. */
+        size_data[imem++] = memory_padded_size(
+            sizeof(char) * (strlen(opts.bremsstrahlung) + 1), pad_size);
+        /* Pair production model name. */
+        size_data[imem++] = memory_padded_size(
+            sizeof(char) * (strlen(opts.pair_production) + 1), pad_size);
+        /* Photonuclear model name. */
+        size_data[imem++] = memory_padded_size(
+            sizeof(char) * (strlen(opts.photonuclear) + 1), pad_size);
 
         /* Allocate the shared memory. */
         int size_total = 0;
@@ -1411,10 +1490,16 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
                 p += size_data[imem] / pad_size;
         }
 
-        /* Set the default DCS's. */
-        physics->dcs_bremsstrahlung = &default_dcs_bremsstrahlung;
-        physics->dcs_pair_production = &default_dcs_pair_production;
-        physics->dcs_photonuclear = &default_dcs_photonuclear;
+        /* Set the DCS's. */
+        pumas_dcs_get(PUMAS_PROCESS_BREMSSTRAHLUNG, opts.bremsstrahlung,
+            &physics->dcs_bremsstrahlung);
+        strcpy(physics->model_bremsstrahlung, opts.bremsstrahlung);
+        pumas_dcs_get(PUMAS_PROCESS_PAIR_PRODUCTION, opts.pair_production,
+            &physics->dcs_pair_production);
+        strcpy(physics->model_pair_production, opts.pair_production);
+        pumas_dcs_get(PUMAS_PROCESS_PHOTONUCLEAR, opts.photonuclear,
+            &physics->dcs_photonuclear);
+        strcpy(physics->model_photonuclear, opts.photonuclear);
 
         /* Copy the global settings. */
         physics->particle = particle;
@@ -1436,18 +1521,7 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         strcpy(physics->mdf_path, file_mdf);
 
         /* Set the cutoff */
-        if (cutoff == NULL) {
-                physics->cutoff = DEFAULT_CUTOFF;
-        } else {
-                if ((*cutoff <= 0) || (*cutoff >= 1)) {
-                        ERROR_VREGISTER(PUMAS_RETURN_CUTOFF_ERROR,
-                            "bad cutoff value (expected a value in ]0, 1[, "
-                            " got %g)", *cutoff);
-                        goto clean_and_exit;
-                } else {
-                        physics->cutoff = *cutoff;
-                }
-        }
+        physics->cutoff = opts.cutoff;
 
         /* Allocate a new MDF buffer. */
         if ((mdf = allocate(sizeof(struct mdf_buffer) + size_mdf)) == NULL) {
@@ -1533,9 +1607,9 @@ clean_and_exit:
 /* The standard API initialisation. */
 enum pumas_return pumas_physics_create(struct pumas_physics ** physics,
     enum pumas_particle particle, const char * mdf_path, const char * dedx_path,
-    const double * cutoff)
+    const struct pumas_physics_settings * settings)
 {
-        return _initialise(physics, particle, mdf_path, dedx_path, 0, cutoff);
+        return _initialise(physics, particle, mdf_path, dedx_path, 0, settings);
 }
 
 enum pumas_return pumas_physics_load(
@@ -1581,10 +1655,6 @@ enum pumas_return pumas_physics_load(
         /* Load the data and remap the addresses. */
         if (fread(physics, size, 1, stream) != 1) goto error;
 
-        physics->dcs_bremsstrahlung = &default_dcs_bremsstrahlung;
-        physics->dcs_pair_production = &default_dcs_pair_production;
-        physics->dcs_photonuclear = &default_dcs_photonuclear;
-
         void ** ptr = (void **)(&(physics->mdf_path));
         ptrdiff_t delta = (char *)(physics->data) - (char *)(*ptr);
         int i;
@@ -1614,6 +1684,34 @@ enum pumas_return pumas_physics_load(
 
         char ** material_name = physics->material_name;
         for (i = 0; i < physics->n_materials; i++) material_name[i] += delta;
+
+        /* Set the DCS models */
+        if (dcs_check_model(PUMAS_PROCESS_BREMSSTRAHLUNG,
+            physics->model_bremsstrahlung, error_) == PUMAS_RETURN_SUCCESS) {
+                pumas_dcs_get(PUMAS_PROCESS_BREMSSTRAHLUNG,
+                    physics->model_bremsstrahlung,
+                    &physics->dcs_bremsstrahlung);
+        } else {
+                goto error;
+        }
+
+        if (dcs_check_model(PUMAS_PROCESS_PAIR_PRODUCTION,
+            physics->model_pair_production, error_) == PUMAS_RETURN_SUCCESS) {
+                pumas_dcs_get(PUMAS_PROCESS_PAIR_PRODUCTION,
+                    physics->model_pair_production,
+                    &physics->dcs_pair_production);
+        } else {
+                goto error;
+        }
+
+        if (dcs_check_model(PUMAS_PROCESS_PHOTONUCLEAR,
+            physics->model_photonuclear, error_) == PUMAS_RETURN_SUCCESS) {
+                pumas_dcs_get(PUMAS_PROCESS_PHOTONUCLEAR,
+                    physics->model_photonuclear,
+                    &physics->dcs_photonuclear);
+        } else {
+                goto error;
+        }
 
         return PUMAS_RETURN_SUCCESS;
 
@@ -1695,6 +1793,7 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_context_random_seed_get)
         TOSTRING(pumas_context_random_seed_set)
         TOSTRING(pumas_recorder_create)
+        TOSTRING(pumas_physics_dcs)
         TOSTRING(pumas_physics_element_name)
         TOSTRING(pumas_physics_element_index)
         TOSTRING(pumas_physics_element_properties)
@@ -1705,7 +1804,6 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_physics_composite_properties)
         TOSTRING(pumas_physics_print)
         TOSTRING(pumas_error_raise)
-        TOSTRING(pumas_physics_dcs_set)
         TOSTRING(pumas_physics_property_grammage)
         TOSTRING(pumas_physics_property_proper_time)
         TOSTRING(pumas_physics_property_magnetic_rotation)
@@ -1715,6 +1813,8 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_physics_property_cross_section)
         TOSTRING(pumas_physics_table_value)
         TOSTRING(pumas_physics_table_index)
+        TOSTRING(pumas_dcs_get)
+        TOSTRING(pumas_dcs_register)
 
         /* Other library functions. */
         TOSTRING(pumas_constant)
@@ -1730,7 +1830,6 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_error_handler_set)
         TOSTRING(pumas_error_handler_get)
         TOSTRING(pumas_error_catch)
-        TOSTRING(pumas_physics_dcs_get)
         TOSTRING(pumas_physics_element_length)
         TOSTRING(pumas_physics_material_length)
         TOSTRING(pumas_physics_composite_length)
@@ -9449,58 +9548,6 @@ int dcs_get_index(dcs_function_t * dcs_func)
 }
 
 /**
- * The default Bremsstrahlung differential cross section.
- *
- * @param Z       The charge number of the target atom.
- * @param A       The mass number of the target atom.
- * @param mu      The projectile rest mass, in GeV
- * @param K       The projectile initial kinetic energy.
- * @param q       The kinetic energy lost to the photon.
- * @return The corresponding value of the atomic DCS, in m^2 / GeV.
- *
- * The Bremsstrahlung differential cross-section is computed following the PDG:
- * http://pdg.lbl.gov/2014/AtomicNuclearProperties/adndt.pdf.
- */
-double default_dcs_bremsstrahlung(
-    double Z, double A, double mu, double K, double q)
-{
-        if ((Z <= 0) || (A <= 0) || (mu <= 0) || (K <= 0) || (q <= 0) ||
-            (q >= K + mu))
-                return 0.;
-
-        const double me = ELECTRON_MASS;
-        const double sqrte = 1.648721271;
-        const double phie_factor = mu / (me * me * sqrte);
-        const double rem = 5.63588E-13 * me / mu;
-
-        const double BZ_n = (Z == 1.) ? 202.4 : 182.7 * pow(Z, -1. / 3.);
-        const double BZ_e = (Z == 1.) ? 446. : 1429. * pow(Z, -2. / 3.);
-        const double D_n = 1.54 * pow(A, 0.27);
-        const double E = K + mu;
-        const double dcs_factor = 7.297182E-07 * rem * rem * Z / E;
-
-        const double delta_factor = 0.5 * mu * mu / E;
-        const double qe_max = E / (1. + 0.5 * mu * mu / (me * E));
-
-        const double nu = q / E;
-        const double delta = delta_factor * nu / (1. - nu);
-        double Phi_n, Phi_e;
-        Phi_n = log(BZ_n * (mu + delta * (D_n * sqrte - 2.)) /
-            (D_n * (me + delta * sqrte * BZ_n)));
-        if (Phi_n < 0.) Phi_n = 0.;
-        if (q < qe_max) {
-                Phi_e = log(BZ_e * mu /
-                    ((1. + delta * phie_factor) * (me + delta * sqrte * BZ_e)));
-                if (Phi_e < 0.) Phi_e = 0.;
-        } else
-                Phi_e = 0.;
-
-        const double dcs =
-            dcs_factor * (Z * Phi_n + Phi_e) * (4. / 3. * (1. / nu - 1.) + nu);
-        return (dcs < 0.) ? 0. : dcs;
-}
-
-/**
  * Wrapper for the Bremsstrahlung differential cross section.
  *
  * @param Physics Handle for physics tables.
@@ -10072,8 +10119,8 @@ double dcs_ionisation_randomise(const struct pumas_physics * physics,
  * @param q        The transfered energy.
  * @return The DCS value or `0`.
  *
- * This routine encapsulate the evluation of DCS during the MC. It takes care of
- * checking whether an approximate model can be used or not. In addition it
+ * This routine encapsulate the evaluation of DCS during the MC. It takes care
+ * of checking whether an approximate model can be used or not. In addition it
  * applies a Jacobian weight factor for changing from nu = q / E to x = q / K.
  */
 double dcs_evaluate(const struct pumas_physics * physics,
@@ -10888,9 +10935,9 @@ void math_svdsol(int m, int n, double * b, double * u, double * w, double * v,
 /** Tabulation mode initialisation, without loading the energy loss tables. */
 enum pumas_return pumas_physics_create_tabulation(
     struct pumas_physics ** physics, enum pumas_particle particle,
-    const char * mdf_path)
+    const char * mdf_path, const struct pumas_physics_settings * settings)
 {
-        return _initialise(physics, particle, mdf_path, NULL, 1, NULL);
+        return _initialise(physics, particle, mdf_path, NULL, 1, settings);
 }
 
 /* The density effect for the electronic energy loss. */
@@ -11300,52 +11347,363 @@ void pumas_physics_tabulation_clear(const struct pumas_physics * physics,
 
 
 /**
- * Get the Differential Cross-Section (DCS) for a given process.
+ * Get the physics differential Cross-Section (DCS) for a given process.
  */
-pumas_dcs_t * pumas_physics_dcs_get(
-    const struct pumas_physics * physics, enum pumas_process process)
+enum pumas_return pumas_physics_dcs(
+    const struct pumas_physics * physics, enum pumas_process process,
+    const char ** model, pumas_dcs_t ** dcs)
 {
-        if (process == PUMAS_PROCESS_BREMSSTRAHLUNG) {
-                return (physics == NULL) ?
-                    &default_dcs_bremsstrahlung : physics->dcs_bremsstrahlung;
-        } else if (process == PUMAS_PROCESS_PAIR_PRODUCTION) {
-                return (physics == NULL) ?
-                    &default_dcs_pair_production : physics->dcs_pair_production;
-        } else if (process == PUMAS_PROCESS_PHOTONUCLEAR) {
-                return (physics == NULL) ?
-                    &default_dcs_photonuclear : physics->dcs_photonuclear;
-        } else {
-                return NULL;
-        }
-}
-
-/**
- * Set the Differential Cross-Section (DCS) for a given process.
- */
-enum pumas_return pumas_physics_dcs_set(
-    struct pumas_physics * physics, enum pumas_process process,
-    pumas_dcs_t * dcs)
-{
-        ERROR_INITIALISE(pumas_physics_dcs_set);
-
-        if (physics == NULL) {
-                return ERROR_MESSAGE(PUMAS_RETURN_VALUE_ERROR,
-                    "`null' physics");
-        }
+        ERROR_INITIALISE(pumas_physics_dcs);
 
         if (process == PUMAS_PROCESS_BREMSSTRAHLUNG) {
-                physics->dcs_bremsstrahlung = (dcs != NULL) ?
-                    dcs : &default_dcs_bremsstrahlung;
+                if (dcs != NULL) *dcs = physics->dcs_bremsstrahlung;
+                if (model != NULL) *model = physics->model_bremsstrahlung;
         } else if (process == PUMAS_PROCESS_PAIR_PRODUCTION) {
-                physics->dcs_pair_production = (dcs != NULL) ?
-                    dcs : &default_dcs_pair_production;
+                if (dcs != NULL) *dcs = physics->dcs_pair_production;
+                if (model != NULL) *model = physics->model_pair_production;
         } else if (process == PUMAS_PROCESS_PHOTONUCLEAR) {
-                physics->dcs_photonuclear = (dcs != NULL) ?
-                    dcs : &default_dcs_photonuclear;
+                if (dcs != NULL) *dcs = physics->dcs_photonuclear;
+                if (model != NULL) *model = physics->model_photonuclear;
         } else {
                 return ERROR_FORMAT(PUMAS_RETURN_INDEX_ERROR,
-                    "invalid process index [%d]", process);
+                    "bad process (expected a value in [0, 2], got %u)",
+                    process);
         }
 
         return PUMAS_RETURN_SUCCESS;
+}
+
+/* Radiation logarithm calculated with Hartree-Fock model
+ * Ref: Kelner, Kokoulin & Petrukhin (199), Physics of Atomic Nuclei, 62(11),
+ *      1894-1898. doi:101134/1855464
+ *
+ * Values have been taken from Koehne et al.
+ * (https://doi.org/10.1016/j.cpc.2013.04.001) since the original paper does not
+ * seem to be available online.
+ */
+static double radiation_logarithm(double Z)
+{
+        const int i = (int)Z;
+        if ((i >= 1) && (i <= 92)) {
+                static double Lz[92] = {
+                    202.4, 151.9, 159.9, 172.3, 177.9,
+                    178.3, 176.6, 173.4, 170.0, 165.8,
+                    165.8, 167.1, 169.1, 170.8, 172.2,
+                    173.4, 174.3, 174.8, 175.1, 175.6,
+                    176.2, 176.8,   0.0,   0.0,   0.0,
+                    175.8,   0.0,   0.0, 173.1,   0.0,
+                      0.0, 173.0,   0.0,   0.0, 173.5,
+                      0.0,   0.0,   0.0,   0.0,   0.0,
+                      0.0, 175.9,   0.0,   0.0,   0.0,
+                      0.0,   0.0,   0.0,   0.0, 177.4,
+                      0.0,   0.0, 178.6,   0.0,   0.0,
+                      0.0,   0.0,   0.0,   0.0,   0.0,
+                      0.0,   0.0,   0.0,   0.0,   0.0,
+                      0.0,   0.0,   0.0,   0.0,   0.0,
+                      0.0,   0.0,   0.0, 177.6,   0.0,
+                      0.0,   0.0,   0.0,   0.0,   0.0,
+                      0.0, 178.0,   0.0,   0.0,   0.0,
+                      0.0,   0.0,   0.0,   0.0,   0.0,
+                      0.0, 179.8
+                };
+                const double l = Lz[i - 1];
+                if (l > 0) return l;
+        }
+        return 182.7;
+}
+
+/**
+ * The Bremsstrahlung differential cross section according to
+ * Kelner, Kokoulin & Petrukhin (KKP).
+ *
+ * @param Z       The charge number of the target atom.
+ * @param A       The mass number of the target atom.
+ * @param mu      The projectile rest mass, in GeV
+ * @param K       The projectile initial kinetic energy.
+ * @param q       The kinetic energy lost to the photon.
+ * @return The corresponding value of the atomic DCS, in m^2 / GeV.
+ *
+ * The KKP Bremsstrahlung differential cross-section was initially implemented
+ * following Groom et al. (see e.g.
+ * http://pdg.lbl.gov/2020/AtomicNuclearProperties/adndt.pdf). Then, it has been
+ * refined following Koehne et al. (https://doi.org/10.1016/j.cpc.2013.04.001)
+ * by taking into account the nucleus excitation term (See e.g. Kelner et al.
+ * https://cds.cern.ch/record/288828/files/MEPHI-024-95.pdf) and more accurate
+ * radiation logarithm computations.
+ */
+double dcs_bremsstrahlung_KKP(
+    double Z, double A, double mu, double K, double q)
+{
+        if ((Z <= 0) || (A <= 0) || (mu <= 0) || (K <= 0) || (q <= 0) ||
+            (q >= K + mu))
+                return 0.;
+
+        const double me = ELECTRON_MASS;
+        const double sqrte = 1.648721271;
+        const double phie_factor = mu / (me * me * sqrte);
+        const double rem = 5.63588E-13 * me / mu;
+
+        const double BZ_n = radiation_logarithm(Z) * pow(Z, -1. / 3.);
+        const double BZ_e = (Z == 1.) ? 446. : 1429. * pow(Z, -2. / 3.);
+        const double D_n = 1.54 * pow(A, 0.27);
+        const double E = K + mu;
+        const double dcs_factor = 7.297182E-07 * rem * rem * Z / E;
+
+        const double delta_factor = 0.5 * mu * mu / E;
+        const double qe_max = E / (1. + 0.5 * mu * mu / (me * E));
+
+        const double nu = q / E;
+        const double delta = delta_factor * nu / (1. - nu);
+        const double muD_factor = mu + delta * (D_n * sqrte - 2.);
+        double Phi_n, Phi_x, Phi_e;
+        Phi_n = log(BZ_n * muD_factor /
+            (D_n * (me + delta * sqrte * BZ_n)));
+        if (Phi_n < 0.) Phi_n = 0.;
+        if (Z >= 2) {
+                Phi_x = log(mu * D_n / muD_factor);
+                if (Phi_x < 0.) Phi_x = 0.;
+        } else {
+                Phi_x = 0.;
+        }
+        if (q < qe_max) {
+                Phi_e = log(BZ_e * mu /
+                    ((1. + delta * phie_factor) * (me + delta * sqrte * BZ_e)));
+                if (Phi_e < 0.) Phi_e = 0.;
+        } else
+                Phi_e = 0.;
+
+        const double dcs = dcs_factor *
+            (Z * Phi_n + Phi_x + Phi_e) * (4. / 3. * (1. / nu - 1.) + nu);
+        return (dcs < 0.) ? 0. : dcs;
+}
+
+/* Andreev-Bezrukov-Bugaev parametrization of the Bremsstahlung DCS
+ * Ref: https://arxiv.org/abs/hep-ph/0010322 (MUM)
+ *
+ * PROPOSAL implementation converted to C
+ * Ref: https://github.com/tudo-astroparticlephysics/PROPOSAL/blob/master/private/PROPOSAL/crossection/parametrization/Bremsstrahlung.cxx
+ */
+static double dcs_bremsstrahlung_ABB(
+    double Z, double A, double m, double K, double q)
+{
+#define ALPHA 0.0072973525664
+#define SQRTE 1.648721270700128
+#define ME    0.5109989461
+#define RE    2.8179403227E-13
+#define MMU   105.6583745
+
+        /* Check inputs */
+        if ((Z <= 0) || (A <= 0) || (m <= 0) || (K <= 0) || (q <= 0) ||
+            (q >= K + m))
+                return 0.;
+
+        /* Convert from GeV to MeV */
+        const double energy = (K + m) * 1E+03;
+        const double v = q * 1E+03 / energy;
+        m = m * 1E+03;
+
+        /* Least momentum transferred to the nucleus (eq. 2.2) */
+        const double Z3 = pow(Z, -1. / 3);
+        const double a1 = 184.15 * Z3 / (SQRTE * ME);    /* eq 2.18 */
+        const double a2 = 1194 * Z3 * Z3 / (SQRTE * ME); /* eq.2.19 */
+
+        /* Calculating the contribution of elastic nuclear and atomic form
+         * factors (eq. 2.30)
+         */
+        const double qc   = 1.9 * MMU * Z3;
+        double aux        = 2 * m / qc;
+        const double zeta = sqrt(1 + aux * aux);
+
+        const double delta = m * m * v / (2 * energy * (1 - v));
+        const double x1    = a1 * delta;
+        const double x2    = a2 * delta;
+
+        double aux1, aux2, d1, d2, psi1, psi2;
+
+        if (Z == 1) {
+                d1 = 0;
+                d2 = 0;
+        } else {
+                aux1 = log(m / qc);
+                aux2 = 0.5 * zeta * log((zeta + 1) / (zeta - 1));
+                d1   = aux1 + aux2;
+                d2   = aux1 + 0.5 * ((3 - zeta * zeta) * aux2 + aux * aux);
+        }
+
+        /* eq. 2.20 and 2.21 */
+        aux  = m * a1;
+        aux1 = log(aux * aux / (1 + x1 * x1));
+        aux  = m * a2;
+        aux2 = log(aux * aux / (1 + x2 * x2));
+        psi1 = 0.5 * ((1 + aux1) + (1 + aux2) / Z);
+        psi2 = 0.5 * ((2. / 3 + aux1) + (2. / 3 + aux2) / Z);
+
+        aux1 = x1 * atan(1 / x1);
+        aux2 = x2 * atan(1 / x2);
+        psi1 -= aux1 + aux2 / Z;
+        aux = x1 * x1;
+        psi2 += 2 * aux * (1 - aux1 + 0.75 * log(aux / (1 + aux)));
+        aux = x2 * x2;
+        psi2 += 2 * aux * (1 - aux2 + 0.75 * log(aux / (1 + aux))) / Z;
+
+        psi1 -= d1;
+        psi2 -= d2;
+        const double result = (2 - 2 * v + v * v) * psi1 -
+            (2. / 3) * (1 - v) * psi2;
+
+        if (result < 0) {
+                return 0;
+        }
+
+        aux = 2 * (ME / m) * RE * Z;
+        return aux * aux * (ALPHA / q) * result * 1E-04;
+
+#undef ALPHA
+#undef SQRTE
+#undef ME
+#undef RE
+#undef MMU
+}
+
+/** Data structure for caracterising a DCS model */
+struct dcs_entry {
+        enum pumas_process process;
+        const char * model;
+        pumas_dcs_t * dcs;
+};
+
+/** Stack (library) of available DCS models
+ *
+ * Note that the first entry for a given process is taken as the default
+ * model for the corresponding process.
+ */
+#define DCS_STACK_SIZE 64
+static struct dcs_entry dcs_stack[DCS_STACK_SIZE] = {
+    {PUMAS_PROCESS_BREMSSTRAHLUNG,  "KKP",  &dcs_bremsstrahlung_KKP},
+    {PUMAS_PROCESS_BREMSSTRAHLUNG,  "ABB",  &dcs_bremsstrahlung_ABB},
+    {PUMAS_PROCESS_PAIR_PRODUCTION, "KKP",  &default_dcs_pair_production}, /* XXX Rename & add models */
+    {PUMAS_PROCESS_PHOTONUCLEAR,    "DRSS", &default_dcs_photonuclear}
+};
+
+/** Mapping between enum and names for processes */
+static const char * process_name[3] = {
+        "bremsstrahlung", "pair production", "photonuclear"};
+
+/** Routine for checking if a model's name exists */
+static enum pumas_return dcs_check_model(enum pumas_process process,
+     const char * model, struct error_context * error_)
+{
+        int i;
+        struct dcs_entry * entry;
+        for (i = 0, entry = dcs_stack;
+            (i < DCS_STACK_SIZE) && (entry->model != NULL); i++, entry++) {
+                if ((entry->process == process) &&
+                    (strcmp(entry->model, model) == 0)) {
+                        return PUMAS_RETURN_SUCCESS;
+                }
+        }
+
+        return ERROR_VREGISTER(PUMAS_RETURN_MODEL_ERROR,
+            "bad model (cannot find %s model for %s)", model,
+            process_name[process]);
+}
+
+/** Routine for checking a process index */
+static enum pumas_return dcs_check_process(
+    enum pumas_process process, struct error_context * error_)
+{
+        if ((process < 0) || (process >= 3)) {
+                return ERROR_VREGISTER(PUMAS_RETURN_INDEX_ERROR,
+                    "bad process (expected an index in [0, 3], got %u)",
+                    process);
+        } else {
+                return PUMAS_RETURN_SUCCESS;
+        }
+}
+
+/* API function for registering a DCS model */
+enum pumas_return pumas_dcs_register(
+    enum pumas_process process, const char * model, pumas_dcs_t * dcs)
+{
+        ERROR_INITIALISE(pumas_dcs_register);
+
+        /* Check the process index */
+        if (dcs_check_process(process, error_) != PUMAS_RETURN_SUCCESS) {
+                return ERROR_RAISE();
+        }
+
+        /* Check that a DCS function was actually provided */
+        if (dcs == NULL) {
+                return ERROR_MESSAGE(PUMAS_RETURN_VALUE_ERROR,
+                    "bad dcs (expected a function, got nil)");
+        }
+
+        /* Check if the model is already registered */
+        if (model == NULL) {
+                return ERROR_MESSAGE(PUMAS_RETURN_VALUE_ERROR,
+                    "bad model (expected a string, got nil)");
+        }
+
+        int i;
+        struct dcs_entry * entry;
+        for (i = 0, entry = dcs_stack;
+            (i < DCS_STACK_SIZE) && (entry->model != NULL); i++, entry++) {
+                if ((entry->process == process) &&
+                    (strcmp(entry->model, model) == 0)) {
+                        return ERROR_FORMAT(PUMAS_RETURN_MODEL_ERROR,
+                            "bad model (model %s already registered for "
+                            "%s process)",
+                            model, process_name[process]);
+                }
+        }
+        if (i == DCS_STACK_SIZE) {
+                return ERROR_MESSAGE(PUMAS_RETURN_MEMORY_ERROR,
+                    "max stack size reached");
+        }
+
+        /* Append the new DCS */
+        entry->process = process;
+        entry->model = model;
+        entry->dcs = dcs;
+
+        return PUMAS_RETURN_SUCCESS;
+}
+
+/* API function for getting a DCS model */
+enum pumas_return pumas_dcs_get(
+    enum pumas_process process, const char * model, pumas_dcs_t ** dcs)
+{
+        ERROR_INITIALISE(pumas_dcs_get);
+
+        /* Check the process index */
+        if (dcs_check_process(process, error_) != PUMAS_RETURN_SUCCESS) {
+                return ERROR_RAISE();
+        }
+
+        /* Set the default model if none provided */
+        if (model == NULL) {
+                if (process == PUMAS_PROCESS_BREMSSTRAHLUNG)
+                        model = DEFAULT_BREMSSTRAHLUNG;
+                else if (process == PUMAS_PROCESS_PAIR_PRODUCTION)
+                        model = DEFAULT_PAIR_PRODUCTION;
+                else
+                        model = DEFAULT_PHOTONUCLEAR;
+        }
+
+        /* Look for the model */
+        int i;
+        struct dcs_entry * entry;
+        for (i = 0, entry = dcs_stack;
+            (i < DCS_STACK_SIZE) && (entry->model != NULL); i++, entry++) {
+                if ((entry->process == process) && 
+                    (strcmp(entry->model, model) == 0)) {
+                        *dcs = entry->dcs;
+                        return PUMAS_RETURN_SUCCESS;
+                }
+        }
+        *dcs = NULL;
+
+        return ERROR_FORMAT(PUMAS_RETURN_MODEL_ERROR,
+            "bad model (model %s not found for %s process)",
+            model, process_name[process]);
 }

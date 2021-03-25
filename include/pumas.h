@@ -150,6 +150,8 @@ enum pumas_return {
         PUMAS_RETURN_MEDIUM_ERROR,
         /** Some memory couldn't be allocated. */
         PUMAS_RETURN_MEMORY_ERROR,
+        /** An invalid (unknown) DCS model was requested. */
+        PUMAS_RETURN_MODEL_ERROR,
         /** A user supplied limit is required. */
         PUMAS_RETURN_MISSING_LIMIT,
         /** The random callback is not defined. */
@@ -622,13 +624,58 @@ struct pumas_physics_density_effect {
  * @param q       The projectile energy loss, in GeV.
  * @return The corresponding value of the atomic DCS, in m^(2)/GeV.
  *
- * The `pumas_physics_dcs_get` function returns the current (default) DCS.
- * The `pumas_physics_dcs_set` functions allows to provide an alternative one.
+ * The `pumas_dcs_get` function allows to retrieve the DCS for a given process
+ * and model. Extra DCSs can be registered with the `pumas_dcs_register`
+ * function.
  *
  * **Note** : only the Bremsstrahlung, pair creation and photonuclear processes
  * can be redefined.
  */
 typedef double pumas_dcs_t (double Z, double A, double m, double K, double q);
+
+/**
+ */
+struct pumas_physics_settings {
+        /** Relative cutoff between continous and discrete energy.
+         *
+         * Setting a null or negative value results in the default cutoff value
+         * to be used i.e. 5% which is a good compromise between speed and
+         * accuracy for transporting a continuous spectrum (see e.g.  Sokalski
+         * et al., https://doi.org/10.1103/PhysRevD.64.074015).
+         */
+        double cutoff;
+        /** Physics model for the Bremsstrahlung process.
+         *
+         *  Available models are:
+         *
+         *  - "KKP": Kelner, Kokoulin & Petrukhin.
+         *  - "ABB": Andreev, Bezrukov & Bugaev.
+         *
+         * Setting a `NULL` value results in PUMAS default Bremsstrahlung model
+         * to be used, i.e. "KKP".
+         * */
+        const char * bremsstrahlung;
+        /** Physics model for e^(+)e^(-) pair production.
+         *
+         *  Available models are:
+         *
+         *  - "KKP": Kelner, Kokoulin & Petrukhin.
+         *
+         * Setting a `NULL` value results in PUMAS default pair production model
+         * to be used, i.e. "KKP".
+         */
+        const char * pair_production;
+        /** Physics model for photonuclear interactions. 
+         *
+         *  Available models are:
+         *
+         *  - "DRSS": Dutta, Reno, Sarcevic & Seckel.
+         *
+         * Setting a `NULL` value results in PUMAS default photonuclear model to
+         * be used, i.e. "DRSS".
+         */
+        const char * photonuclear;
+};
 
 /**
  * Initialise the Physics.
@@ -637,8 +684,7 @@ typedef double pumas_dcs_t (double Z, double A, double m, double K, double q);
  * @param particle     The type of the particle to transport.
  * @param mdf_path     The path to a Material Description File (MDF), or `NULL`.
  * @param dedx_path    The path to the energy loss tabulation(s), or `NULL`.
- * @param cutoff       Relative cutoff between continous and discrete energy
- *                       losses or `NULL`.
+ * @param settings     Extra physics settings or `NULL`.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
@@ -647,9 +693,9 @@ typedef double pumas_dcs_t (double Z, double A, double m, double K, double q);
  * *dedx_path* can be set to `NULL`. If so the corresponding path is read from
  * the `PUMAS_MDF` or `PUMAS_DEDX` environment variable.
  *
- * Optionaly a relative cutoff value between continuous and discrete energy
- * losses can be specified. If `NULL` is provided then PUMAS default value is
- * used which should perform well for most use cases.
+ * Optionaly extra physics settings can be specified by providing a
+ * `pumas_physics_settings` structure. If `NULL` is provided then PUMAS default
+ * physics settings are used which should perform well for most use cases.
  *
  * Call `pumas_physics_destroy` in order to unload the Physics and release the
  * corresponding alocated memory.
@@ -670,6 +716,8 @@ typedef double pumas_dcs_t (double Z, double A, double m, double K, double q);
  *     PUMAS_RETURN_IO_ERROR                A file couldn't be read.
  *
  *     PUMAS_RETURN_MEMORY_ERROR            Couldn't allocate memory.
+ *
+ *     PUMAS_RETURN_MODEL_ERROR             A requested DCS model is not valid.
  *
  *     PUMAS_RETURN_PATH_ERROR              A file couldn't be opened.
  *
@@ -693,7 +741,8 @@ typedef double pumas_dcs_t (double Z, double A, double m, double K, double q);
  */
 PUMAS_API enum pumas_return pumas_physics_create(
     struct pumas_physics ** physics, enum pumas_particle particle,
-    const char * mdf_path, const char * dedx_path, const double * cutoff);
+    const char * mdf_path, const char * dedx_path,
+    const struct pumas_physics_settings * settings);
 
 /**
  * Destroy a Physics instance.
@@ -1828,6 +1877,7 @@ PUMAS_API void pumas_physics_tabulation_clear(
  * @param physics      Handle for the Physics tables.
  * @param particle     The type of the particle to transport.
  * @param mdf_path     The path to a Material Description File (MDF) or `NULL`.
+ * @param settings     Extra physics settings or `NULL`.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
@@ -1836,6 +1886,11 @@ PUMAS_API void pumas_physics_tabulation_clear(
  * meant for pre-computation of the material tables using the
  * `pumas_physics_tabulate` function. **Note** that *mdf_path* can be `NULL`
  * Then it is read from the `PUMAS_MDF` environment variable.
+ *
+ * Optionaly extra physics settings can be specified by providing a
+ * `pumas_physics_settings` structure. If `NULL` is provided then PUMAS default
+ * physics settings are used which should perform well for most use cases.
+ * **Note** that the *cutoff* parameter is not used in tabulation mode.
  *
  * Call `pumas_physics_destroy` in order to unload the Physics and release
  * allocated memory. **Note** that in addition any temporary memory allocated by
@@ -1857,6 +1912,8 @@ PUMAS_API void pumas_physics_tabulation_clear(
  *
  *     PUMAS_RETURN_MEMORY_ERROR            Couldn't allocate memory.
  *
+ *     PUMAS_RETURN_MODEL_ERROR             A requested DCS model is not valid.
+ *
  *     PUMAS_RETURN_PATH_ERROR              A file couldn't be opened.
  *
  *     PUMAS_RETURN_PHYSICS_ERROR           A `NULL` physics pointer was
@@ -1877,51 +1934,32 @@ PUMAS_API void pumas_physics_tabulation_clear(
  */
 PUMAS_API enum pumas_return pumas_physics_create_tabulation(
     struct pumas_physics ** physics, enum pumas_particle particle,
-    const char * mdf_path);
+    const char * mdf_path, const struct pumas_physics_settings * settings);
 
 /**
- * Get the Differential Cross-Section (DCS) for a given process.
+ * Get the physics Differential Cross-Section (DCS) for a given process.
  *
  * @param physics      Handle for the Physics tables or `NULL`.
  * @param process      The Physics process.
- * @return On success the DCS function is returned otherwise `NULL` is
- * returned.
- *
- * **Note** : if the physics pointer is `NULL` then PUMAS default DCS model is
- * returned.
- *
- * __Warnings__
- *
- * This function is **not** thread safe.
- */
-PUMAS_API pumas_dcs_t * pumas_physics_dcs_get(
-    const struct pumas_physics * physics, enum pumas_process process);
-
-/**
- * Set the Differential Cross-Section (DCS) for a given process.
- *
- * @param physics      Handle for the Physics tables.
- * @param process      The Physics process.
- * @param dcs          The user supplied DCS or `NULL`.
+ * @param model        The corresponding DCS model.
+ * @param dcs          The corresponding DCS function.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * **Note** : suppling a `NULL` dcs pointer reset the corresponding process to
- * its default.
+ * The *dcs* and *model* return values are optionnal. If a `NULL` pointer is
+ * provided then the corresponding return value is not filled.
  *
- * __Warnings__
- *
- * This function is **not** thread safe.
+ * **Note** : the DCS model is set at the physics creation and cannot be
+ * changed afterwards.
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_INDEX_ERROR             The process index is not valid.
+ *     PUMAS_RETURN_INDEX_ERROR             The *process* index is not a valid.
  *
- *     PUMAS_RETURN_VALUE_ERROR             The supplied physics is `NULL`.
  */
-PUMAS_API enum pumas_return pumas_physics_dcs_set(
-    struct pumas_physics * physics, enum pumas_process process,
-    pumas_dcs_t * dcs);
+PUMAS_API enum pumas_return pumas_physics_dcs(
+    const struct pumas_physics * physics, enum pumas_process process,
+    const char ** model, pumas_dcs_t ** dcs);
 
 /**
  * Get a PUMAS library constant.
@@ -1939,6 +1977,64 @@ PUMAS_API enum pumas_return pumas_physics_dcs_set(
  */
 PUMAS_API enum pumas_return pumas_constant(
     enum pumas_constant index, double * value);
+
+/**
+ * Register a Differential Cross Section (DCS) model to PUMAS.
+ *
+ * @param process   The physics process index.
+ * @param model     The model name.
+ * @param dcs       The model DCS.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
+ *
+ * This function allows to register a DCS model for a physics interaction. Note
+ * the model name must not be already used otherwise an error is returned.  In
+ * addition, only the following radiative models can be user defined:
+ * Bremsstrahlung, e^(+)e^(-) pair production or photonuclear interactions.
+ * Ionisation loss & Coulomb multiple scattering are built-in.
+ *
+ * **Note**: it is not possible to un-register a model.
+ *
+ * **Warnings** : this function is not thread safe.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INDEX_ERROR             The process index is not a valid.
+ *
+ *     PUMAS_RETURN_MEMORY_ERROR            The maximum number of models was
+ * reached.
+ *
+ *     PUMAS_RETURN_MODEL_ERROR             The model name is already used.
+ *
+ *     PUMAS_RETURN_VALUE_ERROR             A `NULL` model or dcs was provided.
+ */
+PUMAS_API enum pumas_return pumas_dcs_register(
+    enum pumas_process process, const char * model, pumas_dcs_t * dcs);
+
+/**
+ * Get the Differential Cross Section (DCS) for a given model.
+ *
+ * @param process   The physics process index.
+ * @param model     The model name.
+ * @param dcs       The corresponding DCS.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
+ *
+ * This function allows to retrieve the DCS for a given physics process and
+ * model. See the `struct pumas_physics_settings` for a list of models available
+ * by default. Extra models can be registered with the `pumas_dcs_register`
+ * function.
+ *
+ * **Warnings** : this function is not thread safe.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INDEX_ERROR             The process index is not a valid.
+ *
+ *     PUMAS_RETURN_MODEL_ERROR             The model name is not valid.
+ */
+PUMAS_API enum pumas_return pumas_dcs_get(
+    enum pumas_process process, const char * model, pumas_dcs_t ** dcs);
 
 #ifdef __cplusplus
 }

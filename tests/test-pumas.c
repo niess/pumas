@@ -164,6 +164,8 @@ START_TEST(test_api_error)
         CHECK_STRING(pumas_context_destroy);
         CHECK_STRING(pumas_context_physics_get);
         CHECK_STRING(pumas_context_transport);
+        CHECK_STRING(pumas_dcs_get);
+        CHECK_STRING(pumas_dcs_register);
         CHECK_STRING(pumas_error_catch);
         CHECK_STRING(pumas_error_function);
         CHECK_STRING(pumas_error_handler_get);
@@ -178,8 +180,7 @@ START_TEST(test_api_error)
         CHECK_STRING(pumas_physics_create);
         CHECK_STRING(pumas_physics_create_tabulation);
         CHECK_STRING(pumas_physics_cutoff);
-        CHECK_STRING(pumas_physics_dcs_get);
-        CHECK_STRING(pumas_physics_dcs_set);
+        CHECK_STRING(pumas_physics_dcs);
         CHECK_STRING(pumas_physics_destroy);
         CHECK_STRING(pumas_physics_dump);
         CHECK_STRING(pumas_physics_load);
@@ -270,27 +271,30 @@ START_TEST(test_api_init)
 
         /* Check the cutoff error */
         reset_error();
-        double cutoff = 0;
+        struct pumas_physics_settings settings = {.cutoff = 2};
         pumas_physics_create(&physics, PUMAS_PARTICLE_MUON,
             "materials/mdf/examples/standard.xml", "materials/dedx/muon",
-            &cutoff);
+            &settings);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_CUTOFF_ERROR);
 
+        /* Check the default cutoff */
         reset_error();
-        cutoff = 1;
+        settings.cutoff = 0;
         pumas_physics_create(&physics, PUMAS_PARTICLE_MUON,
             "materials/mdf/examples/standard.xml", "materials/dedx/muon",
-            &cutoff);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_CUTOFF_ERROR);
+            &settings);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_double_eq(5E-02, pumas_physics_cutoff(physics));
+        pumas_physics_destroy(&physics);
 
         /* Check the cutoff setter */
         reset_error();
-        cutoff = 0.1;
+        settings.cutoff = 0.1;
         pumas_physics_create(&physics, PUMAS_PARTICLE_MUON,
             "materials/mdf/examples/standard.xml", "materials/dedx/muon",
-            &cutoff);
+            &settings);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq(cutoff, pumas_physics_cutoff(physics));
+        ck_assert_double_eq(settings.cutoff, pumas_physics_cutoff(physics));
         pumas_physics_destroy(&physics);
 
         /* Check the initialisation and dump */
@@ -1339,71 +1343,138 @@ START_TEST(test_api_print)
 }
 END_TEST
 
+
+static double dummy_dcs(double Z, double A, double m, double K, double q)
+{
+        return 0;
+}
+
+
 /* Test the dcs API */
 START_TEST(test_api_dcs)
 {
-        /* Test the initialisation error */
-        reset_error();
+        /* Test the process error */
         pumas_dcs_t * dcs = NULL;
-        pumas_physics_dcs_set(physics, PUMAS_PROCESS_BREMSSTRAHLUNG, dcs);
+        reset_error();
+        pumas_dcs_get(-1, "KKP", &dcs);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
+
+        reset_error();
+        pumas_dcs_register(-1, "dummy", &dummy_dcs);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
+
+        /* Test the model error  */
+        reset_error();
+        pumas_dcs_get(PUMAS_PROCESS_BREMSSTRAHLUNG, "toto", &dcs);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_MODEL_ERROR);
+
+        reset_error();
+        pumas_dcs_register(PUMAS_PROCESS_BREMSSTRAHLUNG, "KKP", &dummy_dcs);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_MODEL_ERROR);
+
+        /* Test the NULL error */
+        reset_error();
+        pumas_dcs_register(PUMAS_PROCESS_BREMSSTRAHLUNG, NULL, &dummy_dcs);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_VALUE_ERROR);
+
+        reset_error();
+        pumas_dcs_register(PUMAS_PROCESS_BREMSSTRAHLUNG, "dummy", NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_VALUE_ERROR);
+
+        /* Test the default getter */
+        reset_error();
+        pumas_dcs_t * dcs_br;
+        pumas_dcs_get(PUMAS_PROCESS_BREMSSTRAHLUNG, NULL, &dcs_br);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_ptr_nonnull(dcs_br);
+
+        pumas_dcs_t * dcs_pp;
+        pumas_dcs_get(PUMAS_PROCESS_PAIR_PRODUCTION, NULL, &dcs_pp);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_ptr_ne(dcs_br, dcs_pp);
+        ck_assert_ptr_nonnull(dcs_pp);
+
+        pumas_dcs_t * dcs_pn;
+        pumas_dcs_get(PUMAS_PROCESS_PHOTONUCLEAR, NULL, &dcs_pn);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_ptr_nonnull(dcs_pn);
+        ck_assert_ptr_ne(dcs_br, dcs_pn);
+        ck_assert_ptr_ne(dcs_pp, dcs_pn);
+
+        /* Test the getter */
+        pumas_dcs_get(PUMAS_PROCESS_BREMSSTRAHLUNG, "KKP", &dcs);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_ptr_eq(dcs_br, dcs);
+
+        pumas_dcs_get(PUMAS_PROCESS_BREMSSTRAHLUNG, "ABB", &dcs);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_ptr_nonnull(dcs);
+        ck_assert_ptr_ne(dcs_br, dcs);
+
+        pumas_dcs_get(PUMAS_PROCESS_PAIR_PRODUCTION, "KKP", &dcs);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_ptr_eq(dcs_pp, dcs);
+
+        pumas_dcs_get(PUMAS_PROCESS_PHOTONUCLEAR, "DRSS", &dcs);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_ptr_eq(dcs_pn, dcs);
+
+        /* Test the setter */
+        pumas_dcs_register(PUMAS_PROCESS_BREMSSTRAHLUNG, "dummy0", &dummy_dcs);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        pumas_dcs_get(PUMAS_PROCESS_BREMSSTRAHLUNG, "dummy0", &dcs);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_ptr_eq(&dummy_dcs, dcs);
+
+        pumas_dcs_register(PUMAS_PROCESS_PAIR_PRODUCTION, "dummy1", &dummy_dcs);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        pumas_dcs_get(PUMAS_PROCESS_PAIR_PRODUCTION, "dummy1", &dcs);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_ptr_eq(&dummy_dcs, dcs);
+
+        pumas_dcs_register(PUMAS_PROCESS_PHOTONUCLEAR, "dummy2", &dummy_dcs);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        pumas_dcs_get(PUMAS_PROCESS_PHOTONUCLEAR, "dummy2", &dcs);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_ptr_eq(&dummy_dcs, dcs);
 
         /* Load the muon data */
         load_muon();
 
-        /* Test the getter */
+        /* Test the physics getter */
+        const char * model;
         reset_error();
-        dcs = pumas_physics_dcs_get(physics, -1);
-        ck_assert_ptr_null(dcs);
+        pumas_physics_dcs(physics, -1, NULL, NULL);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
-        pumas_dcs_t * dcs_bs = pumas_physics_dcs_get(
-            physics, PUMAS_PROCESS_BREMSSTRAHLUNG);
-        ck_assert_ptr_nonnull(dcs_bs);
-
-        pumas_dcs_t * dcs_pp = pumas_physics_dcs_get(
-            physics, PUMAS_PROCESS_PAIR_PRODUCTION);
-        ck_assert_ptr_nonnull(dcs_pp);
-
-        pumas_dcs_t * dcs_pn = pumas_physics_dcs_get(
-            physics, PUMAS_PROCESS_PHOTONUCLEAR);
-        ck_assert_ptr_nonnull(dcs_pn);
-
-        /* Test the setter */
         reset_error();
-        pumas_physics_dcs_set(physics, PUMAS_PROCESS_BREMSSTRAHLUNG, dcs_pp);
+        pumas_physics_dcs(
+            physics, PUMAS_PROCESS_BREMSSTRAHLUNG, &model, &dcs);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        dcs = pumas_physics_dcs_get(physics, PUMAS_PROCESS_BREMSSTRAHLUNG);
-        ck_assert_ptr_eq(dcs, dcs_pp);
+        ck_assert_ptr_eq(dcs_br, dcs);
+        ck_assert_str_eq("KKP", model);
 
-        reset_error();
-        pumas_physics_dcs_set(physics, PUMAS_PROCESS_BREMSSTRAHLUNG, NULL);
+        pumas_physics_dcs(
+            physics, PUMAS_PROCESS_PHOTONUCLEAR, &model, &dcs);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        dcs = pumas_physics_dcs_get(physics, PUMAS_PROCESS_BREMSSTRAHLUNG);
-        ck_assert_ptr_eq(dcs, dcs_bs);
+        ck_assert_ptr_eq(dcs_pn, dcs);
+        ck_assert_str_eq("DRSS", model);
 
-        reset_error();
-        pumas_physics_dcs_set(physics, PUMAS_PROCESS_PAIR_PRODUCTION, dcs_pn);
+        pumas_physics_dcs(
+            physics, PUMAS_PROCESS_PAIR_PRODUCTION, &model, &dcs);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        dcs = pumas_physics_dcs_get(physics, PUMAS_PROCESS_PAIR_PRODUCTION);
-        ck_assert_ptr_eq(dcs, dcs_pn);
+        ck_assert_ptr_eq(dcs_pp, dcs);
+        ck_assert_str_eq("KKP", model);
 
-        reset_error();
-        pumas_physics_dcs_set(physics, PUMAS_PROCESS_PAIR_PRODUCTION, NULL);
+        pumas_physics_dcs(
+            physics, PUMAS_PROCESS_BREMSSTRAHLUNG, NULL, &dcs);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        dcs = pumas_physics_dcs_get(physics, PUMAS_PROCESS_PAIR_PRODUCTION);
-        ck_assert_ptr_eq(dcs, dcs_pp);
+        ck_assert_ptr_eq(dcs_br, dcs);
 
-        reset_error();
-        pumas_physics_dcs_set(physics, PUMAS_PROCESS_PHOTONUCLEAR, dcs_bs);
+        pumas_physics_dcs(
+            physics, PUMAS_PROCESS_PHOTONUCLEAR, &model, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        dcs = pumas_physics_dcs_get(physics, PUMAS_PROCESS_PHOTONUCLEAR);
-        ck_assert_ptr_eq(dcs, dcs_bs);
-
-        reset_error();
-        pumas_physics_dcs_set(physics, PUMAS_PROCESS_PHOTONUCLEAR, NULL);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        dcs = pumas_physics_dcs_get(physics, PUMAS_PROCESS_PHOTONUCLEAR);
-        ck_assert_ptr_eq(dcs, dcs_pn);
+        ck_assert_str_eq("DRSS", model);
 
         /* Test some numerical values by comparing to fig. 4 of
          * D.E. Groom, N.V. Mokhov, and S.I. Striganov,
@@ -1419,7 +1490,7 @@ START_TEST(test_api_dcs)
         double E = sqrt(p * p + m * m);
         double q = 0.1 * E;
         ck_assert_double_eq_tol(
-            dcs_bs(Z, A, m, E - m, q) * E * k, 2.5E-05, 5E-06);
+            dcs_br(Z, A, m, E - m, q) * E * k, 2.5E-05, 5E-06);
         ck_assert_double_eq_tol(
             dcs_pp(Z, A, m, E - m, q) * E * k, 1E-05, 5E-06);
         ck_assert_double_eq_tol(
@@ -1429,7 +1500,7 @@ START_TEST(test_api_dcs)
         E = sqrt(p * p + m * m);
         q = 1E-03 * E;
         ck_assert_double_eq_tol(
-            dcs_bs(Z, A, m, E - m, q) * E * k, 5E-03, 3E-03);
+            dcs_br(Z, A, m, E - m, q) * E * k, 5E-03, 3E-03);
         ck_assert_double_eq_tol(
             dcs_pp(Z, A, m, E - m, q) * E * k, 0.5, 0.2);
         ck_assert_double_eq_tol(
@@ -1438,15 +1509,45 @@ START_TEST(test_api_dcs)
         /* Free the data */
         pumas_physics_destroy(&physics);
 
-        /* Test the default getter */
-        dcs = pumas_physics_dcs_get(physics, PUMAS_PROCESS_BREMSSTRAHLUNG);
-        ck_assert_ptr_eq(dcs, dcs_bs);
+        /* Check the dcs setter */
+        reset_error();
+        struct pumas_physics_settings settings = {
+                .bremsstrahlung = "ABB",
+        };
+        pumas_physics_create(&physics, PUMAS_PARTICLE_MUON,
+            "materials/mdf/examples/standard.xml", "materials/dedx/muon",
+            &settings);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
 
-        dcs = pumas_physics_dcs_get(physics, PUMAS_PROCESS_PAIR_PRODUCTION);
-        ck_assert_ptr_eq(dcs, dcs_pp);
+        pumas_physics_dcs(physics, PUMAS_PROCESS_BREMSSTRAHLUNG, &model, &dcs);
+        ck_assert_str_eq(settings.bremsstrahlung, model);
+        pumas_dcs_get(PUMAS_PROCESS_BREMSSTRAHLUNG, "ABB", &dcs_br);
+        ck_assert_ptr_eq(dcs_br, dcs);
 
-        dcs = pumas_physics_dcs_get(physics, PUMAS_PROCESS_PHOTONUCLEAR);
-        ck_assert_ptr_eq(dcs, dcs_pn);
+        pumas_physics_destroy(&physics);
+
+        reset_error();
+        settings.bremsstrahlung = "toto";
+        pumas_physics_create(&physics, PUMAS_PARTICLE_MUON,
+            "materials/mdf/examples/standard.xml", "materials/dedx/muon",
+            &settings);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_MODEL_ERROR);
+
+        reset_error();
+        settings.bremsstrahlung = NULL;
+        settings.pair_production = "toto";
+        pumas_physics_create(&physics, PUMAS_PARTICLE_MUON,
+            "materials/mdf/examples/standard.xml", "materials/dedx/muon",
+            &settings);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_MODEL_ERROR);
+
+        reset_error();
+        settings.pair_production = NULL;
+        settings.photonuclear = "toto";
+        pumas_physics_create(&physics, PUMAS_PARTICLE_MUON,
+            "materials/mdf/examples/standard.xml", "materials/dedx/muon",
+            &settings);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_MODEL_ERROR);
 }
 END_TEST
 
@@ -4902,7 +5003,7 @@ END_TEST
 START_TEST(test_tabulation)
 {
         pumas_physics_create_tabulation(&physics, PUMAS_PARTICLE_MUON,
-            "materials/mdf/examples/standard.xml");
+            "materials/mdf/examples/standard.xml", NULL);
 
         double kinetic[2] = { 1E-01, 1E+01 };
         struct pumas_physics_tabulation_data data = {.n_energies = 2,
