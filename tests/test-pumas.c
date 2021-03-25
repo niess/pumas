@@ -1459,7 +1459,7 @@ static double air_locals(struct pumas_medium * medium,
         locals->density = TEST_AIR_DENSITY * exp(-state->position[2] / lambda);
         memcpy(locals->magnet, geometry.magnet, sizeof locals->magnet);
 
-        return 1E-02 * lambda;
+        return lambda;
 }
 
 static enum pumas_step geometry_medium(struct pumas_context * context,

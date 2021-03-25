@@ -863,8 +863,9 @@ static enum pumas_event transport_with_stepping(
     struct medium_locals * locals, double step_max_medium,
     enum pumas_step step_max_type, double step_max_locals,
     struct error_context * error_);
-static double transport_set_locals(struct pumas_medium * medium,
-    struct pumas_state * state, struct medium_locals * locals);
+static double transport_set_locals(const struct pumas_context * context,
+    struct pumas_medium * medium, struct pumas_state * state,
+    struct medium_locals * locals);
 static void transport_limit(const struct pumas_physics * physics,
     struct pumas_context * context, const struct pumas_state * state,
     int material, double di, double Xi, double * distance_max);
@@ -2490,7 +2491,7 @@ enum pumas_return pumas_context_transport(struct pumas_context * context,
                 step_max_medium += 0.5 * STEP_MIN;
         struct medium_locals locals = { { 0., { 0., 0., 0. }}, 0, physics };
         const double step_max_locals =
-            transport_set_locals(medium, state, &locals);
+            transport_set_locals(context, medium, state, &locals);
         if ((step_max_locals > 0.) && (step_max_locals < step_max_medium))
                 step_max_medium = step_max_locals;
         if (locals.api.density <= 0.) {
@@ -4414,7 +4415,7 @@ enum pumas_event transport_with_stepping(const struct pumas_physics * physics,
                                         context->medium(
                                             context, state, NULL, NULL);
                                         step_max_locals = transport_set_locals(
-                                            medium, state, locals);
+                                            context, medium, state, locals);
                                         if (locals->api.density <= 0.) {
                                                 ERROR_REGISTER_NEGATIVE_DENSITY(
                                                     physics->material_name
@@ -4434,8 +4435,8 @@ enum pumas_event transport_with_stepping(const struct pumas_physics * physics,
                                 context->medium(context, state, NULL, NULL);
                                 memset(&locals->api, 0x0, sizeof(locals->api));
                                 locals->magnetized = 0;
-                                step_max_locals =
-                                    transport_set_locals(medium, state, locals);
+                                step_max_locals = transport_set_locals(
+                                    context, medium, state, locals);
                                 if (locals->api.density <= 0.) {
                                         ERROR_REGISTER_NEGATIVE_DENSITY(
                                             physics->material_name
@@ -4527,16 +4528,18 @@ enum pumas_event transport_with_stepping(const struct pumas_physics * physics,
 /**
  * Set the local properties of a medium.
  *
- * @param state  The Monte-Carlo state.
- * @param locals The local properties.
+ * @param context The simulation context.
+ * @param state   The Monte-Carlo state.
+ * @param locals  The local properties.
  * @return The proposed max step length is returned. A null or negative value
  * indicates a uniform and infinite medium.
  *
  * This is an encapsulation of the API locals callback where internal data are
  * also initialised.
  */
-double transport_set_locals(struct pumas_medium * medium,
-    struct pumas_state * state, struct medium_locals * locals)
+double transport_set_locals(const struct pumas_context * context,
+    struct pumas_medium * medium, struct pumas_state * state,
+    struct medium_locals * locals)
 {
         struct pumas_locals * loc = (struct pumas_locals *)locals;
         if (medium->locals == NULL) {
@@ -4556,7 +4559,7 @@ double transport_set_locals(struct pumas_medium * medium,
                 const double * const b = loc->magnet;
                 locals->magnetized =
                     ((b[0] != 0.) || (b[1] != 0.) || (b[2] != 0.)) ? 1 : 0;
-                return step_max;
+                return step_max * context->accuracy;
         }
 }
 
@@ -5561,7 +5564,8 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
         if ((*step_max_locals > 0.) && ((step_max_type != PUMAS_STEP_RAW) ||
             (event != PUMAS_EVENT_MEDIUM))) {
                 /* Update the locals. */
-                *step_max_locals = transport_set_locals(medium, state, locals);
+                *step_max_locals = transport_set_locals(
+                    context, medium, state, locals);
                 if (locals->api.density <= 0.) {
                         ERROR_REGISTER_NEGATIVE_DENSITY(
                             physics->material_name[medium->material]);

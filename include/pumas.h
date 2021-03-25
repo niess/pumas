@@ -287,17 +287,17 @@ struct pumas_medium;
  * @param state     The Monte-Carlo state for which the local properties are
  *                  requested.
  * @param locals    A pointer to a `pumas_locals` structure to update.
- * @return A local stepping limit.
+ * @return The size of local inhomogeneities (see below).
  *
  * The callback must return a proposed Monte-Carlo stepping distance, in m,
  * consistent with the size of the propagation medium inhomogeneities,
- * e. g. 1 % of &rho; / |&nabla; &rho;|. Returning zero or less signs that the
- * propagation medium is fully uniform.
+ * e. g. &rho; / |&nabla; &rho;| for a density gradient. Returning zero or less
+ * signs that the propagation medium is fully uniform.
  *
- * **Note** that inhomogeneities modelled by the `pumas_locals` callback must
- * be **continuous**, e.g. a density gradient. If the geometry has a density or
- * magnetic field discontinuity then this must be modelled by using separate
- * media on both sides of the discontinuity.
+ * **Note** that inhomogeneities modelled by the `pumas_locals` callback must be
+ * **continuous**. If the geometry has a density or magnetic field discontinuity
+ * then this must be modelled by using separate media on both sides of the
+ * discontinuity.
  *
  * **Warning** : it is an error to return zero or less for any position of the
  * medium if at least one area is not uniform. Instead one should use two
