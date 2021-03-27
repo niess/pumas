@@ -841,8 +841,6 @@ static double dcs_evaluate(const struct pumas_physics * physics,
 static void dcs_model_fit(int m, int n, const double * x, const double * y,
     const double * w, double * c);
 
-static double default_dcs_pair_production(
-    double Z, double A, double m, double K, double q);
 static double default_dcs_photonuclear(
     double Z, double A, double m, double K, double q);
 
@@ -9565,147 +9563,6 @@ double dcs_bremsstrahlung(const struct pumas_physics * physics,
             (physics->mass + K) / element->A;
 }
 
-
-/**
- * The default Bremsstrahlung differential cross section.
- *
- * @param Z       The charge number of the target atom.
- * @param A       The mass number of the target atom.
- * @param mu      The projectile rest mass, in GeV
- * @param K       The projectile initial kinetic energy.
- * @param q       The kinetic energy lost to the photon.
- * @return The corresponding value of the atomic DCS, in m^2 / GeV.
- *
- * The differential cross section is computed following R.P. Kokoulin's
- * formulae taken from the Geant4 Physics Reference Manual.
- */
-double default_dcs_pair_production(
-    double Z, double A_, double mass, double K, double q)
-{
-        if ((Z <= 0) || (A_ <= 0) || (mass <= 0) || (K <= 0) || (q <= 0))
-                return 0.;
-
-/*
- * Coefficients for the Gaussian quadrature from:
- * https://pomax.github.io/bezierinfo/legendre-gauss.html.
- */
-#define N_GQ 8
-        const double xGQ[N_GQ] = { 0.01985507, 0.10166676, 0.2372338,
-                0.40828268, 0.59171732, 0.7627662, 0.89833324, 0.98014493 };
-        const double wGQ[N_GQ] = { 0.05061427, 0.11119052, 0.15685332,
-                0.18134189, 0.18134189, 0.15685332, 0.11119052, 0.05061427 };
-
-        /*  Check the bounds of the energy transfer. */
-        if (q <= 4. * ELECTRON_MASS) return 0.;
-        const double sqrte = 1.6487212707;
-        const double Z13 = pow(Z, 1. / 3.);
-        if (q >= K + mass * (1. - 0.75 * sqrte * Z13)) return 0.;
-
-        /*  Precompute some constant factors for the integration. */
-        const double nu = q / (K + mass);
-        const double r = mass / ELECTRON_MASS;
-        const double beta = 0.5 * nu * nu / (1. - nu);
-        const double xi_factor = 0.5 * r * r * beta;
-        const double A = (Z == 1.) ? 202.4 : 183.;
-        const double AZ13 = A / Z13;
-        const double cL = 2. * sqrte * ELECTRON_MASS * AZ13;
-        const double cLe = 2.25 * Z13 * Z13 / (r * r);
-
-        /*  Compute the bound for the integral. */
-        const double gamma = 1. + K / mass;
-        const double x0 = 4. * ELECTRON_MASS / q;
-        const double x1 = 6. / (gamma * (gamma - q / mass));
-        const double argmin =
-            (x0 + 2. * (1. - x0) * x1) / (1. + (1. - x1) * sqrt(1. - x0));
-        if ((argmin >= 1.) || (argmin <= 0.)) return 0.;
-        const double tmin = log(argmin);
-
-        /*  Compute the integral over t = ln(1-rho). */
-        double I = 0.;
-        int i;
-        for (i = 0; i < 8; i++) {
-                const double eps = exp(xGQ[i] * tmin);
-                const double rho = 1. - eps;
-                const double rho2 = rho * rho;
-                const double rho21 = eps * (2. - eps);
-                const double xi = xi_factor * rho21;
-                const double xi_i = 1. / xi;
-
-                /* Compute the e-term. */
-                double Be;
-                if (xi >= 1E+03)
-                        Be =
-                            0.5 * xi_i * ((3 - rho2) + 2. * beta * (1. + rho2));
-                else
-                        Be = ((2. + rho2) * (1. + beta) + xi * (3. + rho2)) *
-                                log(1. + xi_i) +
-                            (rho21 - beta) / (1. + xi) - 3. - rho2;
-                const double Ye = (5. - rho2 + 4. * beta * (1. + rho2)) /
-                    (2. * (1. + 3. * beta) * log(3. + xi_i) - rho2 -
-                                      2. * beta * (2. - rho2));
-                const double xe = (1. + xi) * (1. + Ye);
-                const double cLi = cL / rho21;
-                const double Le = log(AZ13 * sqrt(xe) * q / (q + cLi * xe)) -
-                    0.5 * log(1. + cLe * xe);
-                double Phi_e = Be * Le;
-                if (Phi_e < 0.) Phi_e = 0.;
-
-                /* Compute the mu-term. */
-                double Bmu;
-                if (xi <= 1E-03)
-                        Bmu = 0.5 * xi * (5. - rho2 + beta * (3. + rho2));
-                else
-                        Bmu = ((1. + rho2) * (1. + 1.5 * beta) -
-                                  xi_i * (1. + 2. * beta) * rho21) *
-                                log(1. + xi) +
-                            xi * (rho21 - beta) / (1. + xi) +
-                            (1. + 2. * beta) * rho21;
-                const double Ymu = (4. + rho2 + 3. * beta * (1. + rho2)) /
-                    ((1. + rho2) * (1.5 + 2. * beta) * log(3. + xi) + 1. -
-                                       1.5 * rho2);
-                const double xmu = (1. + xi) * (1. + Ymu);
-                const double Lmu =
-                    log(r * AZ13 * q / (1.5 * Z13 * (q + cLi * xmu)));
-                double Phi_mu = Bmu * Lmu;
-                if (Phi_mu < 0.) Phi_mu = 0.;
-
-                /* Update the t-integral. */
-                I -= (Phi_e + Phi_mu / (r * r)) * (1. - rho) * wGQ[i] * tmin;
-        }
-
-        /* Atomic electrons form factor. */
-        double zeta;
-        if (gamma <= 35.)
-                zeta = 0.;
-        else {
-                double gamma1, gamma2;
-                if (Z == 1.) {
-                        gamma1 = 4.4E-05;
-                        gamma2 = 4.8E-05;
-                } else {
-                        gamma1 = 1.95E-05;
-                        gamma2 = 5.30E-05;
-                }
-                zeta = 0.073 * log(gamma / (1. + gamma1 * gamma * Z13 * Z13)) -
-                    0.26;
-                if (zeta <= 0.)
-                        zeta = 0.;
-                else {
-                        zeta /=
-                            0.058 * log(gamma / (1. + gamma2 * gamma * Z13)) -
-                            0.14;
-                }
-        }
-
-        /* Gather the results and return the macroscopic DCS. */
-        const double E = K + mass;
-        const double dcs = 1.794664E-34 * Z * (Z + zeta) * (E - q) * I /
-            (q * E);
-        return (dcs < 0.) ? 0. : dcs;
-
-#undef N_GQ
-}
-
 /**
  * Wrapper for the pair production differential cross section.
  *
@@ -10929,6 +10786,77 @@ void math_svdsol(int m, int n, double * b, double * u, double * w, double * v,
         }
 }
 
+/** Dilogarithm for real valued arguments
+ *
+ * Ref: CERNLIB RDILOG function (C332)
+ * http://cds.cern.ch/record/2050865
+ */
+static double math_dilog(double x)
+{
+        const double C[20] = {
+             0.42996693560813697,  0.40975987533077105, -0.01858843665014592,
+             0.00145751084062268, -0.00014304184442340,  0.00001588415541880,
+            -0.00000190784959387,  0.00000024195180854, -0.00000003193341274,
+             0.00000000434545063, -0.00000000060578480,  0.00000000008612098,
+            -0.00000000001244332,  0.00000000000182256, -0.00000000000027007,
+             0.00000000000004042, -0.00000000000000610,  0.00000000000000093,
+            -0.00000000000000014,  0.00000000000000002};
+
+        const double PI3 = M_PI * M_PI / 3.;
+        const double PI6 = M_PI * M_PI / 6.;
+        const double PI12 = M_PI * M_PI / 12.;
+
+        if (x == 10) {
+                return PI6;
+        } else if (x == -1.) {
+                return -PI12;
+        } else {
+                double T = -x;
+                double A, S, Y;
+
+                if (T <= -2) {
+                        Y = -1. / (1. + T);
+                        S = 1.;
+                        A = -PI3 + 0.5 * (pow(log(-T), 2.) -
+                            pow(log(1. + 1. / T), 2.));
+                } else if (T < -1.) {
+                        Y = -1. - T;
+                        S = -1.;
+                        A = log(-T);
+                        A = -PI6 + A * (A + log(1. + 1. / T));
+                } else if (T <= -0.5) {
+                        Y = -(1. + T) / T;
+                        S = 1.;
+                        A = log(-T);
+                        A = -PI6 + A * (-0.5 * A + log(1. + T));
+                } else if (T < 0.) {
+                        Y = -T / (1. + T);
+                        S = -1.;
+                        A = 0.5 * pow(log(1 + T), 2.);
+                } else if (T <= 1.) {
+                        Y = T;
+                        S = 1.;
+                        A = 0.;
+                } else {
+                        Y = 1. / T;
+                        S = -1.;
+                        A = PI6 + 0.5 * pow(log(T), 2);
+                }
+
+                const double H = Y + Y - 1;
+                const double ALFA = H + H;
+                double B0, B1 = 0., B2 = 0.;
+                int i;
+                for (i = 19; i >= 0; i--) {
+                        B0 = C[i] + ALFA * B1 - B2;
+                        B2 = B1;
+                        B1 = B0;
+                }
+
+                return -(S * (B0 - H * B2) + A);
+        }
+}
+
 /**
  * Routines for computing energy loss tabulations.
  */
@@ -11432,7 +11360,7 @@ static double radiation_logarithm(double Z)
  * https://cds.cern.ch/record/288828/files/MEPHI-024-95.pdf) and more accurate
  * radiation logarithm computations.
  */
-double dcs_bremsstrahlung_KKP(
+static double dcs_bremsstrahlung_KKP(
     double Z, double A, double mu, double K, double q)
 {
         if ((Z <= 0) || (A <= 0) || (mu <= 0) || (K <= 0) || (q <= 0) ||
@@ -11478,7 +11406,15 @@ double dcs_bremsstrahlung_KKP(
         return (dcs < 0.) ? 0. : dcs;
 }
 
-/* Andreev-Bezrukov-Bugaev parametrization of the Bremsstahlung DCS
+/* Bremsstahlung DCS according to Andreev, Bezrukov & Bugaev.
+ *
+ * @param Z       The charge number of the target atom.
+ * @param A       The mass number of the target atom.
+ * @param mu      The projectile rest mass, in GeV
+ * @param K       The projectile initial kinetic energy.
+ * @param q       The kinetic energy lost to the photon.
+ * @return The corresponding value of the atomic DCS, in m^2 / GeV.
+ *
  * Ref: https://arxiv.org/abs/hep-ph/0010322 (MUM)
  *
  * PROPOSAL implementation converted to C
@@ -11501,7 +11437,7 @@ static double dcs_bremsstrahlung_ABB(
         /* Convert from GeV to MeV */
         const double energy = (K + m) * 1E+03;
         const double v = q * 1E+03 / energy;
-        m = m * 1E+03;
+        m *= 1E+03;
 
         /* Least momentum transferred to the nucleus (eq. 2.2) */
         const double Z3 = pow(Z, -1. / 3);
@@ -11552,11 +11488,116 @@ static double dcs_bremsstrahlung_ABB(
         const double result = (2 - 2 * v + v * v) * psi1 -
             (2. / 3) * (1 - v) * psi2;
 
-        if (result < 0) {
-                return 0;
-        }
+        if (result < 0) return 0;
 
         aux = 2 * (ME / m) * RE * Z;
+        return aux * aux * (ALPHA / q) * result * 1E-04;
+}
+
+/* Bremsstahlung DCS according to Sandrock, Soedingrekso & Rhode.
+ *
+ * @param Z       The charge number of the target atom.
+ * @param A       The mass number of the target atom.
+ * @param mu      The projectile rest mass, in GeV
+ * @param K       The projectile initial kinetic energy.
+ * @param q       The kinetic energy lost to the photon.
+ * @return The corresponding value of the atomic DCS, in m^2 / GeV.
+ *
+ * Ref: https://arxiv.org/abs/1910.07050
+ *
+ * PROPOSAL implementation converted to C
+ * Ref: https://github.com/tudo-astroparticlephysics/PROPOSAL/blob/master/private/PROPOSAL/crossection/parametrization/Bremsstrahlung.cxx
+ */
+static double dcs_bremsstrahlung_SSR(
+    double Z, double A, double m, double K, double q)
+{
+        /* Check inputs */
+        if ((Z <= 0) || (A <= 0) || (m <= 0) || (K <= 0) || (q <= 0) ||
+            (q >= K + m))
+                return 0.;
+
+        const double a[3] = {
+            -0.00349, 148.84, -987.531};
+        const double b[4] = {
+            0.1642, 132.573, -585.361, 1407.77};
+        const double c[6] = {
+            -2.8922, -19.0156, 57.698, -63.418, 14.1166, 1.84206};
+        const double d[6] = {
+            2134.19, 581.823, -2708.85, 4767.05, 1.52918, 0.361933};
+
+        /* Convert from GeV to MeV */
+        const double energy = (K + m) * 1E+03;
+        const double v = q * 1E+03 / energy;
+        m *= 1E+03;
+
+        const double Z13 = pow(Z, -1. / 3);
+        const double rad_log = radiation_logarithm(Z);
+        const double rad_log_inel = (Z == 1.) ? 446. : 1429.;
+        const double Dn = 1.54 * pow(A, 0.27);
+
+        const double mu_qc = m / (MMU * exp(1.) / Dn);
+        const double rho = sqrt(1. + 4. * mu_qc * mu_qc);
+
+        const double log_rho = log((rho + 1.) / (rho - 1.));
+        const double delta1 = log(mu_qc) + 0.5 * rho * log_rho;
+        const double delta2 = log(mu_qc) +
+            0.25 * (3. * rho - rho * rho * rho) * log_rho + 2. * mu_qc * mu_qc;
+
+        /* Least momentum transferred to the nucleus (eq. 7) */
+        const double delta = m * m * v / (2. * energy * (1. - v));
+
+        double phi1 = log(rad_log * Z13 * (m / ME) /
+            (1. + rad_log * Z13 * exp(0.5) * delta / ME));
+        double phi2 = log(rad_log * Z13 * exp(-1. / 6.) * (m / ME) /
+            (1. + rad_log * Z13 * exp(1. / 3.) * delta / ME));
+        phi1 -= delta1 * (1. - 1. / Z);
+        phi2 -= delta2 * (1. - 1. / Z);
+
+        /* s_atomic */
+        const double square_momentum  = (energy - m) * (energy + m);
+        const double particle_momentum = (square_momentum > 0) ?
+            sqrt(square_momentum) : 0.;
+        const double maxV = ME * (energy - m) /
+            (energy * (energy - particle_momentum + ME));
+
+        double s_atomic = 0.0;
+
+        if (v < maxV) {
+                const double s_atomic_1 = log(m / delta /
+                    (m * delta / (ME * ME) + SQRTE));
+                const double s_atomic_2 = log(1. + ME /
+                    (delta * rad_log_inel * Z13 * Z13 * SQRTE));
+                s_atomic = (4. / 3. * (1. - v) + v * v) *
+                    (s_atomic_1 - s_atomic_2);
+        }
+
+        /* s_rad */
+        double s_rad;
+
+        if (v < .0 || v > 1.) {
+                s_rad = 0.;
+        } else if (v < 0.02) {
+                s_rad = a[0] + a[1] * v + a[2] * v * v;
+        } else if (v >= 0.02 && v < 0.1) {
+                s_rad = b[0] + b[1] * v + b[2] * v * v + b[3] * v * v * v;
+        } else if (v >= 0.01 && v < 0.9) {
+                s_rad = c[0] + c[1] * v + c[2] * v * v;
+
+                const double tmp = log(1. - v);
+                s_rad += c[3] * v * log(v) + c[4] * tmp + c[5] * tmp * tmp;
+        } else {
+                s_rad = d[0] + d[1] * v + d[2] * v * v;
+
+                const double tmp = log(1. - v);
+                s_rad += d[3] * v * log(v) + d[4] * tmp + d[5] * tmp * tmp;
+        }
+
+        const double result = ((2. - 2. * v + v * v) * phi1 - 2. / 3. *
+            (1. - v) * phi2) + 1. / Z * s_atomic + 0.25 * ALPHA * phi1 * s_rad;
+
+        if (result <= 0.) return 0.;
+
+        const double aux = 2 * (ME / m) * RE * Z;
         return aux * aux * (ALPHA / q) * result * 1E-04;
 
 #undef ALPHA
@@ -11564,6 +11605,366 @@ static double dcs_bremsstrahlung_ABB(
 #undef ME
 #undef RE
 #undef MMU
+}
+
+/**
+ * The e+e- pair production differential cross section according to Kelner,
+ * Kokoulin & Petrukhin.
+ *
+ * @param Z       The charge number of the target atom.
+ * @param A       The mass number of the target atom.
+ * @param mu      The projectile rest mass, in GeV
+ * @param K       The projectile initial kinetic energy.
+ * @param q       The kinetic energy lost to the photon.
+ * @return The corresponding value of the atomic DCS, in m^2 / GeV.
+ *
+ * Geant4 like implementation, see e.g. section 11.3.1 of the Geant4 Physics
+ * Reference Manual.
+ */
+static double dcs_pair_production_KKP(
+    double Z, double A_, double mass, double K, double q)
+{
+        if ((Z <= 0) || (A_ <= 0) || (mass <= 0) || (K <= 0) || (q <= 0))
+                return 0.;
+
+/*
+ * Coefficients for the Gaussian quadrature from:
+ * https://pomax.github.io/bezierinfo/legendre-gauss.html.
+ */
+#define N_GQ 8
+        const double xGQ[N_GQ] = { 0.01985507, 0.10166676, 0.2372338,
+                0.40828268, 0.59171732, 0.7627662, 0.89833324, 0.98014493 };
+        const double wGQ[N_GQ] = { 0.05061427, 0.11119052, 0.15685332,
+                0.18134189, 0.18134189, 0.15685332, 0.11119052, 0.05061427 };
+
+        /*  Check the bounds of the energy transfer. */
+        if (q <= 4. * ELECTRON_MASS) return 0.;
+        const double sqrte = 1.6487212707;
+        const double Z13 = pow(Z, 1. / 3.);
+        if (q >= K + mass * (1. - 0.75 * sqrte * Z13)) return 0.;
+
+        /*  Precompute some constant factors for the integration. */
+        const double nu = q / (K + mass);
+        const double r = mass / ELECTRON_MASS;
+        const double beta = 0.5 * nu * nu / (1. - nu);
+        const double xi_factor = 0.5 * r * r * beta;
+        const double A = (Z == 1.) ? 202.4 : 183.;
+        const double AZ13 = A / Z13;
+        const double cL = 2. * sqrte * ELECTRON_MASS * AZ13;
+        const double cLe = 2.25 * Z13 * Z13 / (r * r);
+
+        /*  Compute the bound for the integral. */
+        const double gamma = 1. + K / mass;
+        const double x0 = 4. * ELECTRON_MASS / q;
+        const double x1 = 6. / (gamma * (gamma - q / mass));
+        const double argmin =
+            (x0 + 2. * (1. - x0) * x1) / (1. + (1. - x1) * sqrt(1. - x0));
+        if ((argmin >= 1.) || (argmin <= 0.)) return 0.;
+        const double tmin = log(argmin);
+
+        /*  Compute the integral over t = ln(1-rho). */
+        double I = 0.;
+        int i;
+        for (i = 0; i < N_GQ; i++) {
+                const double eps = exp(xGQ[i] * tmin);
+                const double rho = 1. - eps;
+                const double rho2 = rho * rho;
+                const double rho21 = eps * (2. - eps);
+                const double xi = xi_factor * rho21;
+                const double xi_i = 1. / xi;
+
+                /* Compute the e-term. */
+                double Be;
+                if (xi >= 1E+03)
+                        Be =
+                            0.5 * xi_i * ((3 - rho2) + 2. * beta * (1. + rho2));
+                else
+                        Be = ((2. + rho2) * (1. + beta) + xi * (3. + rho2)) *
+                                log(1. + xi_i) +
+                            (rho21 - beta) / (1. + xi) - 3. - rho2;
+                const double Ye = (5. - rho2 + 4. * beta * (1. + rho2)) /
+                    (2. * (1. + 3. * beta) * log(3. + xi_i) - rho2 -
+                                      2. * beta * (2. - rho2));
+                const double xe = (1. + xi) * (1. + Ye);
+                const double cLi = cL / rho21;
+                const double Le = log(AZ13 * sqrt(xe) * q / (q + cLi * xe)) -
+                    0.5 * log(1. + cLe * xe);
+                double Phi_e = Be * Le;
+                if (Phi_e < 0.) Phi_e = 0.;
+
+                /* Compute the mu-term. */
+                double Bmu;
+                if (xi <= 1E-03)
+                        Bmu = 0.5 * xi * (5. - rho2 + beta * (3. + rho2));
+                else
+                        Bmu = ((1. + rho2) * (1. + 1.5 * beta) -
+                                  xi_i * (1. + 2. * beta) * rho21) *
+                                log(1. + xi) +
+                            xi * (rho21 - beta) / (1. + xi) +
+                            (1. + 2. * beta) * rho21;
+                const double Ymu = (4. + rho2 + 3. * beta * (1. + rho2)) /
+                    ((1. + rho2) * (1.5 + 2. * beta) * log(3. + xi) + 1. -
+                                       1.5 * rho2);
+                const double xmu = (1. + xi) * (1. + Ymu);
+                const double Lmu =
+                    log(r * AZ13 * q / (1.5 * Z13 * (q + cLi * xmu)));
+                double Phi_mu = Bmu * Lmu;
+                if (Phi_mu < 0.) Phi_mu = 0.;
+
+                /* Update the t-integral. */
+                I -= (Phi_e + Phi_mu / (r * r)) * (1. - rho) * wGQ[i] * tmin;
+        }
+
+        /* Atomic electrons form factor. */
+        double zeta;
+        if (gamma <= 35.)
+                zeta = 0.;
+        else {
+                double gamma1, gamma2;
+                if (Z == 1.) {
+                        gamma1 = 4.4E-05;
+                        gamma2 = 4.8E-05;
+                } else {
+                        gamma1 = 1.95E-05;
+                        gamma2 = 5.30E-05;
+                }
+                zeta = 0.073 * log(gamma / (1. + gamma1 * gamma * Z13 * Z13)) -
+                    0.26;
+                if (zeta <= 0.)
+                        zeta = 0.;
+                else {
+                        zeta /=
+                            0.058 * log(gamma / (1. + gamma2 * gamma * Z13)) -
+                            0.14;
+                }
+        }
+
+        /* Gather the results and return the macroscopic DCS. */
+        const double E = K + mass;
+        const double dcs = 1.794664E-34 * Z * (Z + zeta) * (E - q) * I /
+            (q * E);
+        return (dcs < 0.) ? 0. : dcs;
+
+#undef N_GQ
+}
+
+/**
+ * The e+e- pair production doubly differential cross section according to
+ * Sandrock, Soedingrekso & Rhode.
+ *
+ * @param Z       The charge number of the target atom.
+ * @param A       The mass number of the target atom.
+ * @param mu      The projectile rest mass, in GeV
+ * @param K       The projectile initial kinetic energy.
+ * @param q       The kinetic energy lost to the photon.
+ * @param rho     The e+e- asymmetry.
+ * @return The corresponding value of the atomic DCS, in m^2 / GeV.
+ *
+ * Ref: https://arxiv.org/abs/1910.07050
+ *
+ * PROPOSAL implementation converted to C
+ * Ref: https://github.com/tudo-astroparticlephysics/PROPOSAL/blob/master/private/PROPOSAL/crossection/parametrization/EPairProduction.cxx
+ */
+static double ddcs_pair_production_SSR(
+    double Z, double A, double m, double K, double q, double rho)
+{
+#define ALPHA 0.0072973525664
+#define ME    0.5109989461
+#define RE    2.8179403227E-13
+
+        const double energy = (K + m) * 1E+03;
+        const double v = q / (K + m);
+        m *= 1E+03;
+        const double rad_log = radiation_logarithm(Z);
+
+        const double const_prefactor = 4. / (3. * M_PI) * Z *
+            pow(ALPHA * RE, 2.);
+        const double Z13 = pow(Z, -1. / 3.);
+        const double d_n = 1.54 * pow(A, 0.27);
+
+        rho = 1 - rho;
+        const double rho2 = rho * rho;
+
+        /* Zeta */
+        double g1, g2;
+        if (Z == 1.) {
+                g1 = 4.4E-05;
+                g2 = 4.8E-05;
+        } else {
+                g1 = 1.95E-05;
+                g2 = 5.3E-05;
+        }
+
+        const double zeta1 = (0.073 * log(energy / m /
+            (1. + g1 * pow(Z, 2. / 3.) * energy / m)) - 0.26);
+        const double zeta2 = (0.058 * log(energy / m /
+            (1 + g2 / Z13 * energy / m)) - 0.14);
+
+        double zeta;
+        if ((zeta1 > 0.) && (zeta2 > 0.)) {
+                zeta = zeta1 / zeta2;
+        } else {
+                zeta = 0.;
+        }
+
+        const double beta = v * v / (2. * (1. - v));
+        const double xi = pow(m * v / (2. * ME), 2.) * (1. - rho2) / (1. - v);
+
+        /* Diagram e */
+        const double Be = ((2. + rho2) * (1. + beta) +
+            xi * (3. + rho2)) * log(1. + 1. / xi) +
+            (1. - rho2 - beta) / (1. + xi) - (3. + rho2);
+
+        const double Ce2 = ((1. - rho2) * (1. + beta) +
+            xi * (3. - rho2)) * log(1. + 1. / xi) +
+            2. * (1. - beta - rho2) / (1. + xi) - (3. - rho2);
+        const double Ce1 = Be - Ce2;
+
+        const double De = ((2. + rho2) * (1. + beta) +
+            xi * (3. + rho2)) * math_dilog(1. / (1. + xi)) -
+            (2. + rho2) * xi * log(1. + 1. / xi) -
+            (xi + rho2 + beta) / (1. + xi);
+
+        double Le1, Le2;
+        if (De / Be > 0.) {
+                const double Xe = exp(-De / Be);
+                Le1 = log(rad_log * Z13 * sqrt(1. + xi) /
+                    (Xe + 2. * ME * exp(0.5) * rad_log * Z13 * (1. + xi) /
+                    (energy * v * (1. - rho2)))) - De / Be -
+                    0.5 * log(Xe + pow(ME / m * d_n, 2.) * (1. + xi));
+
+                Le2 = log(rad_log * Z13 * exp(-1. / 6.) * sqrt(1 + xi) /
+                    (Xe + 2. * ME * exp(1. / 3.) * rad_log * Z13 * (1. + xi) /
+                    (energy * v * (1. - rho2)))) - De / Be -
+                    0.5 * log(Xe + pow(ME / m * d_n, 2.) *
+                    exp(-1. / 3.) * (1. + xi));
+        } else {
+                const double Xe_inv = exp(De / Be);
+                Le1 = log(rad_log * Z13 * sqrt(1. + xi) /
+                    (1. + Xe_inv * 2. * ME * exp(0.5) * rad_log * Z13 *
+                    (1. + xi) / (energy * v * (1. - rho2)))) - 0.5 * De / Be -
+                    0.5 * log(1. + Xe_inv * pow(ME / m * d_n, 2.) * (1. + xi));
+
+                Le2 = log(rad_log * Z13 * exp(-1. / 6.) * sqrt(1 + xi) /
+                    (1. + Xe_inv * 2. * ME * exp(1. / 3.) * rad_log * Z13 *
+                    (1. + xi) / (energy * v * (1. - rho2)))) - 0.5 * De / Be -
+                    0.5 * log(1. + Xe_inv * pow(ME / m * d_n, 2.) *
+                    exp(-1. / 3.) * (1. + xi));
+        }
+
+        double diagram_e = const_prefactor * (Z + zeta) * (1. - v) / v *
+            (Ce1 * Le1 + Ce2 * Le2);
+        if (diagram_e < 0.) diagram_e = 0.;
+
+        /* Diagram mu */
+        const double Bm = ((1. + rho2) * (1. + (3. * beta) / 2) - 1. / xi *
+            (1. + 2. * beta) * (1. - rho2)) * log(1. + xi) +
+            xi * (1. - rho2 - beta) / (1. + xi) +
+            (1. + 2. * beta) * (1. - rho2);
+
+        const double Cm2 = ((1. - beta) * (1. - rho2) -
+            xi * (1. + rho2)) * log(1. + xi) / xi -
+            2. * (1. - beta - rho2) / (1. + xi) +
+            1. - beta - (1. + beta) * rho2;
+        const double Cm1 = Bm - Cm2;
+
+        const double Dm = ((1. + rho2) * (1. + (3. * beta) / 2.) -
+            1. / xi * (1. + 2. * beta) * (1. - rho2)) *
+            math_dilog(xi / (1. + xi)) + (1. + (3. * beta) / 2.) *
+            (1. - rho2) / xi * log(1. + xi) + (1. - rho2 - beta / 2. *
+            (1. + rho2) + (1. - rho2) / (2. * xi) * beta) * xi / (1. + xi);
+
+        double Lm1, Lm2;
+        if (Dm / Bm > 0.) {
+                const  double Xm = exp(-Dm / Bm);
+                Lm1 = log(Xm * m / ME * rad_log * Z13 / d_n /
+                    (Xm + 2. * ME * exp(0.5) * rad_log * Z13 * (1. + xi) /
+                    (energy * v * (1. - rho2))));
+                Lm2 = log(Xm * m / ME * rad_log * Z13 / d_n /
+                    (Xm + 2. * ME * exp(1. / 3.) * rad_log * Z13 * (1. + xi) /
+                    (energy * v * (1. - rho2))));
+        } else {
+                const double Xmv = exp(Dm / Bm);
+                Lm1 = log(m / ME * rad_log * Z13 / d_n /
+                    (1. + 2. * ME * exp(0.5) * rad_log * Z13 * (1. + xi) /
+                    (energy * v * (1. - rho2)) * Xmv));
+                Lm2 = log(m / ME * rad_log * Z13 / d_n /
+                    (1. + 2. * ME * exp(1. / 3.) * rad_log * Z13 * (1. + xi) /
+                    (energy * v * (1. - rho2)) * Xmv));
+        }
+
+        double diagram_mu = const_prefactor * (Z + zeta) * (1. - v) / v *
+            pow(ME / m, 2.) * (Cm1 * Lm1 + Cm2 * Lm2);
+        if (diagram_mu < 0.) diagram_mu = 0.;
+
+        return (diagram_e + diagram_mu) * 1E-01 / energy;
+
+#undef ALPHA
+#undef ME
+#undef RE
+}
+
+/**
+ * The e+e- pair production differential cross section according to Sandrock,
+ * Soedingrekso & Rhode.
+ *
+ * @param Z       The charge number of the target atom.
+ * @param A       The mass number of the target atom.
+ * @param mu      The projectile rest mass, in GeV
+ * @param K       The projectile initial kinetic energy.
+ * @param q       The kinetic energy lost to the photon.
+ * @return The corresponding value of the atomic DCS, in m^2 / GeV.
+ *
+ * Mixed implementation. The DDCS of PROPOSAL is used but the numeric
+ * integration is done with a Gaussian quadrature a la Geant4.
+ */
+static double dcs_pair_production_SSR(
+    double Z, double A_, double mass, double K, double q)
+{
+        if ((Z <= 0) || (A_ <= 0) || (mass <= 0) || (K <= 0) || (q <= 0))
+                return 0.;
+/*
+ * Coefficients for the Gaussian quadrature from:
+ * https://pomax.github.io/bezierinfo/legendre-gauss.html.
+ */
+#define N_GQ 8
+        const double xGQ[N_GQ] = { 0.01985507, 0.10166676, 0.2372338,
+                0.40828268, 0.59171732, 0.7627662, 0.89833324, 0.98014493 };
+        const double wGQ[N_GQ] = { 0.05061427, 0.11119052, 0.15685332,
+                0.18134189, 0.18134189, 0.15685332, 0.11119052, 0.05061427 };
+
+        /*  Check the bounds of the energy transfer. */
+        if (q <= 4. * ELECTRON_MASS) return 0.;
+        const double sqrte = 1.6487212707;
+        const double Z13 = pow(Z, 1. / 3.);
+        if (q >= K + mass * (1. - 0.75 * sqrte * Z13)) return 0.;
+
+        /* Compute the bound for the integral */
+        const double gamma = 1. + K / mass;
+        const double x0 = 1. - 4. * ELECTRON_MASS / q;
+        const double x1 = 1. - 6. / (gamma * (gamma - q / mass));
+
+        double rmax;
+        if ((x0 > 0) && (x1 > 0)) {
+                rmax = sqrt(x0) * x1;
+        } else {
+                return 0.;
+        }
+
+        const double ri = 1. - rmax;
+        if ((ri <= 0.) || (ri >= 1.)) return 0.;
+        const double tmin = log(ri);
+
+        /*  Compute the integral over t = ln(rho) */
+        double I = 0.;
+        int i;
+        for (i = 0; i < N_GQ; i++) {
+                const double rho = exp(xGQ[i] * tmin);
+                I -= ddcs_pair_production_SSR(Z, A_, mass, K, q, rho) *
+                    rho * wGQ[i] * tmin;
+        }
+
+        return (I < 0) ? 0. : I;
 }
 
 /** Data structure for caracterising a DCS model */
@@ -11582,8 +11983,10 @@ struct dcs_entry {
 static struct dcs_entry dcs_stack[DCS_STACK_SIZE] = {
     {PUMAS_PROCESS_BREMSSTRAHLUNG,  "KKP",  &dcs_bremsstrahlung_KKP},
     {PUMAS_PROCESS_BREMSSTRAHLUNG,  "ABB",  &dcs_bremsstrahlung_ABB},
-    {PUMAS_PROCESS_PAIR_PRODUCTION, "KKP",  &default_dcs_pair_production}, /* XXX Rename & add models */
-    {PUMAS_PROCESS_PHOTONUCLEAR,    "DRSS", &default_dcs_photonuclear}
+    {PUMAS_PROCESS_BREMSSTRAHLUNG,  "SSR",  &dcs_bremsstrahlung_SSR},
+    {PUMAS_PROCESS_PAIR_PRODUCTION, "KKP",  &dcs_pair_production_KKP},
+    {PUMAS_PROCESS_PAIR_PRODUCTION, "SSR",  &dcs_pair_production_SSR},
+    {PUMAS_PROCESS_PHOTONUCLEAR,    "DRSS", &default_dcs_photonuclear} /* XXX Rename & add models */
 };
 
 /** Mapping between enum and names for processes */
@@ -11605,7 +12008,7 @@ static enum pumas_return dcs_check_model(enum pumas_process process,
         }
 
         return ERROR_VREGISTER(PUMAS_RETURN_MODEL_ERROR,
-            "bad model (cannot find %s model for %s)", model,
+            "cannot find %s model for %s process", model,
             process_name[process]);
 }
 
@@ -11652,8 +12055,7 @@ enum pumas_return pumas_dcs_register(
                 if ((entry->process == process) &&
                     (strcmp(entry->model, model) == 0)) {
                         return ERROR_FORMAT(PUMAS_RETURN_MODEL_ERROR,
-                            "bad model (model %s already registered for "
-                            "%s process)",
+                            "model %s already registered for %s process",
                             model, process_name[process]);
                 }
         }
@@ -11705,7 +12107,7 @@ enum pumas_return pumas_dcs_get(
         *dcs = NULL;
 
         return ERROR_FORMAT(PUMAS_RETURN_MODEL_ERROR,
-            "bad model (model %s not found for %s process)",
+            "model %s not found for %s process",
             model, process_name[process]);
 }
 

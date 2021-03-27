@@ -1423,9 +1423,19 @@ START_TEST(test_api_dcs)
         ck_assert_ptr_nonnull(dcs);
         ck_assert_ptr_ne(dcs_br, dcs);
 
+        pumas_dcs_get(PUMAS_PROCESS_BREMSSTRAHLUNG, "SSR", &dcs);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_ptr_nonnull(dcs);
+        ck_assert_ptr_ne(dcs_br, dcs);
+
         pumas_dcs_get(PUMAS_PROCESS_PAIR_PRODUCTION, "KKP", &dcs);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_ptr_eq(dcs_pp, dcs);
+
+        pumas_dcs_get(PUMAS_PROCESS_PAIR_PRODUCTION, "SSR", &dcs);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_ptr_nonnull(dcs);
+        ck_assert_ptr_ne(dcs_pp, dcs);
 
         pumas_dcs_get(PUMAS_PROCESS_PHOTONUCLEAR, "DRSS", &dcs);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
@@ -1524,6 +1534,7 @@ START_TEST(test_api_dcs)
         reset_error();
         struct pumas_physics_settings settings = {
                 .bremsstrahlung = "ABB",
+                .pair_production = "SSR",
         };
         pumas_physics_create(&physics, PUMAS_PARTICLE_MUON,
             "materials/mdf/examples/standard.xml", "materials/dedx/muon",
@@ -1534,6 +1545,11 @@ START_TEST(test_api_dcs)
         ck_assert_str_eq(settings.bremsstrahlung, model);
         pumas_dcs_get(PUMAS_PROCESS_BREMSSTRAHLUNG, "ABB", &dcs_br);
         ck_assert_ptr_eq(dcs_br, dcs);
+
+        pumas_physics_dcs(physics, PUMAS_PROCESS_PAIR_PRODUCTION, &model, &dcs);
+        ck_assert_str_eq(settings.pair_production, model);
+        pumas_dcs_get(PUMAS_PROCESS_PAIR_PRODUCTION, "SSR", &dcs_pp);
+        ck_assert_ptr_eq(dcs_pp, dcs);
 
         pumas_physics_destroy(&physics);
 
