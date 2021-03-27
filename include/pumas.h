@@ -2036,6 +2036,17 @@ PUMAS_API enum pumas_return pumas_dcs_register(
 PUMAS_API enum pumas_return pumas_dcs_get(
     enum pumas_process process, const char * model, pumas_dcs_t ** dcs);
 
+/**
+ * Get the default Differential Cross Section (DCS) model for a given process.
+ *
+ * @param process   The physics process index.
+ * @return On success the default model name is returned otherwise `NULL`.
+ *
+ * Get the name of the default DCS model for a given process.  If the requested
+ * process index is not valid then `NULL` is returned.
+ */
+PUMAS_API const char * pumas_dcs_default(enum pumas_process process);
+
 #ifdef __cplusplus
 }
 #endif

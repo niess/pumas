@@ -1818,6 +1818,7 @@ const char * pumas_error_function(pumas_function_t * caller)
 
         /* Other library functions. */
         TOSTRING(pumas_constant)
+        TOSTRING(pumas_dcs_default)
         TOSTRING(pumas_physics_cutoff)
         TOSTRING(pumas_physics_destroy)
         TOSTRING(pumas_physics_tabulation_clear)
@@ -11706,4 +11707,17 @@ enum pumas_return pumas_dcs_get(
         return ERROR_FORMAT(PUMAS_RETURN_MODEL_ERROR,
             "bad model (model %s not found for %s process)",
             model, process_name[process]);
+}
+
+/* API function for getting the name of the default DCS model */
+const char * pumas_dcs_default(enum pumas_process process)
+{
+        if (process == PUMAS_PROCESS_BREMSSTRAHLUNG)
+                return DEFAULT_BREMSSTRAHLUNG;
+        else if (process == PUMAS_PROCESS_PAIR_PRODUCTION)
+                return DEFAULT_PAIR_PRODUCTION;
+        else if (process == PUMAS_PROCESS_PHOTONUCLEAR)
+                return DEFAULT_PHOTONUCLEAR;
+        else
+                return NULL;
 }

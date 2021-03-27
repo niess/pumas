@@ -164,6 +164,7 @@ START_TEST(test_api_error)
         CHECK_STRING(pumas_context_destroy);
         CHECK_STRING(pumas_context_physics_get);
         CHECK_STRING(pumas_context_transport);
+        CHECK_STRING(pumas_dcs_default);
         CHECK_STRING(pumas_dcs_get);
         CHECK_STRING(pumas_dcs_register);
         CHECK_STRING(pumas_error_catch);
@@ -1381,7 +1382,18 @@ START_TEST(test_api_dcs)
         pumas_dcs_register(PUMAS_PROCESS_BREMSSTRAHLUNG, "dummy", NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_VALUE_ERROR);
 
-        /* Test the default getter */
+        /* Test the default name getter */
+        const char * model;
+        model = pumas_dcs_default(PUMAS_PROCESS_BREMSSTRAHLUNG);
+        ck_assert_str_eq("KKP", model);
+        model = pumas_dcs_default(PUMAS_PROCESS_PHOTONUCLEAR);
+        ck_assert_str_eq("DRSS", model);
+        model = pumas_dcs_default(PUMAS_PROCESS_PAIR_PRODUCTION);
+        ck_assert_str_eq("KKP", model);
+        model = pumas_dcs_default(-1);
+        ck_assert_ptr_null(model);
+
+        /* Test the default dcs getter */
         reset_error();
         pumas_dcs_t * dcs_br;
         pumas_dcs_get(PUMAS_PROCESS_BREMSSTRAHLUNG, NULL, &dcs_br);
@@ -1442,7 +1454,6 @@ START_TEST(test_api_dcs)
         load_muon();
 
         /* Test the physics getter */
-        const char * model;
         reset_error();
         pumas_physics_dcs(physics, -1, NULL, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
