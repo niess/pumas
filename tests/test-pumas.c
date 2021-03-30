@@ -88,6 +88,12 @@ START_TEST(test_api_constant)
         pumas_constant(PUMAS_CONSTANT_MUON_MASS, &value);
         ck_assert_double_eq(value, 0.10565839);
 
+        pumas_constant(PUMAS_CONSTANT_NEUTRON_MASS, &value);
+        ck_assert_double_eq(value, 0.939565);
+
+        pumas_constant(PUMAS_CONSTANT_PROTON_MASS, &value);
+        ck_assert_double_eq(value, 0.938272);
+
         pumas_constant(PUMAS_CONSTANT_TAU_C_TAU, &value);
         ck_assert_double_eq(value, 87.03E-06);
 
@@ -99,7 +105,7 @@ START_TEST(test_api_constant)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
-        pumas_constant(6, &value);
+        pumas_constant(8, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
@@ -3454,8 +3460,8 @@ START_TEST(test_hybrid_straight)
                     physics, PUMAS_MODE_HYBRID, 0, k1, &X1);
                 d1 = X1 / TEST_ROCK_DENSITY;
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-                ck_assert_double_le(state->distance, d - d1);
-                ck_assert_double_le(state->grammage, X - X1);
+                ck_assert_double_le(state->distance, d - d1 + FLT_EPSILON);
+                ck_assert_double_le(state->grammage, X - X1 + FLT_EPSILON);
                 ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
                 ck_assert_double_eq_tol(
                     state->weight, exp(-state->time / ctau), FLT_EPSILON);

@@ -238,6 +238,10 @@ enum pumas_constant {
         PUMAS_CONSTANT_MUON_C_TAU,
         /** The muon mass in GeV/c^2. */
         PUMAS_CONSTANT_MUON_MASS,
+        /** The neutron mass in GeV/c^2. */
+        PUMAS_CONSTANT_NEUTRON_MASS,
+        /** The proton mass in GeV/c^2. */
+        PUMAS_CONSTANT_PROTON_MASS,
         /** The tau decay length in m. */
         PUMAS_CONSTANT_TAU_C_TAU,
         /** The tau mass in GeV/c^2. */

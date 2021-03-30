@@ -148,6 +148,14 @@
  * The tau mass in GeV/c^2.
  */
 #define TAU_MASS 1.77682
+/**
+ * The proton mass in GeV/c^2.
+ */
+#define PROTON_MASS 0.938272
+/**
+ * The neutron mass in GeV/c^2.
+ */
+#define NEUTRON_MASS 0.939565
 #ifndef M_PI
 /**
  * Define pi, if unknown.
@@ -822,11 +830,6 @@ static double dcs_pair_production(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double q);
 static double dcs_photonuclear(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double q);
-static inline double dcs_photonuclear_d2(
-    double A, double ml, double K, double q, double Q2);
-static inline double dcs_photonuclear_f2_allm(double x, double Q2);
-static inline double dcs_photonuclear_f2a_drss(double x, double F2p, double A);
-static inline double dcs_photonuclear_r_whitlow(double x, double Q2);
 static inline int dcs_photonuclear_check(double K, double q);
 static double dcs_ionisation(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double q);
@@ -840,9 +843,6 @@ static double dcs_evaluate(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double q);
 static void dcs_model_fit(int m, int n, const double * x, const double * y,
     const double * w, double * c);
-
-static double default_dcs_photonuclear(
-    double Z, double A, double m, double K, double q);
 
 /**
  * Implementations of polar angle distributions and accessor.
@@ -1141,7 +1141,7 @@ PUMAS_API enum pumas_return pumas_constant(
         ERROR_INITIALISE(pumas_constant);
 
         const double values[] = {AVOGADRO_NUMBER, ELECTRON_MASS, MUON_C_TAU,
-            MUON_MASS, TAU_C_TAU, TAU_MASS};
+            MUON_MASS, NEUTRON_MASS, PROTON_MASS, TAU_C_TAU, TAU_MASS};
 
         if (value == NULL) {
                 return ERROR_MESSAGE(PUMAS_RETURN_VALUE_ERROR,
@@ -9580,213 +9580,6 @@ double dcs_pair_production(const struct pumas_physics * physics,
             (physics->mass + K) / element->A;
 }
 
-/** ALLM97 parameterisation of the proton structure function, F2.
- *
- * @param x       The fractional kinetic energy lost to the photon.
- * @param Q2      The negative four momentum squared.
- * @return The corresponding value of the proton structure function, F2.
- *
- * References:
- *      DESY 97-251 [arXiv:hep-ph/9712415].
- */
-double dcs_photonuclear_f2_allm(double x, double Q2)
-{
-        const double m02 = 0.31985;
-        const double mP2 = 49.457;
-        const double mR2 = 0.15052;
-        const double Q02 = 0.52544;
-        const double Lambda2 = 0.06527;
-
-        const double cP1 = 0.28067;
-        const double cP2 = 0.22291;
-        const double cP3 = 2.1979;
-        const double aP1 = -0.0808;
-        const double aP2 = -0.44812;
-        const double aP3 = 1.1709;
-        const double bP1 = 0.36292;
-        const double bP2 = 1.8917;
-        const double bP3 = 1.8439;
-
-        const double cR1 = 0.80107;
-        const double cR2 = 0.97307;
-        const double cR3 = 3.4942;
-        const double aR1 = 0.58400;
-        const double aR2 = 0.37888;
-        const double aR3 = 2.6063;
-        const double bR1 = 0.01147;
-        const double bR2 = 3.7582;
-        const double bR3 = 0.49338;
-
-        const double M2 = 0.8803505929;
-        const double W2 = M2 + Q2 * (1.0 / x - 1.0);
-        const double t = log(log((Q2 + Q02) / Lambda2) / log(Q02 / Lambda2));
-        const double xP = (Q2 + mP2) / (Q2 + mP2 + W2 - M2);
-        const double xR = (Q2 + mR2) / (Q2 + mR2 + W2 - M2);
-        const double lnt = log(t);
-        const double cP =
-            cP1 + (cP1 - cP2) * (1.0 / (1.0 + exp(cP3 * lnt)) - 1.0);
-        const double aP =
-            aP1 + (aP1 - aP2) * (1.0 / (1.0 + exp(aP3 * lnt)) - 1.0);
-        const double bP = bP1 + bP2 * exp(bP3 * lnt);
-        const double cR = cR1 + cR2 * exp(cR3 * lnt);
-        const double aR = aR1 + aR2 * exp(aR3 * lnt);
-        const double bR = bR1 + bR2 * exp(bR3 * lnt);
-
-        const double F2P = cP * exp(aP * log(xP) + bP * log(1 - x));
-        const double F2R = cR * exp(aR * log(xR) + bR * log(1 - x));
-
-        return Q2 / (Q2 + m02) * (F2P + F2R);
-}
-
-/* The F2 structure function for atomic weight A.
- *
- * @param x       The fractional kinetic energy lost to the photon.
- * @param F2p     The proton structure function, F2.
- * @param A       The atomic weight.
- * @return The corresponding value of the structure function, F2.
- *
- * The F2 structure function for a nucleus of atomic weight A is computed
- * according to DRSS, including a Shadowing factor.
- *
- * References:
- *      Dutta et al., Phys.Rev. D63 (2001) 094020 [arXiv:hep-ph/0012350].
- */
-double dcs_photonuclear_f2a_drss(double x, double F2p, double A)
-{
-        double a = 1.0;
-        if (x < 0.0014)
-                a = exp(-0.1 * log(A));
-        else if (x < 0.04)
-                a = exp((0.069 * log10(x) + 0.097) * log(A));
-
-        return (0.5 * A * a *
-            (2.0 + x * (-1.85 + x * (2.45 + x * (-2.35 + x)))) * F2p);
-}
-
-/* The R ratio of longitudinal to transverse structure functions.
- *
- * @param x       The fractional kinetic energy lost to the photon.
- * @param Q2      The negative four momentum squared.
- *
- * References:
- *      Whitlow, SLAC-PUB-5284.
- */
-double dcs_photonuclear_r_whitlow(double x, double Q2)
-{
-        double q2 = Q2;
-        if (Q2 < 0.3) q2 = 0.3;
-
-        const double theta =
-            1 + 12.0 * q2 / (1.0 + q2) * 0.015625 / (0.015625 + x * x);
-
-        return (0.635 / log(q2 / 0.04) * theta + 0.5747 / q2 -
-            0.3534 / (0.09 + q2 * q2));
-}
-
-/** The doubly differential cross sections d^2S/(dq*dQ2) for photonuclear
- * interactions.
- *
- * @param ml      The projectile mass.
- * @param A       The target atomic weight.
- * @param K       The projectile initial kinetic energy.
- * @param q       The kinetic energy lost to the photon.
- * @param Q2      The negative four momentum squared.
- * @return The doubly differential cross section in m^2/kg/GeV^3.
- *
- * References:
- *      Dutta et al., Phys.Rev. D63 (2001) 094020 [arXiv:hep-ph/0012350].
- */
-double dcs_photonuclear_d2(double A, double ml, double K, double q, double Q2)
-{
-        const double cf = 2.603096E-35;
-        const double M = 0.931494;
-        const double E = K + ml;
-
-        const double y = q / E;
-        const double x = 0.5 * Q2 / (M * q);
-        const double F2p = dcs_photonuclear_f2_allm(x, Q2);
-        const double F2A = dcs_photonuclear_f2a_drss(x, F2p, A);
-        const double R = dcs_photonuclear_r_whitlow(x, Q2);
-
-        const double dds = (1 - y +
-                               0.5 * (1 - 2 * ml * ml / Q2) *
-                                   (y * y + Q2 / (E * E)) / (1 + R)) /
-                (Q2 * Q2) -
-            0.25 / (E * E * Q2);
-
-        return cf * F2A * dds / q;
-}
-
-/**
- * The default photonuclear differential cross section.
- *
- * @param Z       The charge number of the target atom.
- * @param A       The mass number of the target atom.
- * @param mu      The projectile rest mass, in GeV
- * @param K       The projectile initial kinetic energy.
- * @param q       The kinetic energy lost to the photon.
- * @return The corresponding value of the atomic DCS, in m^2 / GeV.
- *
- * The photonuclear differential cross-section is computed following DRSS,
- * with ALLM97 parameterisation of the structure function F2.
- *
- * References:
- *      Dutta et al., Phys.Rev. D63 (2001) 094020 [arXiv:hep-ph/0012350].
- */
-double default_dcs_photonuclear(
-    double Z, double A, double ml, double K, double q)
-{
-        if ((Z <= 0) || (A <= 0) || (ml <= 0) || (K <= 0) || (q <= 0))
-                return 0.;
-/*
- * Coefficients for the Gaussian quadrature from:
- * https://pomax.github.io/bezierinfo/legendre-gauss.html.
- */
-#define N_GQ 9
-        const double xGQ[N_GQ] = { 0.0000000000000000, -0.8360311073266358,
-                0.8360311073266358, -0.9681602395076261, 0.9681602395076261,
-                -0.3242534234038089, 0.3242534234038089, -0.6133714327005904,
-                0.6133714327005904 };
-        const double wGQ[N_GQ] = { 0.3302393550012598, 0.1806481606948574,
-                0.1806481606948574, 0.0812743883615744, 0.0812743883615744,
-                0.3123470770400029, 0.3123470770400029, 0.2606106964029354,
-                0.2606106964029354 };
-
-        const double M = 0.931494;
-        const double mpi = 0.134977;
-        const double E = K + ml;
-
-        double ds = 0.;
-        if ((q >= (E - ml)) || (q <= (mpi * (1.0 + 0.5 * mpi / M)))) return ds;
-
-        const double y = q / E;
-        const double Q2min = ml * ml * y * y / (1 - y);
-        const double Q2max = 2.0 * M * (q - mpi) - mpi * mpi;
-        if ((Q2max < Q2min) | (Q2min < 0)) return ds;
-
-        /* Set the binning. */
-        const double pQ2min = log(Q2min);
-        const double pQ2max = log(Q2max);
-        const double dpQ2 = pQ2max - pQ2min;
-        const double pQ2c = 0.5 * (pQ2max + pQ2min);
-
-        /*
-         * Integrate the doubly differential cross-section over Q2 using
-         * a Gaussian quadrature. Note that 9 points are enough to get a
-         * better than 0.1 % accuracy.
-         */
-        int i;
-        for (i = 0; i < N_GQ; i++) {
-                const double Q2 = exp(pQ2c + 0.5 * dpQ2 * xGQ[i]);
-                ds += dcs_photonuclear_d2(A, ml, K, q, Q2) * Q2 * wGQ[i];
-        }
-
-        if (ds < 0.) ds = 0.;
-        return 0.5 * ds * dpQ2;
-
-#undef N_GQ
-}
-
 /**
  * Wrapper for the photonuclear differential cross section.
  *
@@ -11765,7 +11558,7 @@ static double dcs_pair_production_KKP(
  * PROPOSAL implementation converted to C
  * Ref: https://github.com/tudo-astroparticlephysics/PROPOSAL/blob/master/private/PROPOSAL/crossection/parametrization/EPairProduction.cxx
  */
-static double ddcs_pair_production_SSR(
+static inline double dcs_pair_production_d2_SSR(
     double Z, double A, double m, double K, double q, double rho)
 {
 #define ALPHA 0.0072973525664
@@ -11960,11 +11753,228 @@ static double dcs_pair_production_SSR(
         int i;
         for (i = 0; i < N_GQ; i++) {
                 const double rho = exp(xGQ[i] * tmin);
-                I -= ddcs_pair_production_SSR(Z, A_, mass, K, q, rho) *
+                I -= dcs_pair_production_d2_SSR(Z, A_, mass, K, q, rho) *
                     rho * wGQ[i] * tmin;
         }
 
         return (I < 0) ? 0. : I;
+
+#undef N_GQ
+}
+
+/** ALLM97 parameterisation of the proton structure function, F2.
+ *
+ * @param x       The Bjorken x parameter.
+ * @param Q2      The negative four momentum squared.
+ * @return The corresponding value of the proton structure function, F2.
+ *
+ * References:
+ *      DESY 97-251 [arXiv:hep-ph/9712415].
+ */
+static inline double dcs_photonuclear_f2p_ALLM97(double x, double Q2)
+{
+        const double m02 = 0.31985;
+        const double mP2 = 49.457;
+        const double mR2 = 0.15052;
+        const double Q02 = 0.52544;
+        const double Lambda2 = 0.06527;
+
+        const double cP1 = 0.28067;
+        const double cP2 = 0.22291;
+        const double cP3 = 2.1979;
+        const double aP1 = -0.0808;
+        const double aP2 = -0.44812;
+        const double aP3 = 1.1709;
+        const double bP1 = 0.36292;
+        const double bP2 = 1.8917;
+        const double bP3 = 1.8439;
+
+        const double cR1 = 0.80107;
+        const double cR2 = 0.97307;
+        const double cR3 = 3.4942;
+        const double aR1 = 0.58400;
+        const double aR2 = 0.37888;
+        const double aR3 = 2.6063;
+        const double bR1 = 0.01147;
+        const double bR2 = 3.7582;
+        const double bR3 = 0.49338;
+
+        const double M = 0.5 * (PROTON_MASS + NEUTRON_MASS);
+        const double M2 = M * M;
+        const double W2 = M2 + Q2 * (1.0 / x - 1.0);
+        const double t = log(log((Q2 + Q02) / Lambda2) / log(Q02 / Lambda2));
+        const double xP = (Q2 + mP2) / (Q2 + mP2 + W2 - M2);
+        const double xR = (Q2 + mR2) / (Q2 + mR2 + W2 - M2);
+        const double lnt = log(t);
+        const double cP =
+            cP1 + (cP1 - cP2) * (1.0 / (1.0 + exp(cP3 * lnt)) - 1.0);
+        const double aP =
+            aP1 + (aP1 - aP2) * (1.0 / (1.0 + exp(aP3 * lnt)) - 1.0);
+        const double bP = bP1 + bP2 * exp(bP3 * lnt);
+        const double cR = cR1 + cR2 * exp(cR3 * lnt);
+        const double aR = aR1 + aR2 * exp(aR3 * lnt);
+        const double bR = bR1 + bR2 * exp(bR3 * lnt);
+
+        const double F2P = cP * exp(aP * log(xP) + bP * log(1 - x));
+        const double F2R = cR * exp(aR * log(xR) + bR * log(1 - x));
+
+        return Q2 / (Q2 + m02) * (F2P + F2R);
+}
+
+/* The F2 nuclear structure function following Dutta et al.
+ *
+ * @param A            The atomic charge number.
+ * @param A            The atomic weight.
+ * @param F2p          The proton structure function, F2.
+ * @param shadowing    The shadowing factor.
+ * @param x            The Bjorken x parameter.
+ * @return The corresponding value of the nuclear structure function, F2a.
+ *
+ * The F2a structure function for a nucleus of charge number Z and atomic
+ * weight A is computed according to Dutta et al.
+ *
+ * References:
+ *      Dutta et al., Phys.Rev. D63 (2001) 094020 [arXiv:hep-ph/0012350].
+ */
+static inline double dcs_photonuclear_f2a_DRSS(
+    double Z, double A, double F2p, double shadowing, double x)
+{
+        return F2p * shadowing * (Z + (A - Z) *
+            (1.0 + x * (-1.85 + x * (2.45 + x * (-2.35 + x)))));
+}
+
+/* Shadowing factor following Dutta et al.
+ *
+ * @param A       The atomic charge number.
+ * @param A       The atomic weight.
+ * @param x       The Bjorken x parameter.
+ * @return The corresponding value of the shadowing factor.
+ *
+ * The shadowing factor for a nucleus of atomic weight A is computed according
+ * to Dutta et al.
+ *
+ * References:
+ *      Dutta et al., Phys.Rev. D63 (2001) 094020 [arXiv:hep-ph/0012350].
+ */
+static inline double dcs_photonuclear_shadowing_DRSS(
+    double Z, double A, double x)
+{
+        if (Z == 1.) return 1.;
+
+        if (x < 0.0014)
+                return exp(-0.1 * log(A));
+        else if (x < 0.04)
+                return exp((0.069 * log10(x) + 0.097) * log(A));
+        else
+                return 1.;
+}
+
+/** The doubly differential cross sections d^2S/(dq*dQ2) for photonuclear
+ * interactions following Dutta et al.
+ *
+ * @param Z       The target charge number.
+ * @param A       The target atomic weight.
+ * @param ml      The projectile mass.
+ * @param K       The projectile initial kinetic energy.
+ * @param q       The kinetic energy lost to the photon.
+ * @param Q2      The negative four momentum squared.
+ * @return The doubly differential cross section in m^2/kg/GeV^3.
+ *
+ * References:
+ *      Dutta et al., Phys.Rev. D63 (2001) 094020 [arXiv:hep-ph/0012350].
+ */
+static inline double dcs_photonuclear_d2_DRSS(
+    double Z, double A, double ml, double K, double q, double Q2)
+{
+        const double cf = 2.6056342605319227E-35;
+        const double M = 0.5 * (PROTON_MASS + NEUTRON_MASS);
+        const double E = K + ml;
+
+        const double y = q / E;
+        const double x = 0.5 * Q2 / (M * q);
+        const double F2p = dcs_photonuclear_f2p_ALLM97(x, Q2);
+        const double shadowing = dcs_photonuclear_shadowing_DRSS(Z, A, x);
+        const double F2A = dcs_photonuclear_f2a_DRSS(Z, A, F2p, shadowing, x);
+        const double R = 0.;
+
+        const double dds = (1 - y +
+                               0.5 * (1 - 2 * ml * ml / Q2) *
+                                   (y * y + Q2 / (E * E)) / (1 + R)) /
+                (Q2 * Q2) -
+            0.25 / (E * E * Q2);
+
+        return cf * F2A * dds / q;
+}
+
+/**
+ * The photonuclear differential cross section following Dutta et al.
+ *
+ * @param Z       The charge number of the target atom.
+ * @param A       The mass number of the target atom.
+ * @param mu      The projectile rest mass, in GeV
+ * @param K       The projectile initial kinetic energy.
+ * @param q       The kinetic energy lost to the photon.
+ * @return The corresponding value of the atomic DCS, in m^2 / GeV.
+ *
+ * The photonuclear differential cross-section is computed following DRSS,
+ * with ALLM97 parameterisation of the structure function F2.
+ *
+ * References:
+ *      Dutta et al., Phys.Rev. D63 (2001) 094020 [arXiv:hep-ph/0012350].
+ */
+static double dcs_photonuclear_DRSS(
+    double Z, double A, double ml, double K, double q)
+{
+        if ((Z <= 0) || (A <= 0) || (ml <= 0) || (K <= 0) || (q <= 0))
+                return 0.;
+/*
+ * Coefficients for the Gaussian quadrature from:
+ * https://pomax.github.io/bezierinfo/legendre-gauss.html.
+ */
+#define N_GQ 9
+        const double xGQ[N_GQ] = { 0.0000000000000000, -0.8360311073266358,
+                0.8360311073266358, -0.9681602395076261, 0.9681602395076261,
+                -0.3242534234038089, 0.3242534234038089, -0.6133714327005904,
+                0.6133714327005904 };
+        const double wGQ[N_GQ] = { 0.3302393550012598, 0.1806481606948574,
+                0.1806481606948574, 0.0812743883615744, 0.0812743883615744,
+                0.3123470770400029, 0.3123470770400029, 0.2606106964029354,
+                0.2606106964029354 };
+
+        const double M = 0.931494;
+        const double mpi = 0.134977;
+        const double E = K + ml;
+
+        double ds = 0.;
+        if ((q >= (E - ml)) || (q <= (mpi * (1.0 + 0.5 * mpi / M)))) return ds;
+
+        const double y = q / E;
+        const double Q2min = ml * ml * y * y / (1 - y);
+        const double Q2max = 2.0 * M * (q - mpi) - mpi * mpi;
+        if ((Q2max < Q2min) | (Q2min < 0)) return ds;
+
+        /* Set the binning. */
+        const double pQ2min = log(Q2min);
+        const double pQ2max = log(Q2max);
+        const double dpQ2 = pQ2max - pQ2min;
+        const double pQ2c = 0.5 * (pQ2max + pQ2min);
+
+        /*
+         * Integrate the doubly differential cross-section over Q2 using
+         * a Gaussian quadrature. Note that 9 points are enough to get a
+         * better than 0.1 % accuracy.
+         */
+        int i;
+        for (i = 0; i < N_GQ; i++) {
+                const double Q2 = exp(pQ2c + 0.5 * dpQ2 * xGQ[i]);
+                ds += dcs_photonuclear_d2_DRSS(Z, A, ml, K, q, Q2) *
+                    Q2 * wGQ[i];
+        }
+
+        if (ds < 0.) ds = 0.;
+        return 0.5 * ds * dpQ2;
+
+#undef N_GQ
 }
 
 /** Data structure for caracterising a DCS model */
@@ -11986,7 +11996,7 @@ static struct dcs_entry dcs_stack[DCS_STACK_SIZE] = {
     {PUMAS_PROCESS_BREMSSTRAHLUNG,  "SSR",  &dcs_bremsstrahlung_SSR},
     {PUMAS_PROCESS_PAIR_PRODUCTION, "KKP",  &dcs_pair_production_KKP},
     {PUMAS_PROCESS_PAIR_PRODUCTION, "SSR",  &dcs_pair_production_SSR},
-    {PUMAS_PROCESS_PHOTONUCLEAR,    "DRSS", &default_dcs_photonuclear} /* XXX Rename & add models */
+    {PUMAS_PROCESS_PHOTONUCLEAR,    "DRSS", &dcs_photonuclear_DRSS}
 };
 
 /** Mapping between enum and names for processes */
