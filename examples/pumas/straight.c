@@ -157,6 +157,17 @@ int main(int narg, char * argv[])
                 wf *= 2; /* Update the Monte Carlo weight according to the bias
                           * PDF used for the charge randomisation, i.e. 1 / 0.5
                           */
+
+                /* Create a new Monte Carlo state.
+                 *
+                 * Note that the state is initialised using C99 designated
+                 * initializers. Therefore, unspecified fields are set to zero,
+                 * e.g. the travelled *distance* and the *decayed* flag.
+                 *
+                 * Please take care to properly initialize all fields when
+                 * creating a new state. In particular the *decay* flag must be
+                 * zero (false) and the Monte Carlo weight strictly positive.
+                 */
                 struct pumas_state state = { .charge = cf,
                         .energy = kf,
                         .weight = wf,

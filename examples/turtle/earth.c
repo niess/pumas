@@ -178,6 +178,14 @@ int main(int narg, char * argv[])
          * longitude) are transformed to Earth-Centered Earth-Fixed (ECEF) ones
          * using TURTLE. The particle is located 0.5 m below the top of the
          * lowest layer, i.e. rocks.
+         *
+         * Note that the state is initialised using C99 designated initializers.
+         * Therefore, unspecified fields are set to zero, e.g. the travelled
+         * *distance* and the *decayed* flag.
+         *
+         * Please take care to properly initialize all fields when creating a
+         * new state. In particular the *decay* flag must be zero (false) and
+         * the Monte Carlo weight strictly positive.
          */
         struct pumas_state state = { .charge = -1.,
             .energy = energy,

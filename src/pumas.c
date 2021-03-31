@@ -11156,17 +11156,22 @@ static double radiation_logarithm(double Z)
 static double dcs_bremsstrahlung_KKP(
     double Z, double A, double mu, double K, double q)
 {
-        if ((Z <= 0) || (A <= 0) || (mu <= 0) || (K <= 0) || (q <= 0) ||
-            (q >= K + mu))
+        /* Check inputs */
+        if ((Z <= 0) || (A <= 0) || (mu <= 0) || (K <= 0) || (q <= 0))
+                return 0.;
+
+        const double Z13 = pow(Z, 1. / 3.);
+        const double sqrte = 1.648721271;
+
+        if (q >= K + mu * (1. - 0.75 * sqrte * Z13))
                 return 0.;
 
         const double me = ELECTRON_MASS;
-        const double sqrte = 1.648721271;
         const double phie_factor = mu / (me * me * sqrte);
         const double rem = 5.63588E-13 * me / mu;
 
-        const double BZ_n = radiation_logarithm(Z) * pow(Z, -1. / 3.);
-        const double BZ_e = (Z == 1.) ? 446. : 1429. * pow(Z, -2. / 3.);
+        const double BZ_n = radiation_logarithm(Z) / Z13;
+        const double BZ_e = (Z == 1.) ? 446. : 1429. / (Z13 * Z13);
         const double D_n = 1.54 * pow(A, 0.27);
         const double E = K + mu;
         const double dcs_factor = 7.297182E-07 * rem * rem * Z / E;
@@ -11223,8 +11228,12 @@ static double dcs_bremsstrahlung_ABB(
 #define MMU   105.6583745
 
         /* Check inputs */
-        if ((Z <= 0) || (A <= 0) || (m <= 0) || (K <= 0) || (q <= 0) ||
-            (q >= K + m))
+        if ((Z <= 0) || (A <= 0) || (m <= 0) || (K <= 0) || (q <= 0))
+                return 0.;
+
+        const double Z13 = pow(Z, 1. / 3.);
+
+        if (q >= K + m * (1. - 0.75 * SQRTE * Z13))
                 return 0.;
 
         /* Convert from GeV to MeV */
@@ -11233,7 +11242,7 @@ static double dcs_bremsstrahlung_ABB(
         m *= 1E+03;
 
         /* Least momentum transferred to the nucleus (eq. 2.2) */
-        const double Z3 = pow(Z, -1. / 3);
+        const double Z3 = 1. / Z13;
         const double a1 = 184.15 * Z3 / (SQRTE * ME);    /* eq 2.18 */
         const double a2 = 1194 * Z3 * Z3 / (SQRTE * ME); /* eq.2.19 */
 
@@ -11305,8 +11314,11 @@ static double dcs_bremsstrahlung_SSR(
     double Z, double A, double m, double K, double q)
 {
         /* Check inputs */
-        if ((Z <= 0) || (A <= 0) || (m <= 0) || (K <= 0) || (q <= 0) ||
-            (q >= K + m))
+        if ((Z <= 0) || (A <= 0) || (m <= 0) || (K <= 0) || (q <= 0))
+                return 0.;
+
+        const double z13 = pow(Z, 1. / 3.);
+        if (q >= K + m * (1. - 0.75 * SQRTE * z13))
                 return 0.;
 
         const double a[3] = {
@@ -11323,7 +11335,7 @@ static double dcs_bremsstrahlung_SSR(
         const double v = q * 1E+03 / energy;
         m *= 1E+03;
 
-        const double Z13 = pow(Z, -1. / 3);
+        const double Z13 = 1. / z13;
         const double rad_log = radiation_logarithm(Z);
         const double rad_log_inel = (Z == 1.) ? 446. : 1429.;
         const double Dn = 1.54 * pow(A, 0.27);
@@ -11562,9 +11574,19 @@ static inline double dcs_pair_production_d2_SSR(
     double Z, double A, double m, double K, double q, double rho)
 {
 #define ALPHA 0.0072973525664
+#define SQRTE 1.648721270700128
 #define ME    0.5109989461
 #define RE    2.8179403227E-13
 
+        if ((Z <= 0) || (A <= 0) || (m <= 0) || (K <= 0) || (q <= 0))
+                return 0.;
+
+        /*  Check the bounds of the energy transfer. */
+        if (q <= 4. * ELECTRON_MASS) return 0.;
+        const double z13 = pow(Z, 1. / 3.);
+        if (q >= K + m * (1. - 0.75 * SQRTE * z13)) return 0.;
+
+        /* Change units and variables */
         const double energy = (K + m) * 1E+03;
         const double v = q / (K + m);
         m *= 1E+03;
@@ -11572,7 +11594,7 @@ static inline double dcs_pair_production_d2_SSR(
 
         const double const_prefactor = 4. / (3. * M_PI) * Z *
             pow(ALPHA * RE, 2.);
-        const double Z13 = pow(Z, -1. / 3.);
+        const double Z13 = 1. / z13;
         const double d_n = 1.54 * pow(A, 0.27);
 
         rho = 1 - rho;
@@ -11693,6 +11715,7 @@ static inline double dcs_pair_production_d2_SSR(
         return (diagram_e + diagram_mu) * 1E-01 / energy;
 
 #undef ALPHA
+#undef SQRTE
 #undef ME
 #undef RE
 }
@@ -12075,7 +12098,6 @@ static double dcs_photonuclear_d2_DRSS(
         const double cf = 2.6056342605319227E-35;
         const double M = 0.5 * (PROTON_MASS + NEUTRON_MASS);
         const double E = K + ml;
-
         const double y = q / E;
         const double x = 0.5 * Q2 / (M * q);
         const double F2p = dcs_photonuclear_f2p_ALLM97(x, Q2);
@@ -12116,7 +12138,6 @@ static double dcs_photonuclear_d2_BM(
         const double cf = 2.6056342605319227E-35;
         const double M = 0.5 * (PROTON_MASS + NEUTRON_MASS);
         const double E = K + ml;
-
         const double y = q / E;
         const double x = 0.5 * Q2 / (M * q);
         const double shadowing = dcs_photonuclear_shadowing_BM(Z, A, x, q);
@@ -12153,8 +12174,15 @@ typedef double dcs_photonuclear_d2_t(
 inline static double dcs_photonuclear_integrated(double Z, double A, double ml,
     double K, double q, dcs_photonuclear_d2_t * ddcs)
 {
-        if ((Z <= 0) || (A <= 0) || (ml <= 0) || (K <= 0) || (q <= 0))
+        /* Check inputs */
+        if ((Z <= 0) || (A <= 0) || (ml <= 0) || (K <= 0))
                 return 0.;
+
+        const double M = 0.5 * (NEUTRON_MASS + PROTON_MASS);
+        const double mpi = 0.13957018;
+        if ((q <= mpi + 0.5 * mpi * mpi / M) ||
+            (q >= K + ml - 0.5 * (M + ml * ml / M))) return 0.;
+
 /*
  * Coefficients for the Gaussian quadrature from:
  * https://pomax.github.io/bezierinfo/legendre-gauss.html.
@@ -12169,17 +12197,11 @@ inline static double dcs_photonuclear_integrated(double Z, double A, double ml,
                 0.3123470770400029, 0.3123470770400029, 0.2606106964029354,
                 0.2606106964029354 };
 
-        const double M = 0.5 * (NEUTRON_MASS + PROTON_MASS);
-        const double mpi = 0.134977;
         const double E = K + ml;
-
-        double ds = 0.;
-        if ((q >= (E - ml)) || (q <= (mpi * (1.0 + 0.5 * mpi / M)))) return ds;
-
-        const double y = q / E;
-        const double Q2min = ml * ml * y * y / (1 - y);
+        const double ml2 = ml * ml;
+        const double Q2min = ml2 * (q * q - 0.5 * ml2) / (E * (E - q));
         const double Q2max = 2.0 * M * (q - mpi) - mpi * mpi;
-        if ((Q2max < Q2min) | (Q2min < 0)) return ds;
+        if ((Q2max < Q2min) | (Q2min < 0)) return 0.;
 
         /* Set the binning. */
         const double pQ2min = log(Q2min);
@@ -12192,6 +12214,7 @@ inline static double dcs_photonuclear_integrated(double Z, double A, double ml,
          * a Gaussian quadrature. Note that 9 points are enough to get a
          * better than 0.1 % accuracy.
          */
+        double ds = 0.;
         int i;
         for (i = 0; i < N_GQ; i++) {
                 const double Q2 = exp(pQ2c + 0.5 * dpQ2 * xGQ[i]);
@@ -12241,11 +12264,190 @@ static double dcs_photonuclear_DRSS(double Z, double A, double m,
  *      Butkevich & Mikheyev, Soviet Journal of Experimental and Theoretical
  *          Physics 95 (2002) 11
  */
-static double dcs_photonuclear_BM(double Z, double A, double m,
-    double K, double q)
+static double dcs_photonuclear_BM(
+    double Z, double A, double m, double K, double q)
 {
         return dcs_photonuclear_integrated(
             Z, A, m, K, q, &dcs_photonuclear_d2_BM);
+}
+
+/**
+ * The photon-nucleon cross-section using Kokoulin parametrization.
+ *
+ * @param q       The kinetic energy lost to the photon.
+ * @return The corresponding cross-section, in micro-barns.
+ *
+ * References:
+ *      R.P. Kokoulin, Nuclear Physics B Proceedings Supplements 70 (1999) 475.
+ */
+inline static double dcs_photonuclear_phn_Kokoulin(double q)
+{
+        if (q <= 17.) {
+                return 96.1 + 82. / sqrt(q);
+        } else if (q <= 200.) {
+                const double aux = log(0.0213 * q);
+                return 114.3 + 1.647 * aux * aux;
+        } else {
+                return 49.2 + 11.1 * log(q) + 151.8 / sqrt(q);
+        }
+}
+
+/**
+ * The photonuclear differential cross section following Bezrukov, Bugaev.
+ *
+ * @param Z       The charge number of the target atom.
+ * @param A       The mass number of the target atom.
+ * @param m       The projectile rest mass, in GeV
+ * @param K       The projectile initial kinetic energy.
+ * @param q       The kinetic energy lost to the photon.
+ * @return The corresponding value of the atomic DCS, in m^2 / GeV.
+ *
+ * References:
+ *      Bezrukov, Bugaev, Sov. J. Nucl. Phys. 33 (1981), 635.
+ *
+ * PROPOSAL implementation converted to C
+ * Ref: https://github.com/tudo-astroparticlephysics/PROPOSAL/blob/master/private/PROPOSAL/crossection/parametrization/PhotoRealPhotonAssumption.cxx
+ */
+static double dcs_photonuclear_BB(
+    double Z, double A, double m, double K, double q)
+{
+#define ALPHA 0.0072973525664
+
+        /* Check inputs */
+        if ((Z <= 0) || (A <= 0) || (m <= 0) || (K <= 0))
+                return 0.;
+
+        const double M = 0.5 * (NEUTRON_MASS + PROTON_MASS);
+        const double mpi = 0.13957018;
+        if ((q <= mpi + 0.5 * mpi * mpi / M) ||
+            (q >= K + m - 0.5 * (M + m * m / M))) return 0.;
+
+        const double m1 = 0.54;
+        const double m2 = 1.80;
+
+        const double sgn = dcs_photonuclear_phn_Kokoulin(q);
+        const double v = q / (K + m);
+
+        /* Calculate the shadowing factor */
+        double G;
+        if (Z == 1) {
+                G = 1;
+        } else {
+                /* eq. 18 */
+                const double tmp = 0.00282 * pow(A, 1. / 3) * sgn;
+                /* eq. 3 */
+                G = (3. / tmp) * (0.5 + ((1. + tmp) * exp(-tmp) - 1.) /
+                    (tmp * tmp));
+        }
+
+        /* Enhanced formula by Bugaev Shelpin
+         * Phys. Rev. D 67 (2003), 034027
+         * eq. 4.6
+         */
+        G *= 3.;
+        double aux = v * m;
+        const double t = aux * aux / (1. - v);
+        double aum = m;
+        aum *= aum;
+        aux = 2. * aum / t;
+        const double kappa = 1. - 2. / v + 2. / (v * v);
+        aux = G * ((kappa + 4. * aum / m1) * log(1. + m1 / t) -
+            (kappa * m1) / (m1 + t) - aux) + ((kappa + 2. * aum / m2) *
+            log(1. + m2 / t) - aux) + aux * (G * (m1 - 4. * t) / (m1 + t) +
+            (m2 / t) * log(1. + t / m2));
+
+        aux *= ALPHA / (8. * M_PI) * A * v * sgn;
+
+        /* Hard component by Bugaev, Montaruli, Shelpin, Sokalski
+         * Astrop. Phys. 21 (2004), 491
+         */
+        const double (*table)[8];
+        if (fabs(m - MUON_MASS) < fabs(m - TAU_MASS)) {
+                /* Muon parameters */
+                static const double tmp[7][8] = {
+                    { 7.174409E-04, -0.2436045, -0.2942209, -0.1658391,
+                      -0.05227727, -9.328318E-03, -8.751909E-04,
+                      -3.343145E-05 },
+                    { 1.7132E-03, -0.5756682, -0.68615, -0.3825223, -0.1196482,
+                      -0.02124577, -1.987841E-03, -7.584046E-05 },
+                    { 4.082304E-03, -1.553973, -2.004218, -1.207777,
+                      -0.4033373, -0.07555636, -7.399682E-03, -2.943396E-04 },
+                    { 8.628455E-03, -3.251305, -3.999623, -2.33175, -0.7614046,
+                      -0.1402496, -0.01354059, -5.3155E-04 },
+                    { 0.01244159, -5.976818, -6.855045, -3.88775, -1.270677,
+                      -0.2370768, -0.02325118, -9.265136E-04 },
+                    { 0.02204591, -9.495636, -10.05705, -5.636636, -1.883845,
+                      -0.3614146, -0.03629659, -1.473118E-03 },
+                    { 0.03228755, -13.92918, -14.37232, -8.418409, -2.948277,
+                      -0.5819409, -0.059275, -2.419946E-03 }
+                };
+                table = tmp;
+        } else {
+                /* Tau parameters */
+                static const double tmp[7][8] = {
+                    { -1.269205E-04, -0.01563032, 0.04693954, 0.05338546,
+                      0.02240132, 4.658909E-03, 4.822364E-04, 1.9837E-05 },
+                    { -2.843877E-04, -0.03589573, 0.1162945, 0.130975, 0.05496,
+                      0.01146659, 1.193018E-03, 4.940182E-05 },
+                    { -5.761546E-04, -0.07768545, 0.3064255, 0.3410341,
+                      0.144945, 0.03090286, 3.302773E-03, 1.409573E-04 },
+                    { -1.195445E-03, -0.157375, 0.7041273, 0.7529364, 0.3119032,
+                      0.06514455, 6.843364E-03, 2.877909E-04 },
+                    { -1.317386E-03, -0.2720009, 1.440518, 1.425927, 0.5576727,
+                      0.1109868, 0.011191, 4.544877E-04 },
+                    { -9.689228E-15, -0.4186136, 2.533355, 2.284968, 0.8360727,
+                      0.1589677, 0.015614, 6.280818E-04 },
+                    { -6.4595E-15, -0.8045046, 3.217832, 2.5487, 0.8085682,
+                      0.1344223, 0.01173827, 4.281932E-04 }
+                };
+                table = tmp;
+        }
+
+        const double E = K + m;
+        if ((E > 1E+02) && (v > 1E-07)) {
+                const double lE = log10(E) - 3.;
+                const double lv = log10(v);
+                int iE = (int)lE;
+
+                double f[2] = {0., 0.};
+                int i;
+                for (i = 0; i < 2; i++, iE++) {
+                        int j;
+                        if (iE > 6) {
+                                j = 6;
+                        } else if (iE >= 0) {
+                                j = iE;
+                        } else {
+                                j = iE;
+                        }
+
+                        const double x = (lv > -6.) ? lv : -6.;
+                        const double * const t = &table[j][0];
+                        f[i] = t[0] + x * (t[1] + x * (t[2] + x * (t[3] +
+                            x * (t[4] + x * (t[5] + x * (t[6] + x * t[7]))))));
+                        if (lv < -6.) {
+                                f[i] *= 7 + lv;
+                        }
+                        if (lE < 0) {
+                                f[i] *= 1. + lE;
+                        }
+                }
+
+                const double h = lE - (int)lE;
+                double fi;
+                if ((f[0] > 0.) && (f[1] > 0.)) {
+                        /* log-log interpolation */
+                        fi = exp(log(f[0]) * (1. - h) + log(f[1]) * h);
+                } else {
+                        /* log-linear interpolation */
+                        fi = f[0] * (1. - h) + f[1] * h;
+                }
+                aux += A * fi / v;
+        }
+
+        return aux * 1E-34 / (K + m);
+
+#undef ALPHA
 }
 
 /** Data structure for caracterising a DCS model */
@@ -12268,7 +12470,8 @@ static struct dcs_entry dcs_stack[DCS_STACK_SIZE] = {
     {PUMAS_PROCESS_PAIR_PRODUCTION, "KKP",  &dcs_pair_production_KKP},
     {PUMAS_PROCESS_PAIR_PRODUCTION, "SSR",  &dcs_pair_production_SSR},
     {PUMAS_PROCESS_PHOTONUCLEAR,    "DRSS", &dcs_photonuclear_DRSS},
-    {PUMAS_PROCESS_PHOTONUCLEAR,    "BM",   &dcs_photonuclear_BM}
+    {PUMAS_PROCESS_PHOTONUCLEAR,    "BM",   &dcs_photonuclear_BM},
+    {PUMAS_PROCESS_PHOTONUCLEAR,    "BB",   &dcs_photonuclear_BB}
 };
 
 /** Mapping between enum and names for processes */

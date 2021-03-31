@@ -1451,6 +1451,10 @@ START_TEST(test_api_dcs)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_ptr_ne(dcs_pn, dcs);
 
+        pumas_dcs_get(PUMAS_PROCESS_PHOTONUCLEAR, "BB", &dcs);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_ptr_ne(dcs_pn, dcs);
+
         /* Test the setter */
         pumas_dcs_register(PUMAS_PROCESS_BREMSSTRAHLUNG, "dummy0", &dummy_dcs);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
@@ -1536,6 +1540,13 @@ START_TEST(test_api_dcs)
             dcs_pp(Z, A, m, E - m, q) * E * k, 0.5, 0.2);
         ck_assert_double_eq_tol(
             dcs_pn(Z, A, m, E - m, q) * E * k, 2E-03, 5E-04);
+
+        pumas_dcs_get(PUMAS_PROCESS_PHOTONUCLEAR, "BB", &dcs);
+        E = 3E+02;
+        ck_assert_double_nonnan(dcs(Z, A, m, E - m, 3E-07 * E));
+        E = 1E+10;
+        ck_assert_double_nonnan(dcs(Z, A, m, E - m, 3E-07 * E));
+        ck_assert_double_nonnan(dcs(Z, A, m, E - m, 0.5 * E));
 
         /* Free the data */
         pumas_physics_destroy(&physics);
