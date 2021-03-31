@@ -11705,7 +11705,7 @@ static inline double dcs_pair_production_d2_SSR(
  * @param A       The mass number of the target atom.
  * @param mu      The projectile rest mass, in GeV
  * @param K       The projectile initial kinetic energy.
- * @param q       The kinetic energy lost to the photon.
+ * @param q       The energy lost to the photon.
  * @return The corresponding value of the atomic DCS, in m^2 / GeV.
  *
  * Mixed implementation. The DDCS of PROPOSAL is used but the numeric
@@ -11821,28 +11821,6 @@ static inline double dcs_photonuclear_f2p_ALLM97(double x, double Q2)
         return Q2 / (Q2 + m02) * (F2P + F2R);
 }
 
-/* The F2 nuclear structure function following Dutta et al.
- *
- * @param A            The atomic charge number.
- * @param A            The atomic weight.
- * @param F2p          The proton structure function, F2.
- * @param shadowing    The shadowing factor.
- * @param x            The Bjorken x parameter.
- * @return The corresponding value of the nuclear structure function, F2a.
- *
- * The F2a structure function for a nucleus of charge number Z and atomic
- * weight A is computed according to Dutta et al.
- *
- * References:
- *      Dutta et al., Phys.Rev. D63 (2001) 094020 [arXiv:hep-ph/0012350].
- */
-static inline double dcs_photonuclear_f2a_DRSS(
-    double Z, double A, double F2p, double shadowing, double x)
-{
-        return F2p * shadowing * (Z + (A - Z) *
-            (1.0 + x * (-1.85 + x * (2.45 + x * (-2.35 + x)))));
-}
-
 /* Shadowing factor following Dutta et al.
  *
  * @param A       The atomic charge number.
@@ -11869,6 +11847,214 @@ static inline double dcs_photonuclear_shadowing_DRSS(
                 return 1.;
 }
 
+/* The F2 nuclear structure function following Dutta et al.
+ *
+ * @param Z            The atomic charge number.
+ * @param A            The atomic weight.
+ * @param F2p          The proton structure function, F2.
+ * @param shadowing    The shadowing factor.
+ * @param x            The Bjorken x parameter.
+ * @return The corresponding value of the nuclear structure function, F2a.
+ *
+ * The F2a structure function for a nucleus of charge number Z and atomic
+ * weight A is computed according to Dutta et al.
+ *
+ * References:
+ *      Dutta et al., Phys.Rev. D63 (2001) 094020 [arXiv:hep-ph/0012350].
+ */
+static inline double dcs_photonuclear_f2a_DRSS(
+    double Z, double A, double F2p, double shadowing, double x)
+{
+        return F2p * shadowing * (Z + (A - Z) *
+            (1.0 + x * (-1.85 + x * (2.45 + x * (-2.35 + x)))));
+}
+
+/* Wood-Saxon potential.
+ *
+ * @param Z       The atomic charge number.
+ * @param A       The atomic weight.
+ * @return The corresponding value of the Wood-Saxon potential.
+ *
+ * PROPOSAL implementation converted to C
+ * Ref: https://github.com/tudo-astroparticlephysics/PROPOSAL/blob/master/private/PROPOSAL/medium/Components.cxx
+ */
+static inline double dcs_wood_saxon(double Z, double A)
+{
+        if (Z == 1) {
+                return 0.;
+        } else {
+                /* see Butkevich, Mikheyev JETP 95 (2002), 11 eq. 45-47 */
+                double r0 = pow(A, 1. / 3.);
+                r0 = 1.12 * r0 - 0.86 / r0;
+
+                const double a = 0.54;
+                const double zeta3 = 1.202056903159594;
+                const double V = a * (r0 * r0 * log(2.) +
+                    a * r0 * M_PI * M_PI / 6. + a * a * 1.5 * zeta3);
+
+                return 1. - 4. * M_PI * 0.17 * V / A;
+        }
+}
+
+/* Shadowing factor following Butkevich & Mikheyev.
+ *
+ * @param Z       The atomic charge number.
+ * @param A       The atomic weight.
+ * @param x       The Bjorken x parameter.
+ * @param q       The energy lost.
+ * @return The corresponding value of the shadowing factor.
+ *
+ * The F2a structure function for a nucleus of charge number Z and atomic
+ * weight A is computed according to Butkevich & Mikheyev.
+ *
+ * References:
+ *      Butkevich & Mikheyev, Soviet Journal of Experimental and Theoretical
+ *          Physics 95 (2002) 11
+ *
+ * PROPOSAL implementation converted to C
+ * Ref: https://github.com/tudo-astroparticlephysics/PROPOSAL/blob/master/private/PROPOSAL/crossection/parametrization/Photonuclear.cxx
+ */
+static inline double dcs_photonuclear_shadowing_BM(
+    double Z, double A, double x, double q)
+{
+        if (Z == 1.) return 1;
+
+        if (x > 0.3) {
+                const double Mb = 0.437;
+                const double la = 0.5;
+                const double x2 = 0.278;
+
+                const double au = 1. / (1. - x);
+                const double ac = 1. / (1. - x2);
+                /* eq. 48 */
+                const double MPI = 0.13957018;
+                const double M = ((A - Z) * NEUTRON_MASS + Z * PROTON_MASS) / A;
+                const double Aosc = (1. - la * x) *
+                    (au - ac - MPI / M  * (au * au - ac * ac));
+                /* eq. 44 */
+                return 1. - Mb * dcs_wood_saxon(Z, A) * Aosc;
+        } else {
+                const double M1 = 0.129;
+                const double M2 = 0.456;
+                const double M3 = 0.553;
+
+                const double ws = dcs_wood_saxon(Z, A);
+                const double m1 = M1 * ws;
+                const double m2 = M2 * ws;
+                const double m3 = M3 * ws;
+                /* eq. 53 */
+                const double sgn = 112.2 * (0.609 * pow(q, 0.0988) +
+                    1.037 * pow(q, -0.5944));
+
+                /* Bezrukav Bugaev shadow */
+                const double tmp = 0.00282 * pow(A, 1. / 3.) * sgn;
+                double G = (3. / tmp) * (0.5 + ((1. + tmp) * exp(-tmp) - 1.) /
+                    (tmp * tmp));
+
+                /* eq. 55 */
+                G  = 0.75 * G + 0.25;
+                const double x0 = pow(G / (1. + m2), 1. / m1);
+
+                if (x >= x0) {
+                        /* eq. 49 */
+                        return pow(x, m1) * (1 + m2) * (1 - m3 * x);
+                } else {
+                        return G;
+                }
+        }
+}
+
+/* The F2 nuclear structure function following Butkevich & Mikheyev.
+ *
+ * @param Z            The atomic charge number.
+ * @param A            The atomic weight.
+ * @param shadowing    The shadowing factor.
+ * @param x            The Bjorken x parameter.
+ * @param Q2           The negative four momentum squared, in GeV.
+ * @return The corresponding value of the nuclear structure function, F2a.
+ *
+ * The F2a structure function for a nucleus of charge number Z and atomic
+ * weight A is computed according Butkevich & Mikheyev.
+ *
+ * References:
+ *      Butkevich & Mikheyev, Soviet Journal of Experimental and Theoretical
+ *          Physics 95 (2002) 11
+ *
+ * PROPOSAL implementation converted to C
+ * Ref: https://github.com/tudo-astroparticlephysics/PROPOSAL/blob/master/private/PROPOSAL/crossection/parametrization/PhotoQ2Integration.cxx
+ */
+static inline double dcs_photonuclear_f2a_BM(
+    double Z, double A, double shadowing, double x, double Q2)
+{
+        Q2 *= 1E+06; /*  GeV^2 to MeV^2*/
+
+        const double a = 0.2513E+06;
+        const double b = 0.6186E+06;
+        const double c = 3.0292E+06;
+        const double d = 1.4817E+06;
+        const double intercept_pomeron = 0.0988;
+        const double intercept_reggeon = 0.4056;
+        const double tau = 1.8152;
+        const double A_s = 0.12;
+        const double B_up = 1.2437;
+        const double B_down = 0.1853;
+
+        /* Contribution of Seaquarks and Gluons (called Singlet Term)
+         * eq. 26
+         * n(Q^2) = 1.5 (1 + \frac{Q^2}{Q^2 + c})
+         */
+        const double n = 1.5 * (1. + Q2 / (Q2 + c));
+        /* eq. 25
+         * \Delta(Q^2) = \Delta_0 (1 + \frac{2 Q^2}{Q^2 + d})
+         */
+        const double dl = intercept_pomeron * (1. + 2. * Q2 / (Q2 + d));
+        /* eq. 24
+         * F_{2, Proton} = A_s x^{-\Delta} (1 - x)^{n + 4}
+         *                 (\frac{Q^2}{Q^2 + a})^{1 + \Delta}
+         */
+        double aux = A_s * pow(x, -dl) * pow(Q2 / (Q2 + a), 1. + dl);
+        const double F_proton_singlet = aux * pow(1. - x, n + 4.);
+        /* eq. 37
+         * F_{2, Neutron} = A_s x^{-\Delta} (1 - x)^{n + \tau}
+         *                  (\frac{Q^2}{Q^2 + a})^{1 + \Delta}
+         */
+        const double F_neutron_singlet = aux * pow(1. - x, n + tau);
+        /* Contribution of Valence quarks (called non-Singlet Term)
+         * splitted into Up quark and down quark contributions
+         * eq. 29
+         * xU_v = B_{up} x^{1 - \alpha_{Reggeon}} (1 - x)^{n}
+         *        (\frac{Q^2}{Q^2 + b})^{\alpha_{Reggeon}}
+         */
+        aux = pow(x, 1. - intercept_reggeon) * pow(1. - x, n) *
+            pow(Q2 / (Q2 + b), intercept_reggeon);
+        const double Up_valence = B_up * aux;
+        /* eq. 30
+         * xD_v = B_{down} x^{1 - \alpha_{Reggeon}} (1 - x)^{n + 1}
+         *        (\frac{Q^2}{Q^2 + b})^{\alpha_{Reggeon}}
+         */
+        const double Down_valence = B_down * aux * (1. - x);
+        /* eq. 28
+         * F_{2, Proton, non-Singlet} = xU_v + xD_v
+         */
+        const double F_proton_non_singlet = Up_valence + Down_valence;
+        /* eq. 36
+         * F_{2, Neutron, non-Singlet} = \frac{1}{4} xU_v + 4 xD_v
+         */
+        const double F_neutron_non_singlet = Up_valence / 4. +
+            Down_valence * 4.;
+        /* eq. 23
+         * F_{2, i} = F_{2, i, Singlet} + F_{2, i, non-Singlet}
+         */
+        const double structure_function_proton =
+            F_proton_singlet + F_proton_non_singlet;
+        const double structure_function_neutron =
+            F_neutron_singlet + F_neutron_non_singlet;
+
+        /* F_{2, nucleus} = G (Z F_{2, Proton} + (A-Z) F_{2, Neutron}) */
+        return shadowing * (Z * structure_function_proton +
+            (A - Z) * structure_function_neutron);
+}
+
 /** The doubly differential cross sections d^2S/(dq*dQ2) for photonuclear
  * interactions following Dutta et al.
  *
@@ -11883,7 +12069,7 @@ static inline double dcs_photonuclear_shadowing_DRSS(
  * References:
  *      Dutta et al., Phys.Rev. D63 (2001) 094020 [arXiv:hep-ph/0012350].
  */
-static inline double dcs_photonuclear_d2_DRSS(
+static double dcs_photonuclear_d2_DRSS(
     double Z, double A, double ml, double K, double q, double Q2)
 {
         const double cf = 2.6056342605319227E-35;
@@ -11906,24 +12092,66 @@ static inline double dcs_photonuclear_d2_DRSS(
         return cf * F2A * dds / q;
 }
 
+/** The doubly differential cross sections d^2S/(dq*dQ2) for photonuclear
+ * interactions following Butkevich & Mikheyev.
+ *
+ * @param Z       The target charge number.
+ * @param A       The target atomic weight.
+ * @param ml      The projectile mass.
+ * @param K       The projectile initial kinetic energy.
+ * @param q       The kinetic energy lost to the photon.
+ * @param Q2      The negative four momentum squared.
+ * @return The doubly differential cross section in m^2/kg/GeV^3.
+ *
+ * References:
+ *      Butkevich & Mikheyev, Soviet Journal of Experimental and Theoretical
+ *          Physics 95 (2002) 11
+ *
+ * PROPOSAL implementation converted to C
+ * Ref: https://github.com/tudo-astroparticlephysics/PROPOSAL/blob/master/private/PROPOSAL/crossection/parametrization/PhotoQ2Integration.cxx
+ */
+static double dcs_photonuclear_d2_BM(
+    double Z, double A, double ml, double K, double q, double Q2)
+{
+        const double cf = 2.6056342605319227E-35;
+        const double M = 0.5 * (PROTON_MASS + NEUTRON_MASS);
+        const double E = K + ml;
+
+        const double y = q / E;
+        const double x = 0.5 * Q2 / (M * q);
+        const double shadowing = dcs_photonuclear_shadowing_BM(Z, A, x, q);
+        const double F2A = dcs_photonuclear_f2a_BM(Z, A, shadowing, x, Q2);
+        const double R = 0.25;
+
+        const double dds = (1 - y +
+                               0.5 * (1 - 2 * ml * ml / Q2) *
+                                   (y * y + Q2 / (E * E)) / (1 + R)) /
+                (Q2 * Q2) -
+            0.25 / (E * E * Q2);
+
+        return cf * F2A * dds / q;
+}
+
+/** Generic doubly differential photonuclear cross-section. */
+typedef double dcs_photonuclear_d2_t(
+    double Z, double A, double ml, double K, double q, double Q2);
+
 /**
- * The photonuclear differential cross section following Dutta et al.
+ * The photonuclear differential cross section by integration over Q2.
  *
  * @param Z       The charge number of the target atom.
  * @param A       The mass number of the target atom.
- * @param mu      The projectile rest mass, in GeV
+ * @param ml      The projectile rest mass, in GeV
  * @param K       The projectile initial kinetic energy.
  * @param q       The kinetic energy lost to the photon.
+ * @param ddcs    The doubly differential cross-section.
  * @return The corresponding value of the atomic DCS, in m^2 / GeV.
  *
- * The photonuclear differential cross-section is computed following DRSS,
- * with ALLM97 parameterisation of the structure function F2.
- *
- * References:
- *      Dutta et al., Phys.Rev. D63 (2001) 094020 [arXiv:hep-ph/0012350].
+ * The photonuclear differential cross-section is computed by integration over
+ * Q2 of the doubly differential cross-section using a Gaussian quadrature.
  */
-static double dcs_photonuclear_DRSS(
-    double Z, double A, double ml, double K, double q)
+inline static double dcs_photonuclear_integrated(double Z, double A, double ml,
+    double K, double q, dcs_photonuclear_d2_t * ddcs)
 {
         if ((Z <= 0) || (A <= 0) || (ml <= 0) || (K <= 0) || (q <= 0))
                 return 0.;
@@ -11941,7 +12169,7 @@ static double dcs_photonuclear_DRSS(
                 0.3123470770400029, 0.3123470770400029, 0.2606106964029354,
                 0.2606106964029354 };
 
-        const double M = 0.931494;
+        const double M = 0.5 * (NEUTRON_MASS + PROTON_MASS);
         const double mpi = 0.134977;
         const double E = K + ml;
 
@@ -11967,14 +12195,57 @@ static double dcs_photonuclear_DRSS(
         int i;
         for (i = 0; i < N_GQ; i++) {
                 const double Q2 = exp(pQ2c + 0.5 * dpQ2 * xGQ[i]);
-                ds += dcs_photonuclear_d2_DRSS(Z, A, ml, K, q, Q2) *
-                    Q2 * wGQ[i];
+                ds += ddcs(Z, A, ml, K, q, Q2) * Q2 * wGQ[i];
         }
 
         if (ds < 0.) ds = 0.;
         return 0.5 * ds * dpQ2;
 
 #undef N_GQ
+}
+
+/**
+ * The photonuclear differential cross section following Dutta et al.
+ *
+ * @param Z       The charge number of the target atom.
+ * @param A       The mass number of the target atom.
+ * @param m       The projectile rest mass, in GeV
+ * @param K       The projectile initial kinetic energy.
+ * @param q       The kinetic energy lost to the photon.
+ * @return The corresponding value of the atomic DCS, in m^2 / GeV.
+ *
+ * The photonuclear differential cross-section is computed following DRSS,
+ * with ALLM97 parameterisation of the structure function F2.
+ *
+ * References:
+ *      Dutta et al., Phys.Rev. D63 (2001) 094020 [arXiv:hep-ph/0012350].
+ */
+static double dcs_photonuclear_DRSS(double Z, double A, double m,
+    double K, double q)
+{
+        return dcs_photonuclear_integrated(
+            Z, A, m, K, q, &dcs_photonuclear_d2_DRSS);
+}
+
+/**
+ * The photonuclear differential cross section following Butkevich & Mikheyev.
+ *
+ * @param Z       The charge number of the target atom.
+ * @param A       The mass number of the target atom.
+ * @param m       The projectile rest mass, in GeV
+ * @param K       The projectile initial kinetic energy.
+ * @param q       The kinetic energy lost to the photon.
+ * @return The corresponding value of the atomic DCS, in m^2 / GeV.
+ *
+ * References:
+ *      Butkevich & Mikheyev, Soviet Journal of Experimental and Theoretical
+ *          Physics 95 (2002) 11
+ */
+static double dcs_photonuclear_BM(double Z, double A, double m,
+    double K, double q)
+{
+        return dcs_photonuclear_integrated(
+            Z, A, m, K, q, &dcs_photonuclear_d2_BM);
 }
 
 /** Data structure for caracterising a DCS model */
@@ -11996,7 +12267,8 @@ static struct dcs_entry dcs_stack[DCS_STACK_SIZE] = {
     {PUMAS_PROCESS_BREMSSTRAHLUNG,  "SSR",  &dcs_bremsstrahlung_SSR},
     {PUMAS_PROCESS_PAIR_PRODUCTION, "KKP",  &dcs_pair_production_KKP},
     {PUMAS_PROCESS_PAIR_PRODUCTION, "SSR",  &dcs_pair_production_SSR},
-    {PUMAS_PROCESS_PHOTONUCLEAR,    "DRSS", &dcs_photonuclear_DRSS}
+    {PUMAS_PROCESS_PHOTONUCLEAR,    "DRSS", &dcs_photonuclear_DRSS},
+    {PUMAS_PROCESS_PHOTONUCLEAR,    "BM",   &dcs_photonuclear_BM}
 };
 
 /** Mapping between enum and names for processes */

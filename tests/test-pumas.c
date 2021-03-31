@@ -1447,6 +1447,10 @@ START_TEST(test_api_dcs)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_ptr_eq(dcs_pn, dcs);
 
+        pumas_dcs_get(PUMAS_PROCESS_PHOTONUCLEAR, "BM", &dcs);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_ptr_ne(dcs_pn, dcs);
+
         /* Test the setter */
         pumas_dcs_register(PUMAS_PROCESS_BREMSSTRAHLUNG, "dummy0", &dummy_dcs);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
@@ -3325,8 +3329,8 @@ START_TEST(test_hybrid_straight)
                 pumas_context_transport(context, state, event, media);
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_le(state->energy, context->limit.energy);
-                ck_assert_double_le(state->distance, d - d1);
-                ck_assert_double_le(state->grammage, X - X1);
+                ck_assert_double_le(state->distance, d - d1 + FLT_EPSILON);
+                ck_assert_double_le(state->grammage, X - X1 + FLT_EPSILON);
                 ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
                 ck_assert_double_eq_tol(
                     state->weight, exp(-state->time / ctau), FLT_EPSILON);
@@ -3509,8 +3513,8 @@ START_TEST(test_hybrid_straight)
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_eq(state->charge, -1.);
                 ck_assert_double_ge(state->energy, context->limit.energy);
-                ck_assert_double_le(state->distance, d - d1);
-                ck_assert_double_le(state->grammage, X - X1);
+                ck_assert_double_le(state->distance, d - d1 + FLT_EPSILON);
+                ck_assert_double_le(state->grammage, X - X1 + FLT_EPSILON);
                 ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
                 ck_assert_double_eq(state->position[0], 0.);
                 ck_assert_double_eq(state->position[1], 0.);
