@@ -40,7 +40,7 @@
 #include <string.h>
 
 /*  For debugging with gdb, on linux. */
-#define GDB_MODE 0
+#define GDB_MODE 1
 #if (GDB_MODE)
 #ifndef __USE_GNU
 #define __USE_GNU
@@ -11642,25 +11642,25 @@ static inline double dcs_pair_production_d2_SSR(
 
         double Le1, Le2;
         if (De / Be > 0.) {
-                const double Xe = exp(-De / Be);
-                Le1 = log(rad_log * Z13 * sqrt(1. + xi) /
+                const long double Xe = expl(-De / Be);
+                Le1 = logl(rad_log * Z13 * sqrt(1. + xi) /
                     (Xe + 2. * ME * exp(0.5) * rad_log * Z13 * (1. + xi) /
                     (energy * v * (1. - rho2)))) - De / Be -
                     0.5 * log(Xe + pow(ME / m * d_n, 2.) * (1. + xi));
 
-                Le2 = log(rad_log * Z13 * exp(-1. / 6.) * sqrt(1 + xi) /
+                Le2 = logl(rad_log * Z13 * exp(-1. / 6.) * sqrt(1 + xi) /
                     (Xe + 2. * ME * exp(1. / 3.) * rad_log * Z13 * (1. + xi) /
                     (energy * v * (1. - rho2)))) - De / Be -
                     0.5 * log(Xe + pow(ME / m * d_n, 2.) *
                     exp(-1. / 3.) * (1. + xi));
         } else {
-                const double Xe_inv = exp(De / Be);
-                Le1 = log(rad_log * Z13 * sqrt(1. + xi) /
+                const long double Xe_inv = expl(De / Be);
+                Le1 = logl(rad_log * Z13 * sqrt(1. + xi) /
                     (1. + Xe_inv * 2. * ME * exp(0.5) * rad_log * Z13 *
                     (1. + xi) / (energy * v * (1. - rho2)))) - 0.5 * De / Be -
                     0.5 * log(1. + Xe_inv * pow(ME / m * d_n, 2.) * (1. + xi));
 
-                Le2 = log(rad_log * Z13 * exp(-1. / 6.) * sqrt(1 + xi) /
+                Le2 = logl(rad_log * Z13 * exp(-1. / 6.) * sqrt(1 + xi) /
                     (1. + Xe_inv * 2. * ME * exp(1. / 3.) * rad_log * Z13 *
                     (1. + xi) / (energy * v * (1. - rho2)))) - 0.5 * De / Be -
                     0.5 * log(1. + Xe_inv * pow(ME / m * d_n, 2.) *
@@ -11691,19 +11691,19 @@ static inline double dcs_pair_production_d2_SSR(
 
         double Lm1, Lm2;
         if (Dm / Bm > 0.) {
-                const  double Xm = exp(-Dm / Bm);
-                Lm1 = log(Xm * m / ME * rad_log * Z13 / d_n /
+                const long double Xm = expl(-Dm / Bm);
+                Lm1 = logl(Xm * m / ME * rad_log * Z13 / d_n /
                     (Xm + 2. * ME * exp(0.5) * rad_log * Z13 * (1. + xi) /
                     (energy * v * (1. - rho2))));
-                Lm2 = log(Xm * m / ME * rad_log * Z13 / d_n /
+                Lm2 = logl(Xm * m / ME * rad_log * Z13 / d_n /
                     (Xm + 2. * ME * exp(1. / 3.) * rad_log * Z13 * (1. + xi) /
                     (energy * v * (1. - rho2))));
         } else {
-                const double Xmv = exp(Dm / Bm);
-                Lm1 = log(m / ME * rad_log * Z13 / d_n /
+                const long double Xmv = expl(Dm / Bm);
+                Lm1 = logl(m / ME * rad_log * Z13 / d_n /
                     (1. + 2. * ME * exp(0.5) * rad_log * Z13 * (1. + xi) /
                     (energy * v * (1. - rho2)) * Xmv));
-                Lm2 = log(m / ME * rad_log * Z13 / d_n /
+                Lm2 = logl(m / ME * rad_log * Z13 / d_n /
                     (1. + 2. * ME * exp(1. / 3.) * rad_log * Z13 * (1. + xi) /
                     (energy * v * (1. - rho2)) * Xmv));
         }
