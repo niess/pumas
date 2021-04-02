@@ -34,7 +34,7 @@ if (${CMAKE_BUILD_TYPE} MATCHES "Test")
         COMMENT "Running test(s)")
 else ()
     add_custom_target (test DEPENDS test-pumas
-        COMMAND test-pumas ${__args} 
+        COMMAND test-pumas ${__args}
 
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
         COMMENT "Running test(s)")

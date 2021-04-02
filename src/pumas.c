@@ -40,7 +40,9 @@
 #include <string.h>
 
 /*  For debugging with gdb, on linux. */
-#define GDB_MODE 1
+#ifndef GDB_MODE
+#define GDB_MODE 0
+#endif
 #if (GDB_MODE)
 #ifndef __USE_GNU
 #define __USE_GNU
@@ -1131,6 +1133,7 @@ static double math_rms(double a, double b);
 /**
  * A flag for floating point exceptions.
  */
+static int fe_initialised = 0;
 static int fe_status;
 #endif
 
@@ -1219,9 +1222,13 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         *physics_ptr = NULL;
 #if (GDB_MODE)
         /* Save the floating points exceptions status and enable them. */
-        fe_status = fegetexcept();
-        feclearexcept(FE_ALL_EXCEPT);
-        feenableexcept(FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW | FE_UNDERFLOW);
+        if (!fe_initialised) {
+                fe_status = fegetexcept();
+                feclearexcept(FE_ALL_EXCEPT);
+                feenableexcept(
+                    FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW | FE_UNDERFLOW);
+                fe_initialised = 1;
+        }
 #endif
         FILE * fid_mdf = NULL;
         struct mdf_buffer * mdf = NULL;
@@ -1626,9 +1633,13 @@ enum pumas_return pumas_physics_load(
                     PUMAS_RETURN_PATH_ERROR, "invalid input stream (null)");
 #if (GDB_MODE)
         /* Save the floating points exceptions status and enable them. */
-        fe_status = fegetexcept();
-        feclearexcept(FE_ALL_EXCEPT);
-        feenableexcept(FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW | FE_UNDERFLOW);
+        if (!fe_initialised) {
+                fe_status = fegetexcept();
+                feclearexcept(FE_ALL_EXCEPT);
+                feenableexcept(
+                    FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW | FE_UNDERFLOW);
+                fe_initialised = 1;
+        }
 #endif
         /* Check the binary dump tag. */
         struct pumas_physics * physics = NULL;
@@ -4012,9 +4023,13 @@ enum pumas_event transport_with_csda(const struct pumas_physics * physics,
                         }
                 }
         } else {
-                xf = xB + xi;
-                kf = cel_kinetic_energy(
-                    physics, context, PUMAS_MODE_CSDA, material, xf);
+                if (xB == DBL_MAX) {
+                        kf = DBL_MAX;
+                } else {
+                        xf = xB + xi;
+                        kf = cel_kinetic_energy(
+                            physics, context, PUMAS_MODE_CSDA, material, xf);
+                }
                 if (context->event & PUMAS_EVENT_LIMIT_ENERGY) {
                         if (ki >= context->limit.energy)
                                 return PUMAS_EVENT_LIMIT_ENERGY;

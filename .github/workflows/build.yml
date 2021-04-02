@@ -20,7 +20,7 @@ jobs:
         include:
         - os: ubuntu-latest
           OS_TAG: Linux
-          BUILD_OPTS: -DCMAKE_BUILD_TYPE=Test -DPUMAS_BUILD_TEST=true
+          BUILD_OPTS: -DCMAKE_BUILD_TYPE=Test -DPUMAS_BUILD_TEST=true -DPUMAS_USE_GDB=True
         - os: macos-latest
           OS_TAG: OSX
           BUILD_OPTS: -DCMAKE_BUILD_TYPE=Release -DPUMAS_BUILD_EXAMPLES=true
