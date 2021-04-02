@@ -4024,6 +4024,7 @@ enum pumas_event transport_with_csda(const struct pumas_physics * physics,
                 }
         } else {
                 if (xB == DBL_MAX) {
+                        xf = xB;
                         kf = DBL_MAX;
                 } else {
                         xf = xB + xi;
@@ -12319,11 +12320,13 @@ inline static double dcs_photonuclear_phn_Kokoulin(double q)
  *
  * References:
  *      Bezrukov, Bugaev, Sov. J. Nucl. Phys. 33 (1981), 635.
+ *      Kokoulin, Nucl. Phys. B Proc. Sup. 70 (1999) 475.
+ *      Bugaev & Shlepin, Phys.Rev. D67 (2003) 034027.
  *
  * PROPOSAL implementation converted to C
  * Ref: https://github.com/tudo-astroparticlephysics/PROPOSAL/blob/master/private/PROPOSAL/crossection/parametrization/PhotoRealPhotonAssumption.cxx
  */
-static double dcs_photonuclear_BB(
+static double dcs_photonuclear_BBKS(
     double Z, double A, double m, double K, double q)
 {
 #define ALPHA 0.0072973525664
@@ -12486,7 +12489,7 @@ static struct dcs_entry dcs_stack[DCS_STACK_SIZE] = {
     {PUMAS_PROCESS_PAIR_PRODUCTION, "SSR",  &dcs_pair_production_SSR},
     {PUMAS_PROCESS_PHOTONUCLEAR,    "DRSS", &dcs_photonuclear_DRSS},
     {PUMAS_PROCESS_PHOTONUCLEAR,    "BM",   &dcs_photonuclear_BM},
-    {PUMAS_PROCESS_PHOTONUCLEAR,    "BB",   &dcs_photonuclear_BB}
+    {PUMAS_PROCESS_PHOTONUCLEAR,    "BBKS", &dcs_photonuclear_BBKS}
 };
 
 /** Mapping between enum and names for processes */

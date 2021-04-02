@@ -1451,7 +1451,7 @@ START_TEST(test_api_dcs)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_ptr_ne(dcs_pn, dcs);
 
-        pumas_dcs_get(PUMAS_PROCESS_PHOTONUCLEAR, "BB", &dcs);
+        pumas_dcs_get(PUMAS_PROCESS_PHOTONUCLEAR, "BBKS", &dcs);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_ptr_ne(dcs_pn, dcs);
 
@@ -1541,7 +1541,7 @@ START_TEST(test_api_dcs)
         ck_assert_double_eq_tol(
             dcs_pn(Z, A, m, E - m, q) * E * k, 2E-03, 5E-04);
 
-        pumas_dcs_get(PUMAS_PROCESS_PHOTONUCLEAR, "BB", &dcs);
+        pumas_dcs_get(PUMAS_PROCESS_PHOTONUCLEAR, "BBKS", &dcs);
         E = 3E+02;
         ck_assert_double_nonnan(dcs(Z, A, m, E - m, 3E-07 * E));
         E = 1E+10;

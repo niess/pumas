@@ -654,8 +654,10 @@ struct pumas_physics_settings {
          *
          *  - "KKP": Kelner, Kokoulin & Petrukhin, Moscow Engineering Physics
          *           Inst., Moscow, 1995.
+         *
          *  - "ABB": Andreev, Bezrukov & Bugaev, Physics of Atomic Nuclei 57
          *           (1994) 2066.
+         *
          *  - "SSR": Sandrock, Soedingresko & Rhode, ICRC 2019
          *           [arXiv:1910.07050].
          *
@@ -669,6 +671,7 @@ struct pumas_physics_settings {
          *
          *  - "KKP": Kelner, Kokoulin & Petrukhin, Soviet Journal of Nuclear
          *           Physics 7 (1968) 237.
+         *
          *  - "SSR": Sandrock, Soedingresko & Rhode, ICRC 2019
          *           [arXiv:1910.07050].
          *
@@ -682,7 +685,13 @@ struct pumas_physics_settings {
          *
          *  - "DRSS": Dutta, Reno, Sarcevic & Seckel, Phys.Rev. D63 (2001)
          *            094020 [arXiv:hep-ph/0012350].
-         *  - "BB"  : Bezrukov, Bugaev, Sov. J. Nucl. Phys. 33 (1981), 635.
+         *
+         *  - "BBKS": Bezrukov, Bugaev, Sov. J. Nucl. Phys. 33 (1981), 635.
+         *            with improved photon-nucleon cross-section according to
+         *            Kokoulin, Nucl. Phys. B Proc. Sup. 70 (1999) 475 and
+         *            hard component from Bugaev & Shlepin, Phys.Rev. D67
+         *            (2003) 034027.
+         *
          *  - "BM"  : Butkevich & Mikheyev, Soviet Journal of Experimental and
          *            Theoretical Physics 95 (2002) 11.
          *
