@@ -652,8 +652,12 @@ struct pumas_physics_settings {
          *
          *  Available models are:
          *
-         *  - "KKP": Kelner, Kokoulin & Petrukhin.
-         *  - "ABB": Andreev, Bezrukov & Bugaev.
+         *  - "KKP": Kelner, Kokoulin & Petrukhin, Moscow Engineering Physics
+         *           Inst., Moscow, 1995.
+         *  - "ABB": Andreev, Bezrukov & Bugaev, Physics of Atomic Nuclei 57
+         *           (1994) 2066.
+         *  - "SSR": Sandrock, Soedingresko & Rhode, ICRC 2019
+         *           [arXiv:1910.07050].
          *
          * Setting a `NULL` value results in PUMAS default Bremsstrahlung model
          * to be used, i.e. "KKP".
@@ -663,17 +667,24 @@ struct pumas_physics_settings {
          *
          *  Available models are:
          *
-         *  - "KKP": Kelner, Kokoulin & Petrukhin.
+         *  - "KKP": Kelner, Kokoulin & Petrukhin, Soviet Journal of Nuclear
+         *           Physics 7 (1968) 237.
+         *  - "SSR": Sandrock, Soedingresko & Rhode, ICRC 2019
+         *           [arXiv:1910.07050].
          *
          * Setting a `NULL` value results in PUMAS default pair production model
          * to be used, i.e. "KKP".
          */
         const char * pair_production;
-        /** Physics model for photonuclear interactions. 
+        /** Physics model for photonuclear interactions.
          *
          *  Available models are:
          *
-         *  - "DRSS": Dutta, Reno, Sarcevic & Seckel.
+         *  - "DRSS": Dutta, Reno, Sarcevic & Seckel, Phys.Rev. D63 (2001)
+         *            094020 [arXiv:hep-ph/0012350].
+         *  - "BB"  : Bezrukov, Bugaev, Sov. J. Nucl. Phys. 33 (1981), 635.
+         *  - "BM"  : Butkevich & Mikheyev, Soviet Journal of Experimental and
+         *            Theoretical Physics 95 (2002) 11.
          *
          * Setting a `NULL` value results in PUMAS default photonuclear model to
          * be used, i.e. "DRSS".
