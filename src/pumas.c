@@ -641,7 +641,7 @@ struct pumas_physics {
  * Version tag for the physics data format. Increment whenever the
  * structure changes.
  */
-#define PHYSICS_BINARY_DUMP_TAG 5
+#define PHYSICS_BINARY_DUMP_TAG 6
 
         /** The total byte size of the shared data. */
         int size;
@@ -729,8 +729,6 @@ struct pumas_physics {
         double * material_ZoA;
         /** The mean excitation energy of a base material. */
         double * material_I;
-        /** The density effect parameters of a base material. */
-        struct pumas_physics_density_effect * material_density_effect;
         /** The properties of an atomic element . */
         struct atomic_element ** element;
         /** The composition of a base material. */
@@ -1098,6 +1096,7 @@ static double compute_dcs_integral(struct pumas_physics * physics, int mode,
     const struct atomic_element * element, double kinetic, dcs_function_t * dcs,
     double xlow, int nint);
 static void compute_ZoA(struct pumas_physics * physics, int material);
+static void compute_MEE(struct pumas_physics * physics, int material);
 static enum pumas_return compute_dcs_model(struct pumas_physics * physics,
     dcs_function_t * dcs_func, struct atomic_element * element,
     struct error_context * error_);
@@ -1233,7 +1232,7 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         FILE * fid_mdf = NULL;
         struct mdf_buffer * mdf = NULL;
         const int pad_size = sizeof(*((*physics_ptr)->data));
-#define N_DATA_POINTERS 32
+#define N_DATA_POINTERS 31
         int size_data[N_DATA_POINTERS];
 
         /* Check the particle type. */
@@ -1424,12 +1423,8 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         size_data[imem++] =
             memory_padded_size(sizeof(double) * settings.n_materials, pad_size);
         /* material_I */
-        size_data[imem++] = memory_padded_size(sizeof(double) *
-            (settings.n_materials - settings.n_composites), pad_size);
-        /* material_density_effect */
-        size_data[imem++] = memory_padded_size(
-            sizeof(struct pumas_physics_density_effect) *
-            (settings.n_materials - settings.n_composites), pad_size);
+        size_data[imem++] =
+            memory_padded_size(sizeof(double) * settings.n_materials, pad_size);
         /* element. */
         const int n_dcs = (N_DEL_PROCESSES - 1) *
             (DCS_MODEL_ORDER_P + DCS_MODEL_ORDER_Q + 1 + DCS_SAMPLING_N) *
@@ -1554,11 +1549,18 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
             PUMAS_RETURN_SUCCESS)
                 goto clean_and_exit;
 
+        /* Compute the MEE from material's composition if not set by MDF. */
+        int imat;
+        for (imat = 0; imat < physics->n_materials - physics->n_composites;
+             imat++) {
+                if (physics->material_I[imat] <= 0.)
+                        compute_MEE(physics, imat);
+        }
+
         /* All done if in dry mode. */
         if (dry_mode) goto clean_and_exit;
 
         /* Precompute the CEL integrals and the TT parameters. */
-        int imat;
         for (imat = 0; imat < physics->n_materials - physics->n_composites;
              imat++) {
                 int ikin;
@@ -2790,9 +2792,7 @@ enum pumas_return pumas_physics_material_index(
 
 enum pumas_return pumas_physics_material_properties(
     const struct pumas_physics * physics, int material, int * length,
-    double * density, double * I,
-    struct pumas_physics_density_effect * density_effect, int * components,
-    double * fractions)
+    double * density, double * I, int * components, double * fractions)
 {
         ERROR_INITIALISE(pumas_physics_material_properties);
 
@@ -2800,11 +2800,7 @@ enum pumas_return pumas_physics_material_properties(
                 return ERROR_NOT_INITIALISED();
         }
 
-        int i0 = physics->n_materials;
-        if ((I != NULL) || (density_effect != NULL)) {
-                i0 -= physics->n_composites;
-        }
-
+        const int i0 = physics->n_materials;
         if ((material < 0) || (material > i0 - 1)) {
                 return ERROR_INVALID_MATERIAL(material);
         }
@@ -2812,11 +2808,6 @@ enum pumas_return pumas_physics_material_properties(
         if (length != NULL) *length = physics->elements_in[material];
         if (density != NULL) *density = physics->material_density[material];
         if (I != NULL) *I = physics->material_I[material];
-        if (density_effect != NULL) {
-                struct pumas_physics_density_effect * const d =
-                    physics->material_density_effect + material;
-                memcpy(density_effect, d, sizeof(*density_effect));
-        }
         int i;
         for (i = 0; i < physics->elements_in[material]; i++) {
                 const struct material_component * component =
@@ -6876,32 +6867,13 @@ enum pumas_return io_parse_dedx_file(struct pumas_physics * physics, FILE * fid,
 {
         char * buffer = NULL;
 
-        /* Parse the Stenheimer coefficients from the header lines. */
-        int line = 0, read_coef = 0;
+        /* Skip the header. */
+        int line = 0;
         int i;
         for (i = 0; i < physics->n_energy_loss_header; i++) {
                 io_read_line(fid, &buffer, filename, line, error_);
                 line++;
                 if (error_->code != PUMAS_RETURN_SUCCESS) return error_->code;
-
-                if (read_coef) {
-                        double * const d =
-                            (double * const)(
-                                &physics->material_density_effect[material]);
-                        double * const I =
-                            (double * const)(
-                                &physics->material_I[material]);
-                        if (sscanf(buffer, "%lf %lf %lf %lf %lf %lf %lf",
-                            d, d + 1, d + 2, d + 3, I, d + 4, d + 5) != 7) {
-                                return ERROR_REGISTER(
-                                    PUMAS_RETURN_FORMAT_ERROR,
-                                    "could not read Sternheimer coef");
-                        }
-                        physics->material_I[material] *= 1E-09;
-                        read_coef = 0;
-                } else if (strstr(buffer, "Sternheimer coef") != NULL) {
-                        read_coef = 1;
-                }
         }
 
         /* Initialise the new table. */
@@ -7833,6 +7805,21 @@ enum pumas_return mdf_parse_materials(struct pumas_physics * physics,
                         }
                         rho *= 1E+03; /* g/cm^3 -> kg/m^3 */
                         physics->material_density[imat] = rho;
+
+                        /* Parse the MEE. */
+                        double I = 0.;
+                        if (node.at4.I != NULL) {
+                                if ((sscanf(node.at4.I, "%lf", &I) != 1)
+                                    || (I <= 0.)) {
+                                        ERROR_VREGISTER(
+                                            PUMAS_RETURN_VALUE_ERROR,
+                                            "invalid value for I [%s]",
+                                           node.at4.I);
+                                        break;
+                                }
+                                I *= 1E-09; /* eV to GeV */
+                        }
+                        physics->material_I[imat] = I;
                 }
 
                 /* Skip other closings. */
@@ -8199,6 +8186,8 @@ enum pumas_return mdf_get_node(struct mdf_buffer * mdf, struct mdf_node * node,
                                         node->at2.file = value;
                                 else if (strcmp(attr, "density") == 0)
                                         node->at3.density = value;
+                                else if (strcmp(attr, "I") == 0)
+                                        node->at4.I = value;
                                 else
                                         return ERROR_REGISTER_INVALID_XML_ATTRIBUTE(
                                             attr, "<material>", mdf->mdf_path,
@@ -8550,8 +8539,9 @@ void compute_composite_weights(struct pumas_physics * physics, int material)
                 }
         }
 
-        /* Compute the relative electron density. */
+        /* Compute the relative electron density and MEE. */
         compute_ZoA(physics, material);
+        compute_MEE(physics, material);
 }
 
 /**
@@ -9414,6 +9404,28 @@ void compute_ZoA(struct pumas_physics * physics, int material)
                 ZoA += e->Z / e->A * c->fraction;
         }
         physics->material_ZoA[material] = ZoA;
+}
+
+/**
+ * Compute or update the Mean Excitation Energy of a material.
+ *
+ * @param Physics  Handle for physics tables.
+ * @param material The material index.
+ */
+void compute_MEE(struct pumas_physics * physics, int material)
+{
+        double lnI = 0., Z = 0.;
+        struct material_component * component;
+        int iel;
+        for (iel = 0, component = physics->composition[material];
+             iel < physics->elements_in[material]; iel++, component++) {
+                struct atomic_element * e =
+                    physics->element[component->element];
+                const double nZ = component->fraction * e->Z / e->A;
+                lnI += nZ * log(e->I);
+                Z += nZ;
+        }
+        physics->material_I[material] = exp(lnI / Z);
 }
 
 /**
@@ -10678,28 +10690,472 @@ enum pumas_return pumas_physics_create_tabulation(
         return _initialise(physics, particle, mdf_path, NULL, 1, settings);
 }
 
-/* The density effect for the electronic energy loss. */
-static void electronic_density_effect(const struct pumas_physics * physics,
-    const struct pumas_physics_material * m, double kinetic, double * delta)
+/** Raw data for atomic shells
+ *
+ * References:
+ *     Carlson, Photoelectron and Auger Spectroscopy (1976),
+ *     CRC, Handbook of Chemistry and Physics (1993).
+ *
+ * Generated from Geant4 10.7 (G4AtomicShells).
+ */
+static unsigned short atomic_shell_index[] = {
+       0,    1,    2,    4,    6,    9,   12,   16,   20,   23,   27,   32,
+      37,   43,   49,   55,   61,   67,   74,   82,   90,   99,  108,  117,
+     126,  135,  144,  153,  163,  173,  183,  194,  205,  216,  227,  238,
+     250,  263,  276,  290,  304,  318,  332,  346,  360,  374,  389,  404,
+     419,  435,  451,  467,  483,  499,  516,  534,  552,  571,  590,  609,
+     628,  647,  666,  685,  705,  724,  743,  762,  781,  800,  820,  841,
+     862,  883,  904,  925,  946,  967,  988, 1010, 1032, 1055, 1078, 1101,
+    1124, 1148, 1172, 1197, 1222, 1248, 1274, 1301, 1328, 1355, 1381, 1407,
+    1434, 1461, 1487, 1513, 1539
+};
+
+static unsigned char atomic_shell_occupancy[] = {
+     1,  2,  2,  1,  2,  2,  2,  2,  1,  2,  2,  2,  2,  2,  2,  1,  2,  2,
+     2,  2,  2,  2,  5,  2,  2,  2,  4,  2,  2,  2,  4,  1,  2,  2,  2,  4,
+     2,  2,  2,  2,  4,  2,  1,  2,  2,  2,  4,  2,  2,  2,  2,  2,  4,  2,
+     3,  2,  2,  2,  4,  2,  4,  2,  2,  2,  4,  2,  5,  2,  2,  2,  4,  2,
+     2,  4,  2,  2,  2,  4,  2,  2,  4,  1,  2,  2,  2,  4,  2,  2,  4,  2,
+     2,  2,  2,  4,  2,  2,  4,  1,  2,  2,  2,  2,  4,  2,  2,  4,  2,  2,
+     2,  2,  2,  4,  2,  2,  4,  3,  2,  2,  2,  2,  4,  2,  2,  4,  4,  2,
+     2,  2,  2,  4,  2,  2,  4,  5,  2,  2,  2,  2,  4,  2,  2,  4,  6,  2,
+     2,  2,  2,  4,  2,  2,  4,  7,  2,  2,  2,  2,  4,  2,  2,  4,  4,  4,
+     2,  2,  2,  2,  4,  2,  2,  4,  4,  5,  2,  2,  2,  2,  4,  2,  2,  4,
+     4,  6,  2,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  1,  2,  2,  2,  4,
+     2,  2,  4,  4,  6,  2,  2,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  3,
+     2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  4,  2,  2,  2,  4,  2,  2,  4,
+     4,  6,  2,  5,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  2,  2,
+     2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  1,  2,  2,  2,  4,  2,  2,  4,
+     4,  6,  2,  2,  4,  2,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,
+     2,  1,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  2,  2,  2,  2,
+     2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  3,  2,  2,  2,  2,  4,  2,  2,
+     4,  4,  6,  2,  2,  4,  4,  2,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,
+     2,  4,  5,  2,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  6,  2,
+     2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  7,  2,  2,  2,  2,  4,
+     2,  2,  4,  4,  6,  2,  2,  4,  4,  4,  2,  2,  2,  2,  4,  2,  2,  4,
+     4,  6,  2,  2,  4,  4,  5,  2,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,
+     2,  4,  4,  6,  2,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,
+     6,  2,  1,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  2,
+     2,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  2,  3,  2,
+     2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  2,  4,  2,  2,  2,
+     4,  2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  2,  5,  2,  2,  2,  4,  2,
+     2,  4,  4,  6,  2,  2,  4,  4,  6,  2,  2,  4,  2,  2,  2,  4,  2,  2,
+     4,  4,  6,  2,  2,  4,  4,  6,  2,  2,  4,  1,  2,  2,  2,  4,  2,  2,
+     4,  4,  6,  2,  2,  4,  4,  6,  2,  2,  4,  2,  2,  2,  2,  4,  2,  2,
+     4,  4,  6,  2,  2,  4,  4,  6,  2,  2,  4,  1,  2,  2,  2,  2,  4,  2,
+     2,  4,  4,  6,  2,  2,  4,  4,  6,  2,  2,  4,  2,  2,  2,  2,  2,  4,
+     2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  2,  2,  4,  3,  2,  2,  2,  2,
+     4,  2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  2,  2,  4,  4,  2,  2,  2,
+     2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  2,  2,  4,  5,  2,  2,
+     2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  2,  2,  4,  6,  2,
+     2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  2,  2,  4,  7,
+     2,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  2,  2,  4,
+     2,  7,  1,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  2,
+     2,  4,  9,  2,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,  6,
+     2,  2,  4, 10,  2,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,
+     6,  2,  2,  4,  2, 11,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,
+     4,  6,  2,  2,  4,  2, 12,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,
+     4,  4,  6,  2,  2,  4, 13,  2,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,
+     2,  4,  4,  6,  2,  2,  4,  6,  8,  2,  2,  2,  2,  4,  2,  2,  4,  4,
+     6,  2,  2,  4,  4,  6,  2,  2,  4,  6,  8,  2,  1,  2,  2,  2,  4,  2,
+     2,  4,  4,  6,  2,  2,  4,  4,  6,  2,  2,  4,  6,  8,  2,  2,  2,  2,
+     2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  2,  2,  4,  6,  8,  3,
+     2,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  2,  2,  4,
+     6,  8,  4,  2,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,  6,
+     2,  2,  6,  8,  4,  5,  2,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,
+     4,  4,  6,  2,  2,  6,  8,  4,  6,  2,  2,  2,  2,  4,  2,  2,  4,  4,
+     6,  2,  2,  4,  4,  6,  2,  6,  2,  8,  4,  7,  2,  2,  2,  2,  4,  2,
+     2,  4,  4,  6,  2,  2,  4,  4,  6,  2,  6,  8,  2,  4,  9,  1,  2,  2,
+     2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  2,  6,  8,  2,  4,  4,
+     6,  1,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  2,  6,
+     8,  2,  4,  4,  6,  2,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,
+     4,  6,  2,  6,  8,  2,  4,  4,  6,  2,  1,  2,  2,  2,  4,  2,  2,  4,
+     4,  6,  2,  2,  4,  4,  6,  2,  6,  8,  2,  4,  4,  6,  2,  2,  2,  2,
+     2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  6,  2,  8,  2,  4,  4,
+     6,  2,  3,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  6,
+     8,  2,  2,  4,  4,  6,  2,  4,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,
+     2,  4,  4,  6,  6,  8,  2,  2,  4,  4,  6,  2,  2,  3,  2,  2,  2,  4,
+     2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  6,  8,  2,  2,  4,  4,  6,  2,
+     2,  4,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  6,  8,
+     2,  2,  4,  4,  6,  2,  2,  4,  1,  2,  2,  2,  4,  2,  2,  4,  4,  6,
+     2,  2,  4,  4,  6,  6,  8,  2,  2,  4,  4,  6,  2,  2,  4,  2,  2,  2,
+     2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  6,  8,  2,  2,  4,  4,
+     6,  2,  2,  4,  2,  1,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,
+     4,  6,  6,  8,  2,  2,  4,  4,  6,  2,  2,  4,  2,  2,  2,  2,  2,  4,
+     2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  6,  8,  2,  2,  4,  4,  6,  2,
+     2,  4,  2,  1,  2,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,
+     6,  6,  8,  2,  2,  4,  4,  6,  2,  2,  4,  1,  3,  2,  2,  2,  2,  4,
+     2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  6,  8,  2,  2,  4,  4,  6,  2,
+     2,  4,  4,  1,  2,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,
+     6,  6,  8,  2,  2,  4,  4,  6,  2,  2,  4,  6,  2,  2,  2,  2,  4,  2,
+     2,  4,  4,  6,  2,  2,  4,  4,  6,  6,  8,  2,  2,  4,  4,  6,  2,  2,
+     4,  7,  2,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  6,
+     8,  2,  2,  4,  4,  6,  2,  2,  4,  7,  2,  1,  2,  2,  2,  4,  2,  2,
+     4,  4,  6,  2,  2,  4,  4,  6,  6,  8,  2,  2,  4,  4,  6,  2,  2,  4,
+     8,  2,  1,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  6,
+     8,  2,  2,  4,  4,  6,  2,  2,  4, 10,  2,  2,  2,  2,  4,  2,  2,  4,
+     4,  6,  2,  2,  4,  4,  6,  6,  8,  2,  2,  4,  4,  6,  2,  2,  4, 11,
+     2,  2,  2,  2,  4,  2,  2,  4,  4,  6,  2,  2,  4,  4,  6,  6,  8,  2,
+     2,  4,  4,  6,  2,  2,  4, 12,  2
+};
+
+static float atomic_shell_energy[] = {
+        13.6,     24.6,     58.0,      5.4,    115.0,      9.3,    192.0,
+        12.9,      8.3,    288.0,     16.6,     11.3,    403.0,     37.3,
+        20.3,     14.5,    543.1,     41.6,     28.5,     13.6,    696.7,
+        37.9,     17.4,    870.1,     48.5,     21.7,     21.6,   1075.0,
+        66.0,     34.0,     34.0,      5.1,   1308.0,     92.0,     54.0,
+        54.0,      7.7,   1564.0,    121.0,     77.0,     77.0,     10.6,
+         6.0,   1844.0,    154.0,    104.0,    104.0,     13.5,      8.2,
+      2148.0,    191.0,    135.0,    134.0,     16.1,     10.5,   2476.0,
+       232.0,    170.0,    168.0,     20.2,     10.4,   2829.0,    277.0,
+       208.0,    206.0,     24.5,     13.0,   3206.3,    326.5,    250.6,
+       248.5,     29.2,     15.9,     15.8,   3610.0,    381.0,    299.0,
+       296.0,     37.0,     19.0,     18.7,      4.3,   4041.0,    441.0,
+       353.0,    349.0,     46.0,     28.0,     28.0,      6.1,   4494.0,
+       503.0,    408.0,    403.0,     55.0,     33.0,     33.0,      8.0,
+         6.5,   4966.0,    567.0,    465.0,    459.0,     64.0,     39.0,
+        38.0,      8.0,      6.8,   5465.0,    633.0,    525.0,    518.0,
+        72.0,     44.0,     43.0,      8.0,      6.7,   5989.0,    702.0,
+       589.0,    580.0,     80.0,     49.0,     48.0,      8.2,      6.8,
+      6539.0,    755.0,    656.0,    645.0,     89.0,     55.0,     53.0,
+         9.0,      7.4,   7112.0,    851.0,    726.0,    713.0,     98.0,
+        61.0,     59.0,      9.0,      7.9,   7709.0,    931.0,    800.0,
+       785.0,    107.0,     68.0,     66.0,      9.0,      7.9,   8333.0,
+      1015.0,    877.0,    860.0,    117.0,     75.0,     73.0,     10.0,
+        10.0,      7.6,   8979.0,   1103.0,    958.0,    938.0,    127.0,
+        82.0,     80.0,     11.0,     10.4,      7.7,   9659.0,   1198.0,
+      1047.0,   1024.0,    141.0,     94.0,     91.0,     12.0,     11.2,
+         9.4,  10367.0,   1302.0,   1146.0,   1119.0,    162.0,    111.0,
+       107.0,     21.0,     20.0,     11.0,      6.0,  11103.0,   1413.0,
+      1251.0,   1220.0,    184.0,    130.0,    125.0,     33.0,     32.0,
+        14.3,      7.9,  11867.0,   1531.0,   1362.0,   1327.0,    208.0,
+       151.0,    145.0,     46.0,     45.0,     17.0,      9.8,  12658.0,
+      1656.0,   1479.0,   1439.0,    234.0,    173.0,    166.0,     61.0,
+        60.0,     20.1,      9.8,  13474.0,   1787.0,   1602.0,   1556.0,
+       262.0,    197.0,    189.0,     77.0,     76.0,     23.8,     11.8,
+     14326.0,   1924.6,   1730.9,   1678.4,    292.8,    222.2,    214.4,
+        95.0,     93.8,     27.5,     14.7,     14.0,  15200.0,   2068.0,
+      1867.0,   1807.0,    325.0,    251.0,    242.0,    116.0,    114.0,
+        32.0,     16.0,     15.3,      4.2,  16105.0,   2219.0,   2010.0,
+      1943.0,    361.0,    283.0,    273.0,    139.0,    137.0,     40.0,
+        23.0,     22.0,      5.7,  17038.0,   2375.0,   2158.0,   2083.0,
+       397.0,    315.0,    304.0,    163.0,    161.0,     48.0,     30.0,
+        29.0,      6.5,      6.4,  17998.0,   2536.0,   2311.0,   2227.0,
+       434.0,    348.0,    335.0,    187.0,    185.0,     56.0,     35.0,
+        33.0,      8.6,      6.8,  18986.0,   2702.0,   2469.0,   2375.0,
+       472.0,    382.0,    367.0,    212.0,    209.0,     62.0,     40.0,
+        38.0,      7.2,      6.9,  20000.0,   2872.0,   2632.0,   2527.0,
+       511.0,    416.0,    399.0,    237.0,    234.0,     68.0,     45.0,
+        42.0,      8.6,      7.1,  21044.0,   3048.0,   2800.0,   2683.0,
+       551.0,    451.0,    432.0,    263.0,    259.0,     74.0,     49.0,
+        45.0,      8.6,      7.3,  22117.0,   3230.0,   2973.0,   2844.0,
+       592.0,    488.0,    466.0,    290.0,    286.0,     81.0,     53.0,
+        49.0,      8.5,      7.4,  23220.0,   3418.0,   3152.0,   3010.0,
+       634.0,    526.0,    501.0,    318.0,    313.0,     87.0,     58.0,
+        53.0,      9.6,      7.5,  24350.0,   3611.0,   3337.0,   3180.0,
+       677.0,    565.0,    537.0,    347.0,    342.0,     93.0,     63.0,
+        57.0,      8.8,      8.3,      7.5,  25514.0,   3812.0,   3530.0,
+      3357.0,    724.0,    608.0,    577.0,    379.0,    373.0,    101.0,
+        69.0,     63.0,     11.0,     10.0,      7.6,  26711.0,   4022.0,
+      3732.0,   3542.0,    775.0,    655.0,    621.0,    415.0,    408.0,
+       112.0,     78.0,     71.0,     14.0,     13.0,      9.0,  27940.0,
+      4242.0,   3943.0,   3735.0,    830.0,    707.0,    669.0,    455.0,
+       447.0,    126.0,     90.0,     82.0,     21.0,     20.0,     10.0,
+         5.8,  29200.0,   4469.0,   4160.0,   3933.0,    888.0,    761.0,
+       719.0,    497.0,    489.0,    141.0,    102.0,     93.0,     29.0,
+        28.0,     12.0,      7.3,  30419.0,   4698.0,   4385.0,   4137.0,
+       949.0,    817.0,    771.0,    542.0,    533.0,    157.0,    114.0,
+       104.0,     38.0,     37.0,     15.0,      8.6,  31814.0,   4939.0,
+      4612.0,   4347.0,   1012.0,    876.0,    825.0,    589.0,    578.0,
+       174.0,    127.0,    117.0,     48.0,     46.0,     17.8,      9.0,
+     33169.0,   5188.0,   4852.0,   4557.0,   1078.0,    937.0,    881.0,
+       638.0,    626.0,    193.0,    141.0,    131.0,     58.0,     56.0,
+        20.6,     10.4,  34570.0,   5460.0,   5110.0,   4790.0,   1148.7,
+      1002.1,    940.6,    689.0,    676.4,    213.2,    157.0,    145.5,
+        69.5,     67.5,     23.4,     13.4,     12.1,  35985.0,   5714.0,
+      5359.0,   5012.0,   1220.0,   1068.0,   1000.0,    742.0,    728.0,
+       233.0,    174.0,    164.0,     81.0,     79.0,     25.0,     14.0,
+        12.3,      3.9,  37441.0,   5989.0,   5624.0,   5247.0,   1293.0,
+      1138.0,   1063.0,    797.0,    782.0,    254.0,    193.0,    181.0,
+        94.0,     92.0,     31.0,     18.0,     16.0,      5.2,  38925.0,
+      6266.0,   5891.0,   5483.0,   1365.0,   1207.0,   1124.0,    851.0,
+       834.0,    273.0,    210.0,    196.0,    105.0,    103.0,     36.0,
+        22.0,     19.0,      5.8,      5.6,  40443.0,   6548.0,   6164.0,
+      5723.0,   1437.0,   1275.0,   1184.0,    903.0,    885.0,    291.0,
+       225.0,    209.0,    114.0,    111.0,     39.0,     25.0,     22.0,
+         6.0,      5.7,  41991.0,   6835.0,   6440.0,   5964.0,   1509.0,
+      1342.0,   1244.0,    954.0,    934.0,    307.0,    238.0,    220.0,
+       121.0,    117.0,     41.0,     27.0,     24.0,      6.0,      5.4,
+     43569.0,   7126.0,   6722.0,   6208.0,   1580.0,   1408.0,   1303.0,
+      1005.0,    983.0,    321.0,    250.0,    230.0,    126.0,    122.0,
+        42.0,     28.0,     25.0,      6.0,      5.5,  45184.0,   7428.0,
+      7013.0,   6459.0,   1653.0,   1476.0,   1362.0,   1057.0,   1032.0,
+       325.0,    261.0,    240.0,    131.0,    127.0,     43.0,     28.0,
+        25.0,      6.0,      5.5,  46834.0,   7737.0,   7312.0,   6716.0,
+      1728.0,   1546.0,   1422.0,   1110.0,   1083.0,    349.0,    273.0,
+       251.0,    137.0,    132.0,     44.0,     29.0,     25.0,      6.0,
+         5.6,  48519.0,   8052.0,   7617.0,   6977.0,   1805.0,   1618.0,
+      1484.0,   1164.0,   1135.0,    364.0,    286.0,    262.0,    143.0,
+       137.0,     45.0,     30.0,     26.0,      6.0,      5.7,  50239.0,
+      8376.0,   7930.0,   7243.0,   1884.0,   1692.0,   1547.0,   1220.0,
+      1189.0,    380.0,    300.0,    273.0,    150.0,    143.0,     46.0,
+        31.0,     27.0,      6.2,      6.0,      6.0,  51996.0,   8708.0,
+      8252.0,   7514.0,   1965.0,   1768.0,   1612.0,   1277.0,   1243.0,
+       398.0,    315.0,    285.0,    157.0,    150.0,     48.0,     32.0,
+        28.0,      6.0,      5.8,  53789.0,   9046.0,   8581.0,   7790.0,
+      2048.0,   1846.0,   1678.0,   1335.0,   1298.0,    416.0,    331.0,
+       297.0,    164.0,    157.0,     50.0,     33.0,     28.0,      6.0,
+         5.9,  55618.0,   9394.0,   8918.0,   8071.0,   2133.0,   1926.0,
+      1746.0,   1395.0,   1354.0,    434.0,    348.0,    310.0,    172.0,
+       164.0,     52.0,     34.0,     29.0,      6.0,      6.0,  57486.0,
+      9751.0,   9264.0,   8358.0,   2220.0,   2008.0,   1815.0,   1456.0,
+      1412.0,    452.0,    365.0,    323.0,    181.0,    172.0,     54.0,
+        35.0,     30.0,      6.1,      6.0,  59390.0,  10116.0,   9617.0,
+      8648.0,   2309.0,   2092.0,   1885.0,   1518.0,   1471.0,    471.0,
+       382.0,    336.0,    190.0,    181.0,     56.0,     36.0,     30.0,
+         7.0,      6.2,  61332.0,  10486.0,   9978.0,   8944.0,   2401.0,
+      2178.0,   1956.0,   1580.0,   1531.0,    490.0,    399.0,    349.0,
+       200.0,    190.0,     58.0,     37.0,     31.0,      8.0,      7.0,
+         6.2,  63314.0,  10870.0,  10349.0,   9244.0,   2499.0,   2270.0,
+      2032.0,   1647.0,   1596.0,    514.0,    420.0,    366.0,    213.0,
+       202.0,     62.0,     39.0,     32.0,     13.0,     12.0,      7.0,
+         6.6,  65351.0,  11271.0,  10739.0,   9561.0,   2604.0,   2369.0,
+      2113.0,   1720.0,   1665.0,    542.0,    444.0,    386.0,    229.0,
+       217.0,     68.0,     43.0,     35.0,     21.0,     20.0,      7.5,
+         7.0,  67416.0,  11682.0,  11136.0,   9881.0,   2712.0,   2472.0,
+      2197.0,   1796.0,   1737.0,    570.0,    469.0,    407.0,    245.0,
+       232.0,     74.0,     47.0,     38.0,     30.0,     28.0,      8.3,
+         7.9,  69525.0,  12100.0,  11544.0,  10207.0,   2823.0,   2577.0,
+      2283.0,   1874.0,   1811.0,    599.0,    495.0,    428.0,    261.0,
+       248.0,     80.0,     51.0,     41.0,     38.0,     36.0,      9.0,
+         8.0,  71676.0,  12527.0,  11959.0,  10535.0,   2937.0,   2686.0,
+      2371.0,   1953.0,   1887.0,    629.0,    522.0,    450.0,    278.0,
+       264.0,     86.0,     56.0,     47.0,     45.0,     45.0,      9.6,
+         7.9,  73871.0,  12968.0,  12385.0,  10871.0,   3054.0,   2797.0,
+      2461.0,   2035.0,   1964.0,    660.0,    551.0,    473.0,    295.0,
+       280.0,     92.0,     61.0,     56.0,     54.0,     49.0,      9.6,
+         8.5,  76111.0,  13419.0,  12824.0,  11215.0,   3175.0,   2912.0,
+      2554.0,   2119.0,   2044.0,    693.0,    581.0,    497.0,    314.0,
+       298.0,     99.0,     67.0,     66.0,     64.0,     53.0,      9.6,
+         9.1,  78395.0,  13880.0,  13273.0,  11564.0,   3300.0,   3030.0,
+      2649.0,   2206.0,   2126.0,    727.0,    612.0,    522.0,    335.0,
+       318.0,    106.0,     78.0,     75.0,     71.0,     57.0,      9.6,
+         9.0,  80725.0,  14353.0,  13734.0,  11919.0,   3430.0,   3153.0,
+      2748.0,   2295.0,   2210.0,    764.0,    645.0,    548.0,    357.0,
+       339.0,    114.0,     91.0,     87.0,     76.0,     61.0,     12.5,
+        11.1,      9.2,  83102.0,  14839.0,  14209.0,  12284.0,   3567.0,
+      3283.0,   2852.0,   2390.0,   2300.0,    806.0,    683.0,    579.0,
+       382.0,    363.0,    125.0,    107.0,    103.0,     85.0,     68.0,
+        14.0,     12.0,     10.4,  85530.0,  15347.0,  14698.0,  12658.0,
+      3710.0,   3420.0,   2961.0,   2490.0,   2394.0,    852.0,    726.0,
+       615.0,    411.0,    391.0,    139.0,    127.0,    123.0,     98.0,
+        79.0,     21.0,     19.0,      8.0,      6.1,  88005.0,  15861.0,
+     15200.0,  13055.0,   3857.0,   3560.0,   3072.0,   2592.0,   2490.0,
+       899.0,    769.0,    651.0,    441.0,    419.0,    153.0,    148.0,
+       144.0,    111.0,     90.0,     27.0,     25.0,     10.0,      7.4,
+     90526.0,  16388.0,  15711.0,  13419.0,   4007.0,   3704.0,   3185.0,
+      2696.0,   2588.0,    946.0,    813.0,    687.0,    472.0,    448.0,
+       170.0,    167.0,    165.0,    125.0,    101.0,     34.0,     32.0,
+        12.0,      7.3,  93105.0,  16939.0,  16244.0,  13814.0,   4161.0,
+      3852.0,   3301.0,   2802.0,   2687.0,    994.0,    858.0,    724.0,
+       503.0,    478.0,    193.0,    187.0,    181.0,    139.0,    112.0,
+        41.0,     38.0,     15.0,      8.4,  95730.0,  17493.0,  16785.0,
+     14214.0,   4320.0,   4005.0,   3420.0,   2910.0,   2788.0,   1044.0,
+       904.0,    761.0,    535.0,    508.0,    217.0,    211.0,    196.0,
+       153.0,    123.0,     48.0,     44.0,     19.0,     11.0,      9.3,
+     98404.0,  18049.0,  17337.0,  14619.0,   4483.0,   4162.0,   3452.0,
+      3109.0,   2890.0,   1096.0,    951.0,    798.0,    567.0,    538.0,
+       242.0,    235.0,    212.0,    167.0,    134.0,     55.0,     51.0,
+        24.0,     14.0,     10.7, 101137.0,  18639.0,  17907.0,  15031.0,
+      4652.0,   4324.0,   3666.0,   3134.0,   2998.0,   1153.0,   1003.0,
+       839.0,    603.0,    572.0,    268.0,    260.0,    231.0,    183.0,
+       147.0,     65.0,     61.0,     33.0,     19.0,     14.0,      4.0,
+    103922.0,  19237.0,  18484.0,  15444.0,   4822.0,   4491.0,   3793.0,
+      3254.0,   3111.0,   1214.0,   1060.0,    884.0,    642.0,    609.0,
+       296.0,    287.0,    253.0,    201.0,    161.0,     77.0,     73.0,
+        40.0,     25.0,     19.0,      5.3, 106755.0,  19840.0,  19083.0,
+     15871.0,   5002.0,   4656.0,   3921.0,   3374.0,   3223.0,   1274.0,
+      1116.0,    928.0,    680.0,    645.0,    322.0,    313.0,    274.0,
+       218.0,    174.0,     88.0,     83.0,     45.0,     29.0,     22.0,
+         6.3,      5.7, 109651.0,  20472.0,  19693.0,  16300.0,   5182.0,
+      4830.0,   4049.0,   3494.0,   3335.0,   1333.0,   1171.0,    970.0,
+       717.0,    679.0,    347.0,    338.0,    293.0,    233.0,    185.0,
+        97.0,     91.0,     50.0,     33.0,     25.0,      6.0,      6.0,
+    112601.0,  21105.0,  20314.0,  16733.0,   5367.0,   5001.0,   4178.0,
+      3613.0,   3446.0,   1390.0,   1225.0,   1011.0,    752.0,    712.0,
+       372.0,    362.0,    312.0,    248.0,    195.0,    104.0,     97.0,
+        50.0,     32.0,     24.0,      6.0,      6.0,      6.0, 115606.0,
+     21757.0,  20948.0,  17166.0,   5548.0,   5182.0,   4308.0,   3733.0,
+      3557.0,   1446.0,   1278.0,   1050.0,    785.0,    743.0,    396.0,
+       386.0,    329.0,    261.0,    203.0,    110.0,    101.0,     52.0,
+        34.0,     24.0,      6.1,      6.0,      6.0, 118678.0,  22426.0,
+     21600.0,  17610.0,   5723.0,   5366.0,   4440.0,   3854.0,   3669.0,
+      1504.0,   1331.0,   1089.0,    819.0,    774.0,    421.0,    410.0,
+       346.0,    274.0,    211.0,    116.0,    106.0,     54.0,     35.0,
+        25.0,      6.0,      6.0,      6.0, 121818.0,  23097.0,  22266.0,
+     18056.0,   5933.0,   5541.0,   4557.0,   3977.0,   3783.0,   1563.0,
+      1384.0,   1128.0,    853.0,    805.0,    446.0,    434.0,    356.0,
+       287.0,    219.0,    122.0,    111.0,     53.0,     34.0,     23.0,
+         6.0,      6.0, 125027.0,  23773.0,  22944.0,  18504.0,   6121.0,
+      5710.0,   4667.0,   4102.0,   3898.0,   1623.0,   1439.0,   1167.0,
+       887.0,    836.0,    467.0,    452.0,    355.0,    301.0,    220.0,
+       123.0,    112.0,     54.0,     44.0,     36.0,      6.0,      6.0,
+    128220.0,  24460.0,  23779.0,  18930.0,   6288.0,   5895.0,   4797.0,
+      4236.0,   4014.0,   1664.0,   1493.0,   1194.0,    919.0,    864.0,
+       494.0,    479.0,    384.0,    314.0,    239.0,    126.0,    119.0,
+        60.0,     39.0,     27.0,     11.0,      5.0,      6.0, 131590.0,
+     25275.0,  24385.0,  19452.0,   6556.0,   6147.0,   4977.0,   4366.0,
+      4133.0,   1729.0,   1554.0,   1236.0,    955.0,    898.0,    520.0,
+       504.0,    401.0,    329.0,    248.0,    142.0,    124.0,     63.0,
+        41.0,     27.0,     12.0,      6.0,      4.0, 135960.0,  26110.0,
+     25250.0,  19930.0,   6754.0,   6359.0,   5109.0,   4492.0,   4247.0,
+      1789.0,   1610.0,   1273.0,    987.0,    925.0,    546.0,    529.0,
+       412.0,    338.0,    251.0,    142.0,    129.0,     61.0,     39.0,
+        25.0,      9.0,      6.0, 139490.0,  26900.0,  26020.0,  20410.0,
+      6977.0,   6754.0,   5252.0,   4630.0,   4369.0,   1857.0,   1674.0,
+      1316.0,   1024.0,    959.0,    573.0,    554.0,    429.0,    353.0,
+       260.0,    148.0,    135.0,     63.0,     40.0,     25.0,      9.0,
+         6.0, 143090.0,  27700.0,  26810.0,  20900.0,   7205.0,   6793.0,
+      5397.0,   4766.0,   4498.0,   1933.0,   1746.0,   1366.0,   1068.0,
+      1000.0,    606.0,    587.0,    453.0,    375.0,    275.0,    160.0,
+       145.0,     69.0,     45.0,     29.0,     15.0,      7.0
+};
+
+/** Data structure for describing an atomic shell. */
+struct atomic_shell {
+        /** Oscillator strength. */
+        double f;
+        /** Binding energy. */
+        double E;
+};
+
+/* Build electronic oscillators for a material from atomic shells
+ *
+ * Oscillators strength and level are set from atomic binding energies of
+ * individual atomic elements. A global scaling factor is applied in order to
+ * match the Mean Excitation Energy, I.
+ *
+ * Reference:
+ *     U. Fano, Ann. Rev. Nucl. Sci. 13, 1 (1963)
+ *     D. Liljequist, J. Phys. D: Appl. Phys. 16 1567 (1983)
+ */
+static struct atomic_shell * atomic_shell_create(
+    const struct pumas_physics * physics, int material, int * n_shells_ptr)
 {
-        const double c = 2. * log(10.);
-        const double r = kinetic / physics->mass;
-        const double x = 0.5 * log10(r * (r + 2.));
-        const struct pumas_physics_density_effect * const d =
-            &m->density_effect;
-        if (x < d->x0)
-                *delta = d->delta0 > 0. ?
-                    d->delta0 * pow(10., 2. * (x - d->x0)) :
-                    0.;
-        else if (x < d->x1)
-                *delta = c * x - d->Cbar + d->a * pow(d->x1 - x, d->k);
-        else
-                *delta = c * x - d->Cbar;
+        int n_shells = 0;
+        int i;
+        for (i = 0; i < physics->elements_in[material]; i++) {
+                const struct material_component * const c =
+                    physics->composition[material] + i;
+                const struct atomic_element * const e =
+                    physics->element[c->element];
+                int iZ = (int)e->Z - 1;
+                if (iZ >= 100) iZ = 99;
+                n_shells +=
+                    atomic_shell_index[iZ + 1] - atomic_shell_index[iZ];
+        }
+        *n_shells_ptr = n_shells;
+
+        struct atomic_shell * shells = allocate(n_shells * sizeof(*shells));
+
+        double ftot = 0., lnI = 0.;
+        int is = 0;
+        for (i = 0; i < physics->elements_in[material]; i++) {
+                const struct material_component * const c =
+                    physics->composition[material] + i;
+                const struct atomic_element * const e =
+                    physics->element[c->element];
+                int iZ = (int)e->Z - 1;
+                if (iZ >= 100) iZ = 99;
+                const int j0 = atomic_shell_index[iZ];
+                const int j1 = atomic_shell_index[iZ + 1] - 1;
+
+                int j;
+                for (j = j0; j <= j1; j++, is++) {
+                        const double f = c->fraction / e->A *
+                            atomic_shell_occupancy[j];
+                        ftot += f;
+                        shells[is].f = f;
+                        shells[is].E = atomic_shell_energy[j];
+
+                        lnI += f * log(shells[is].E);
+                }
+        }
+        ftot = 1. / ftot;
+        lnI *= ftot;
+
+        const double wp = 28.816 * sqrt(physics->material_ZoA[material] *
+            physics->material_density[material] * 1E-03);
+        const double r = physics->material_I[material] * 1E+09 /
+            (exp(lnI) * wp);
+
+        for (i = 0; i < n_shells; i++) {
+                shells[i].f *= ftot;
+                shells[i].E *= r;
+        }
+
+        return shells;
+}
+
+/* The density effect for the electronic energy loss.
+ *
+ * The density effect is computed following Fano (1963). Oscillators strength
+ * and level have been set from atomic binding energies of individual atomic
+ * elements. A global scaling factor is applied in order to match the Mean
+ * Excitation Energy (see `atomic_shell_create` above).
+ *
+ * Reference:
+ *     U. Fano, Ann. Rev. Nucl. Sci. 13, 1 (1963)
+ *     D. Liljequist, J. Phys. D: Appl. Phys. 16 1567 (1983)
+ */
+static double electronic_density_effect(const struct pumas_physics * physics,
+    int material, int n_shells, struct atomic_shell * shells,
+    double kinetic)
+{
+        const double gamma = 1. + kinetic / physics->mass;
+        const double y = 1. / (gamma * gamma);
+
+        double ymax = 0.;
+        int i;
+        for (i = 0; i < n_shells; i++) {
+                const double ei = shells[i].E;
+                ymax += shells[i].f / (ei * ei);
+        }
+        if (ymax <= y) return 0.;
+
+        double l2min = 0., l2max = 1. / y, l2;
+        for (;;) {
+                l2 = 0.5 * (l2min + l2max);
+                double yi = 0.;
+                for (i = 0; i < n_shells; i++) {
+                        const double ei = shells[i].E;
+                        yi += shells[i].f / (ei * ei + l2);
+                }
+
+                if ((fabs(yi - y) <= DBL_EPSILON) ||
+                    (l2max - l2min <= DBL_EPSILON)) {
+                        break;
+                } else if (yi > y) {
+                        l2min = l2;
+                } else {
+                        l2max = l2;
+                }
+        }
+
+        double delta = -l2 * y;
+        for (i = 0; i < n_shells; i++) {
+                const double ei = shells[i].E;
+                delta += shells[i].f * log(1. + l2 / (ei * ei));
+        }
+
+        return delta;
 }
 
 /* The average energy loss from atomic electrons. */
 static double electronic_energy_loss(const struct pumas_physics * physics,
-    const struct pumas_physics_material * m, double kinetic, double * delta)
+    int material, int n_shells, struct atomic_shell * shells, double kinetic,
+    double * delta)
 {
         /* Kinematic factors. */
         const double E = kinetic + physics->mass;
@@ -10715,12 +11171,14 @@ static double electronic_energy_loss(const struct pumas_physics * physics,
             5.8070487E-04 * (log(2. * E / physics->mass) - lQ / 3.) * lQ * lQ;
 
         /* Density effect. */
-        electronic_density_effect(physics, m, kinetic, delta);
+        *delta = electronic_density_effect(
+            physics, material, n_shells, shells, kinetic);
 
         /* Bethe-Bloch equation. */
-        return 0.307075E-04 * physics->material_ZoA[m->index] *
+        const double I = physics->material_I[material];
+        return 0.307075E-04 * physics->material_ZoA[material] *
             (0.5 / beta2 * (log(2. * ELECTRON_MASS * P2 * Qmax /
-                                (physics->mass * physics->mass * m->I * m->I)) -
+                                (physics->mass * physics->mass * I * I)) -
                                *delta) -
                    1. + 0.125 * Qmax * Qmax / P2 + Delta);
 }
@@ -10816,11 +11274,11 @@ enum pumas_return pumas_physics_tabulate(
         ERROR_INITIALISE(pumas_physics_create);
 
         /* Check the material index */
-        struct pumas_physics_material * m = &data->material;
-        if ((m->index < 0) ||
-            (m->index >= physics->n_materials - physics->n_composites)) {
+        const int material = data->material;
+        if ((material < 0) ||
+            (material >= physics->n_materials - physics->n_composites)) {
                 return ERROR_FORMAT(PUMAS_RETURN_INDEX_ERROR,
-                    "invalid material index [%d]", m->index);
+                    "invalid material index [%d]", material);
         }
 
         /* Set the energy grid */
@@ -10876,69 +11334,6 @@ enum pumas_return pumas_physics_tabulate(
                 }
         }
 
-        /* Compute the mean excitation energy, if not provided. */
-        if (m->I <= 0.) {
-                double lnI = 0., Z = 0.;
-                struct material_component * component;
-                int iel;
-                for (iel = 0, component = physics->composition[m->index];
-                     iel < physics->elements_in[m->index]; iel++, component++) {
-                        struct atomic_element * e =
-                            physics->element[component->element];
-                        const double nZ = component->fraction * e->Z / e->A;
-                        lnI += nZ * log(e->I);
-                        Z += nZ;
-                }
-                m->I = exp(lnI / Z);
-        }
-
-        /* Compute the density effect coefficients, if not provided. */
-        if (m->density_effect.a <= 0.) {
-                struct pumas_physics_density_effect * const d =
-                    &m->density_effect;
-
-                /* Use the Sternheimer and Peierls recipee. */
-                d->k = 3.;
-                const double density = physics->material_density[m->index];
-                const double hwp = 28.816E-09 *
-                    sqrt(density * 1E-03 * physics->material_ZoA[m->index]);
-                d->Cbar = 2. * log(m->I / hwp);
-                if (m->state == PUMAS_PHYSICS_STATE_GAS) {
-                        if (d->Cbar < 10.) {
-                                d->x0 = 1.6, d->x1 = 4.;
-                        } else if (d->Cbar < 10.5) {
-                                d->x0 = 1.7, d->x1 = 4.;
-                        } else if (d->Cbar < 11.) {
-                                d->x0 = 1.8, d->x1 = 4.;
-                        } else if (d->Cbar < 11.5) {
-                                d->x0 = 1.9, d->x1 = 4.;
-                        } else if (d->Cbar < 12.25) {
-                                d->x0 = 2.0, d->x1 = 4.;
-                        } else if (d->Cbar < 13.804) {
-                                d->x0 = 2.0, d->x1 = 5.;
-                        } else {
-                                d->x0 = 0.326 * d->Cbar - 1.5;
-                                d->x1 = 5.0;
-                        }
-                } else {
-                        if (m->I < 100.E-09) {
-                                d->x1 = 2.;
-                                if (d->Cbar < 3.681)
-                                        d->x0 = 0.2;
-                                else
-                                        d->x0 = 0.326 * d->Cbar - 1.;
-                        } else {
-                                d->x1 = 3.;
-                                if (d->Cbar < 5.215)
-                                        d->x0 = 0.2;
-                                else
-                                        d->x0 = 0.326 * d->Cbar - 1.5;
-                        }
-                }
-                const double dx = d->x1 - d->x0;
-                d->a = (d->Cbar - 2. * log(10.) * d->x0) / (dx * dx * dx);
-        }
-
         /*
          * Tabulate the radiative energy losses for the constitutive atomic
          * elements, if not already done. Note that the element are also sorted
@@ -10946,8 +11341,8 @@ enum pumas_return pumas_physics_tabulate(
          */
         struct material_component * component;
         int iel;
-        for (iel = 0, component = physics->composition[m->index];
-             iel < physics->elements_in[m->index]; iel++, component++) {
+        for (iel = 0, component = physics->composition[material];
+             iel < physics->elements_in[material]; iel++, component++) {
                 /*
                  * Get the requested element's data and put them on top of
                  * the stack for further usage.
@@ -10970,7 +11365,7 @@ enum pumas_return pumas_physics_tabulate(
 
         /* Check and open the output file. */
         int n_d = (data->outdir == NULL) ? 0 : strlen(data->outdir) + 1;
-        int n_f = strlen(physics->dedx_filename[m->index]) + 1;
+        int n_f = strlen(physics->dedx_filename[material]) + 1;
         char * path = reallocate(data->path, n_d + n_f);
         if (path == NULL) return PUMAS_RETURN_MEMORY_ERROR;
         data->path = path;
@@ -10978,7 +11373,7 @@ enum pumas_return pumas_physics_tabulate(
                 memcpy(path, data->outdir, n_d);
                 path[n_d - 1] = '/';
         }
-        memcpy(path + n_d, physics->dedx_filename[m->index], n_f);
+        memcpy(path + n_d, physics->dedx_filename[material], n_f);
 
         FILE * stream;
         if (data->overwrite == 0) {
@@ -10997,17 +11392,15 @@ enum pumas_return pumas_physics_tabulate(
             (physics->particle == PUMAS_PARTICLE_MUON) ? "Muon" : "Tau";
         fprintf(stream, " Incident particle is a %s with M = %.5lf MeV\n", type,
             (double)(physics->mass * 1E+03));
-        fprintf(stream, " Index = %d: %s\n", m->index,
-            physics->material_name[m->index]);
+        fprintf(stream, " Index = %d: %s\n", material,
+            physics->material_name[material]);
         fprintf(stream, "      Absorber with <Z/A> = %.5lf\n",
-            physics->material_ZoA[m->index]);
-        fprintf(stream, " Sternheimer coef:  a     k=m_s   x_0    x_1    "
-                        "I[eV]   Cbar  delta0\n");
-        const struct pumas_physics_density_effect * const d =
-            &m->density_effect;
-        fprintf(stream, "                %7.4lf %7.4lf %7.4lf %7.4lf %6.1lf "
-                        "%7.4lf %.2lf\n",
-            d->a, d->k, d->x0, d->x1, m->I * 1E+09, d->Cbar, d->delta0);
+            physics->material_ZoA[material]);
+        fputs(" Density effect computed following Fano (1963)\n", stream);
+        fprintf(stream, " Models for Radloss: brems = %4s, pair = %4s, "
+            "photonuc = %4s\n",
+            physics->model_bremsstrahlung, physics->model_pair_production,
+            physics->model_photonuclear);
         fprintf(stream, "\n *** Table generated with PUMAS v%.2f ***\n\n",
             PUMAS_VERSION);
         fprintf(stream,
@@ -11016,21 +11409,26 @@ enum pumas_return pumas_physics_tabulate(
         fprintf(stream, "    [MeV]    [MeV/c]  -----------------------"
                         "[MeV cm^2/g]------------------------  [g/cm^2]\n");
 
+        /* Build electronic shells by merging element's one */
+        int n_shells = 0;
+        struct atomic_shell * shells = atomic_shell_create(
+            physics, material, &n_shells);
+
         /* Loop on the kinetic energy values and print the table. */
         double X = 0., dedx_last = 0.;
         int i;
         for (i = 0; i < data->n_energies; i++) {
                 /* Compute the electronic energy loss. */
-                double delta;
-                double elec = electronic_energy_loss(
-                    physics, m, data->energy[i], &delta);
+                double delta = 0.;
+                double elec = electronic_energy_loss(physics, material,
+                     n_shells, shells, data->energy[i], &delta);
 
                 double brad[N_DEL_PROCESSES - 1];
                 memset(brad, 0x0, sizeof(brad));
                 struct tabulation_element * e;
                 int iel;
                 for (iel = 0, e = (struct tabulation_element *)data->elements;
-                     iel < physics->elements_in[m->index];
+                     iel < physics->elements_in[material];
                      iel++, e = (struct tabulation_element *)e->api.prev) {
                         int j;
                         for (j = 0; j < N_DEL_PROCESSES - 1; j++)
@@ -11060,7 +11458,8 @@ enum pumas_return pumas_physics_tabulate(
                     radloss * cmgs, dedx * cmgs, X * MeV / cmgs, delta, beta);
         }
 
-        /* Close and return. */
+        /* Free, close and return. */
+        free(shells);
         fclose(stream);
         return PUMAS_RETURN_SUCCESS;
 }

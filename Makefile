@@ -17,7 +17,7 @@ clean:
 
 
 examples: bin/example-dump bin/example-geometry bin/example-loader \
-	  bin/example-geometry
+	  bin/example-geometry bin/example-tabulate
 
 bin/example-geometry: examples/pumas/geometry.c examples/pumas/flux.c \
 	              examples/pumas/flux.h lib/libpumas.so

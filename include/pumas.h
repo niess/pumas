@@ -601,24 +601,6 @@ struct pumas_context {
 struct pumas_physics;
 
 /**
- * Sternheimer coefficients for the parameterisation of the density effect.
- */
-struct pumas_physics_density_effect {
-        /** Sternheimer *a* Coefficient. */
-        double a;
-        /** Sternheimer *k* Coefficient. */
-        double k;
-        /** Sternheimer *x0* Coefficient. */
-        double x0;
-        /** Sternheimer *x1* Coefficient. */
-        double x1;
-        /** Sternheimer *Cbar* Coefficient. */
-        double Cbar;
-        /** Sternheimer *delta0* Coefficient. */
-        double delta0;
-};
-
-/**
  * Prototype for a Differential Cross-Section (DCS).
  *
  * @param Z       The charge number of the target atom.
@@ -1482,19 +1464,14 @@ PUMAS_API int pumas_physics_material_length(
  * @param length            The number of atomic elements.
  * @param density           The material reference density in kg/m^(3).
  * @param I                 The material mean excitation energy in GeV.
- * @param density_effect    The density effect parameters.
  * @param components        The vector of indices of the atomic elements.
  * @param fractions         The vector of mass fractions of the atomic elements.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * Get the properties of a base material. `length`, `density`, `I`,
- * `density_effect`, `components` or `fractions` can be `NULL` in which case
- * the corresponding property is not retrieved.
- *
- * **Note**: the mean excitation energy, *I*, and the *density_effect*
- * parameters are not defined for composite materials resulting in a
- * `PUMAS_RETURN_INDEX_ERROR` if requested nevertheless.
+ * Get the properties of a base material. `length`, `density`, `I`, `components`
+ * or `fractions` can be `NULL` in which case the corresponding property is not
+ * retrieved.
  *
  * __Error codes__
  *
@@ -1504,9 +1481,7 @@ PUMAS_API int pumas_physics_material_length(
  */
 PUMAS_API enum pumas_return pumas_physics_material_properties(
     const struct pumas_physics * physics, int index, int * length,
-    double * density, double * I,
-    struct pumas_physics_density_effect * density_effect, int * components,
-    double * fractions);
+    double * density, double * I, int * components, double * fractions);
 
 /**
  * The number of composite materials.
@@ -1757,20 +1732,6 @@ typedef void pumas_deallocate_cb (void * ptr);
  */
 PUMAS_API void pumas_memory_deallocator(pumas_deallocate_cb * deallocator);
 
-/** Physical states of materials. */
-enum pumas_physics_state {
-        /** Undefined physical state. */
-        PUMAS_PHYSICS_STATE_UNKNOWN = 0,
-        /** Solid physical state. */
-        PUMAS_PHYSICS_STATE_SOLID,
-        /** Liquid physical state. */
-        PUMAS_PHYSICS_STATE_LIQUID,
-        /** Gas physical state. */
-        PUMAS_PHYSICS_STATE_GAS,
-        /** The number of physical states. */
-        PUMAS_PHYSICS_N_STATES
-};
-
 /**
  * Handle for an atomic element within a material.
  *
@@ -1786,29 +1747,6 @@ struct pumas_physics_element {
         int index;
         /** The mass fraction of the element in the current material. */
         double fraction;
-};
-
-/**
- * Description of a base material to tabulate.
- *
- * This structure allows to specify the physical properties of a base material
- * in order to tabulate its energy loss using the `pumas_physics_tabulate`
- * function.
- *
- * **Note** that the material index *must* be set, e.g. using the
- * `pumas_physics_material_index` function. If the Sternheimer coefficients are
- * not explicitly provided there are computed from the density using the
- * Sternheimer and Peierls recipe.
- */
-struct pumas_physics_material {
-        /** The material index. */
-        int index;
-        /** The mean excitation energy in GeV. */
-        double I;
-        /** The material state. */
-        enum pumas_physics_state state;
-        /** The density effect parameters */
-        struct pumas_physics_density_effect density_effect;
 };
 
 /**
@@ -1837,8 +1775,8 @@ struct pumas_physics_tabulation_data {
         int overwrite;
         /** Path to a directory where the tabulation should be written. */
         char * outdir;
-        /** Properties of the material to tabulate */
-        struct pumas_physics_material material;
+        /** Index of the material to tabulate */
+        int material;
         /** Path to the energy loss file of the last tabulated material. */
         char * path;
         /** List of atomic elements contained in the tabulated material(s). */
