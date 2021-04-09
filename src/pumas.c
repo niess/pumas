@@ -1351,7 +1351,7 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         /* Check the path to energy loss tables. */
         struct pumas_physics * physics = NULL;
         if (dedx_path == NULL) dedx_path = getenv("PUMAS_DEDX");
-        if (dedx_path == NULL) dedx_path = "@";
+        if (dedx_path == NULL) dedx_path = "@.";
 
         /* Parse the MDF. */
         const int size_mdf = 2048;
@@ -8607,10 +8607,11 @@ enum pumas_return mdf_format_path(const char * directory, const char * mdf_path,
                 const int dir_size = strlen(directory);
                 *offset_dir = dir_size + 1;
                 *size_name = (*offset_dir) + initial_size;
-                *filename = allocate(*size_name);
-                if (*filename == NULL) {
+                char * tmp = reallocate(*filename, *size_name);
+                if (tmp == NULL) {
                         return ERROR_REGISTER_MEMORY();
                 }
+                *filename = tmp;
                 strcpy(*filename, directory);
                 (*filename)[(*offset_dir) - 1] = sep;
         } else {
@@ -8620,10 +8621,11 @@ enum pumas_return mdf_format_path(const char * directory, const char * mdf_path,
                 while ((n1 >= 0) && (mdf_path[n1] != sep)) n1--;
                 *offset_dir = n1 + dir_size + 2;
                 *size_name = (*offset_dir) + initial_size;
-                *filename = allocate(*size_name);
-                if (*filename == NULL) {
+                char * tmp = reallocate(*filename, *size_name);
+                if (tmp == NULL) {
                         return ERROR_REGISTER_MEMORY();
                 }
+                *filename = tmp;
                 if (n1 > 0) strncpy(*filename, mdf_path, n1 + 1);
                 strcpy((*filename) + n1 + 1, directory);
                 (*filename)[(*offset_dir) - 1] = sep;
@@ -11560,27 +11562,33 @@ enum pumas_return physics_tabulate(struct pumas_physics * physics,
         }
 
         /* Check and open the output file. */
-        int n_d = (data->outdir == NULL) ? 0 : strlen(data->outdir) + 1;
-        int n_f = strlen(physics->dedx_filename[material]) + 1;
-        char * path = reallocate(data->path, n_d + n_f);
-        if (path == NULL) return PUMAS_RETURN_MEMORY_ERROR;
-        data->path = path;
-        if (n_d) {
-                memcpy(path, data->outdir, n_d);
-                path[n_d - 1] = '/';
+        int offset_dir, size_name;
+        enum pumas_return rc;
+        if ((rc = mdf_format_path(data->outdir, physics->mdf_path,
+            &data->path, &offset_dir, &size_name, error_)) !=
+            PUMAS_RETURN_SUCCESS) {
+                return rc;
+        } else {
+                size_name += strlen(physics->dedx_filename[material]) + 1;
+                char * new_name = reallocate(data->path, size_name);
+                if (new_name == NULL) {
+                        return ERROR_REGISTER_MEMORY();
+                }
+                data->path = new_name;
+                strcpy(data->path + offset_dir,
+                    physics->dedx_filename[material]);
         }
-        memcpy(path + n_d, physics->dedx_filename[material], n_f);
 
         FILE * stream;
         if (data->overwrite == 0) {
                 /* Check if the file already exists. */
-                stream = fopen(path, "r");
+                stream = fopen(data->path, "r");
                 if (stream != NULL) {
                         fclose(stream);
                         return PUMAS_RETURN_IO_ERROR;
                 }
         }
-        stream = fopen(path, "w+");
+        stream = fopen(data->path, "w+");
         if (stream == NULL) return PUMAS_RETURN_PATH_ERROR;
 
         /* Print the header. */
