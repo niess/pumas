@@ -22,14 +22,15 @@ can be found in the
 
 ## Materials
 
-A compilation of materials for PUMAS is hosted on GitHub as a separate project,
-[pumas-materials](https://github.com/niess/pumas-materials). These tables have
-been generated with the PUMAS library. For muons one can also use the whole set
-of tabulations provided online by the
+A compilation of Materials Definition Files (MDFs) for PUMAS and of energy loss
+tables is hosted on GitHub as a separate project,
+[pumas-materials](https://github.com/niess/pumas-materials). The energy loss
+tables have been generated with the PUMAS library. For muons one can also use
+the whole set of tables provided online by the
 [PDG](https://pdg.lbl.gov/2020/AtomicNuclearProperties/index.html). Note however
 that those are less accurate than PUMAS ones above 100 TeV due to improvements
-on the photonuclear cross-section (see e.g.
-[Sokalski _et al._](https://arxiv.org/abs/hep-ph/0201122)).
+on the photonuclear cross-section (see e.g.  [Sokalski _et
+al._](https://arxiv.org/abs/hep-ph/0201122)).
 
 ## Documentation
 
@@ -38,13 +39,6 @@ Docs](https://pumas.readthedocs.io/en/latest). It contains a description of the
 library [API](https://pumas.readthedocs.io/en/latest/api) as well as
 [tutorials](https://pumas.readthedocs.io/en/latest/tutorials). You might also
 directly browse the [examples](examples) provided with the source.
-
-_**Note** that for the examples to work you need their corresponding MDF and
-energy loss tables distributed separately. Those can be downloaded with git, as
-following:_
-```bash
-git clone https://gitub.com/niess/pumas-materials materials
-```
 
 ## License
 The PUMAS library is  under the **GNU LGPLv3** license. See the provided

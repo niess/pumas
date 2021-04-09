@@ -4,12 +4,27 @@ set (CMAKE_C_FLAGS_TEST
 mark_as_advanced(CMAKE_C_FLAGS_TEST)
 
 include ("tests/libcheck.cmake")
-include ("tests/materials.cmake")
 
 add_executable (test-pumas EXCLUDE_FROM_ALL "tests/test-pumas.c")
 target_compile_definitions (test-pumas PRIVATE -DPUMAS_VERSION=${PUMAS_VERSION_MAJOR}.${PUMAS_VERSION_MINOR})
 add_dependencies (test-pumas LibCheck)
 target_link_libraries (test-pumas check pumas)
+
+add_custom_command(
+    TARGET test-pumas POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+            ${CMAKE_SOURCE_DIR}/examples/data/materials.xml
+            ${CMAKE_CURRENT_BINARY_DIR}/materials/materials.xml)
+
+add_custom_command(
+    TARGET test-pumas POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+            ${CMAKE_CURRENT_BINARY_DIR}/materials/dedx/muon)
+
+add_custom_command(
+    TARGET test-pumas POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+            ${CMAKE_CURRENT_BINARY_DIR}/materials/dedx/tau)
 
 if (${CMAKE_BUILD_TYPE} MATCHES Test)
         set (__args "coverage")

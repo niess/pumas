@@ -763,6 +763,57 @@ struct error_context {
 };
 
 /**
+ * Handle for an atomic element within a material.
+ *
+ * This structure is a proxy exposing some data of an atomic element within
+ * the material last processed by `pumas_tabulation_tabulate`.
+ */
+struct physics_element {
+        /** Linked list pointer to the previous element. */
+        struct physics_element * prev;
+        /** Linked list pointer to the next element. */
+        struct physics_element * next;
+        /** The element index. */
+        int index;
+        /** The mass fraction of the element in the current material. */
+        double fraction;
+};
+
+/**
+ * Handle for tabulation data.
+ *
+ * This structure gathers data related to the tabulation of the energy loss of
+ * materials with the `physics_tabulate` function. **Note** that the two last
+ * parameters: *path* and *elements* should not be set directly. They are filled
+ * in (updated) by the `physics_tabulate` function. Note also that if no energy
+ * grid is provided then a default one is set.
+ *
+ * **Warning**: the energy grid should not be changed between successive calls
+ * to `physics_tabulate`. If a new energy grid is needed then a new
+ * `physics_tabulation_data` object must be created.
+ */
+struct physics_tabulation_data {
+        /** The number of kinetic energy values to tabulate. Providing a value
+         * of zero or less results in a default energy grid being set.
+         */
+        int n_energies;
+        /** Array of kinetic energy values to tabulate. Providing a `NULL`
+         * value results in a default energy grid being set.
+         */
+        double * energy;
+        /** Flag to enable overwriting an existing energy loss file. */
+        int overwrite;
+        /** Path to a directory where the tabulation should be written. */
+        char * outdir;
+        /** Index of the material to tabulate */
+        int material;
+        /** Path to the energy loss file of the last tabulated material. */
+        char * path;
+        /** List of atomic elements contained in the tabulated material(s). */
+        struct physics_element * elements;
+};
+
+/**
  * Default error handler.
  */
 static void default_error_handler(
@@ -1045,8 +1096,9 @@ static int mdf_settings_index(
     int operation, int value, struct error_context * error_);
 static int mdf_settings_name(
     int size, char prefix, const char * name, struct error_context * error_);
-static enum pumas_return mdf_parse_kinetic(
-    struct mdf_buffer * mdf, const char * path, struct error_context * error_);
+static enum pumas_return mdf_parse_kinetic(struct mdf_buffer * mdf,
+    const char * path, int n_energies, double * energy,
+    struct error_context * error_);
 static enum pumas_return mdf_parse_elements(
     const struct pumas_physics * physics, struct mdf_buffer * mdf,
     struct error_context * error_);
@@ -1100,6 +1152,14 @@ static void compute_MEE(struct pumas_physics * physics, int material);
 static enum pumas_return compute_dcs_model(struct pumas_physics * physics,
     dcs_function_t * dcs_func, struct atomic_element * element,
     struct error_context * error_);
+static enum pumas_return physics_tabulate(struct pumas_physics * physics,
+    struct physics_tabulation_data * data, struct error_context * error_);
+static void physics_tabulation_clear(const struct pumas_physics * physics,
+    struct physics_tabulation_data * data);
+static struct physics_element * tabulation_element_create(
+    struct physics_tabulation_data * data, int element);
+static struct physics_element * tabulation_element_get(
+    struct physics_tabulation_data * data, int element);
 /**
  * Helper function for mapping an atomic element from its name.
  */
@@ -1209,10 +1269,6 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
     int dry_mode, const struct pumas_physics_settings * settings_)
 {
         ERROR_INITIALISE(pumas_physics_create);
-        if (dry_mode) {
-                error_data.function =
-                    (pumas_function_t *)&pumas_physics_create_tabulation;
-        }
 
         /* Check if the Physics pointer is NULL. */
         if (physics_ptr == NULL) {
@@ -1294,14 +1350,8 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
 
         /* Check the path to energy loss tables. */
         struct pumas_physics * physics = NULL;
-        if (!dry_mode) {
-                if (dedx_path == NULL) dedx_path = getenv("PUMAS_DEDX");
-                if (dedx_path == NULL) {
-                        ERROR_REGISTER(PUMAS_RETURN_UNDEFINED_DEDX,
-                            "missing path to energy loss tables");
-                        goto clean_and_exit;
-                }
-        }
+        if (dedx_path == NULL) dedx_path = getenv("PUMAS_DEDX");
+        if (dedx_path == NULL) dedx_path = ".";
 
         /* Parse the MDF. */
         const int size_mdf = 2048;
@@ -1531,10 +1581,7 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         memcpy(mdf, &settings, sizeof(settings));
 
         /* Set the path to the dE/dX files. */
-        if (!dry_mode)
-                strcpy(physics->dedx_path, dedx_path);
-        else
-                physics->dedx_path = NULL;
+        strcpy(physics->dedx_path, dedx_path);
 
         /* Parse the elements. */
         if ((mdf_parse_elements(physics, mdf, error_)) != PUMAS_RETURN_SUCCESS)
@@ -1616,7 +1663,131 @@ enum pumas_return pumas_physics_create(struct pumas_physics ** physics,
     enum pumas_particle particle, const char * mdf_path, const char * dedx_path,
     const struct pumas_physics_settings * settings)
 {
-        return _initialise(physics, particle, mdf_path, dedx_path, 0, settings);
+        ERROR_INITIALISE(pumas_physics_create);
+
+        /* Load the MDF in dry mode first */
+        enum pumas_return rc;
+        if ((rc = _initialise(physics, particle, mdf_path, dedx_path, 1,
+            settings)) != PUMAS_RETURN_SUCCESS) {
+                return rc;
+        }
+
+        /* Check for missing energy loss files */
+        struct pumas_physics * p = *physics;
+        struct physics_tabulation_data data = {
+                .n_energies = (settings == NULL) ? 0 : settings->n_energies,
+                .energy = ((settings == NULL) || (settings->n_energies <= 0)) ?
+                    NULL : settings->energy,
+                .overwrite = (settings == NULL) ? 0 : settings->update,
+                .outdir = p->dedx_path
+        };
+        double * energy = NULL;
+
+        /* Prepare the filename buffer */
+        char * filename = NULL;
+        int offset_dir, size_name;
+        if ((mdf_format_path(p->dedx_path, p->mdf_path, &filename, &offset_dir,
+            &size_name, error_)) != PUMAS_RETURN_SUCCESS) {
+                goto error;
+        }
+
+        const int nmat = p->n_materials - p->n_composites;
+        int imat;
+        for (imat = 0; imat < nmat; imat++) {
+                const int size_new =
+                    offset_dir + strlen(p->dedx_filename[imat]) + 1;
+                if (size_new > size_name)
+                        size_name = size_new;
+        }
+        {
+                /* Get enough memory. */
+                char * new_name = reallocate(filename, size_name);
+                if (new_name == NULL) {
+                        ERROR_REGISTER_MEMORY();
+                        goto error;
+                }
+                filename = new_name;
+        }
+
+        if (!data.overwrite) {
+                struct mdf_buffer mdf = {
+                    .mdf_path = p->mdf_path,
+                    .dry_mode = 1
+                };
+
+                for (imat = 0; imat < nmat; imat++) {
+                        strcpy(filename + offset_dir, p->dedx_filename[imat]);
+
+                        mdf_parse_kinetic(
+                            &mdf, filename, data.n_energies, energy, error_);
+                        if (error_->code == PUMAS_RETURN_PATH_ERROR) {
+                                continue;
+                        } else if (error_->code != PUMAS_RETURN_SUCCESS) {
+                                goto error;
+                        }
+                        mdf.n_energies--;
+
+                        if ((energy == NULL) && (mdf.n_energies > 0)) {
+                                energy = allocate(
+                                    mdf.n_energies * sizeof *energy);
+                                if (energy == NULL) {
+                                        ERROR_REGISTER_MEMORY();
+                                        goto error;
+                                }
+                                data.n_energies = mdf.n_energies;
+                                data.energy = energy;
+                                mdf_parse_kinetic(
+                                    &mdf, filename, -1, energy, error_);
+                        } else {
+                                if (mdf.n_energies != data.n_energies) {
+                                        ERROR_VREGISTER(
+                                            PUMAS_RETURN_FORMAT_ERROR,
+                                            "bad format for file `%s'",
+                                            filename);
+                                        goto error;
+                                }
+                        }
+                }
+        }
+
+        /* Force generate (missing) tables */
+        for (imat = 0; imat < nmat; imat++) {
+                strcpy(filename + offset_dir, p->dedx_filename[imat]);
+                data.material = imat;
+
+                if (data.overwrite) {
+                        if (physics_tabulate(p, &data, error_) !=
+                            PUMAS_RETURN_SUCCESS) goto error;
+                } else {
+                        FILE * stream = fopen(filename, "r");
+                        if (stream == NULL) {
+                                if (physics_tabulate(p, &data, error_) !=
+                                    PUMAS_RETURN_SUCCESS) goto error;
+                        } else {
+                                fclose(stream);
+                        }
+                }
+        }
+
+        physics_tabulation_clear(p, &data);
+        deallocate(energy);
+        deallocate(filename);
+        pumas_physics_destroy(physics);
+
+        if (settings && settings->dry) {
+                return PUMAS_RETURN_SUCCESS;
+        } else {
+                /* Load the full physics */
+                return _initialise(
+                    physics, particle, mdf_path, dedx_path, 0, settings);
+        }
+
+error:
+        physics_tabulation_clear(p, &data);
+        deallocate(energy);
+        deallocate(filename);
+        pumas_physics_destroy(physics);
+        return ERROR_RAISE();
 }
 
 enum pumas_return pumas_physics_load(
@@ -1792,10 +1963,8 @@ const char * pumas_error_function(pumas_function_t * caller)
 
         /* Library functions with an error code. */
         TOSTRING(pumas_physics_create)
-        TOSTRING(pumas_physics_create_tabulation)
         TOSTRING(pumas_physics_dump)
         TOSTRING(pumas_physics_load)
-        TOSTRING(pumas_physics_tabulate)
         TOSTRING(pumas_context_transport)
         TOSTRING(pumas_physics_particle)
         TOSTRING(pumas_context_create)
@@ -1832,7 +2001,6 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_dcs_default)
         TOSTRING(pumas_physics_cutoff)
         TOSTRING(pumas_physics_destroy)
-        TOSTRING(pumas_physics_tabulation_clear)
         TOSTRING(pumas_context_destroy)
         TOSTRING(pumas_context_physics_get)
         TOSTRING(pumas_recorder_clear)
@@ -7162,13 +7330,10 @@ enum pumas_return mdf_parse_settings(const struct pumas_physics * physics,
         char * full_path = NULL;
         char * filename = NULL;
         int offset_dir, size_path, size_name = 0;
-        if (!mdf->dry_mode) {
-                mdf->size_dedx_path = strlen(dedx_path) + 1;
-                if (mdf_format_path(dedx_path, mdf->mdf_path, &full_path,
-                        &offset_dir, &size_path,
-                        error_) != PUMAS_RETURN_SUCCESS)
-                        goto clean_and_exit;
-        }
+        mdf->size_dedx_path = strlen(dedx_path) + 1;
+        if (mdf_format_path(dedx_path, mdf->mdf_path, &full_path, &offset_dir,
+            &size_path, error_) != PUMAS_RETURN_SUCCESS)
+                goto clean_and_exit;
 
         /* Prepare the index tables. */
         if (mdf_settings_index(MDF_INDEX_INITIALISE, 0, error_) !=
@@ -7340,7 +7505,7 @@ enum pumas_return mdf_parse_settings(const struct pumas_physics * physics,
                 }
                 strcpy(full_path + offset_dir, filename);
 
-                mdf_parse_kinetic(mdf, full_path, error_);
+                mdf_parse_kinetic(mdf, full_path, -1, NULL, error_);
         } else
                 mdf->n_energies = 1;
 
@@ -7515,13 +7680,15 @@ int mdf_settings_name(
 /**
  * Parse the kinetic energy values from a dE/dX file.
  *
- * @param mdf    The MDF handle.
- * @param path   The full path to the dE/dX file.
- * @param error_ The error data.
+ * @param mdf           The MDF handle.
+ * @param path          The full path to the dE/dX file.
+ * @param n_energies    The number of kinetic energy values.
+ * @param energy        The (read) energy values or `NULL`.
+ * @param error_        The error data.
  * @return On success `PUMAS_RETURN_SUCCESS` otherwise `PUMAS_ERROR`.
  */
-enum pumas_return mdf_parse_kinetic(
-    struct mdf_buffer * mdf, const char * path, struct error_context * error_)
+enum pumas_return mdf_parse_kinetic(struct mdf_buffer * mdf, const char * path,
+    int n_energies, double * energy, struct error_context * error_)
 {
         /* Initialise the settings. */
         mdf->n_energies = 0;
@@ -7562,6 +7729,19 @@ enum pumas_return mdf_parse_kinetic(
                 double k;
                 if (sscanf(buffer, "%lf", &k) <= 0) goto next_line;
                 k *= 1E-03;
+                if (energy != NULL) {
+                        if (n_energies > 0) {
+                                if ((nk > n_energies) ||
+                                    (k != energy[nk - 1])) {
+                                        ERROR_VREGISTER(
+                                            PUMAS_RETURN_FORMAT_ERROR,
+                                            "bad format for file `%s'", path);
+                                        break;
+                                }
+                        } else {
+                                energy[nk - 1] = k;
+                        }
+                }
                 nk++;
                 if (k < DCS_MODEL_MIN_KINETIC) offset++;
 
@@ -10682,14 +10862,6 @@ static double math_dilog(double x)
  * Routines for computing energy loss tabulations.
  */
 
-/** Tabulation mode initialisation, without loading the energy loss tables. */
-enum pumas_return pumas_physics_create_tabulation(
-    struct pumas_physics ** physics, enum pumas_particle particle,
-    const char * mdf_path, const struct pumas_physics_settings * settings)
-{
-        return _initialise(physics, particle, mdf_path, NULL, 1, settings);
-}
-
 /** Raw data for atomic shells
  *
  * References:
@@ -11186,7 +11358,7 @@ static double electronic_energy_loss(const struct pumas_physics * physics,
 /* Container for atomic element tabulation data */
 struct tabulation_element {
         /* The API proxy */
-        struct pumas_physics_element api;
+        struct physics_element api;
         /* Placeholder for tabulation data */
         double data[];
 };
@@ -11216,11 +11388,11 @@ static void tabulate_element(struct pumas_physics * physics,
  * Create a new energy loss table for an element and add it to the stack of
  * temporary data.
  */
-static struct pumas_physics_element * tabulation_element_create(
-    struct pumas_physics_tabulation_data * data, int element)
+struct physics_element * tabulation_element_create(
+    struct physics_tabulation_data * data, int element)
 {
         /* Allocate memory for the new element. */
-        struct pumas_physics_element * e =
+        struct physics_element * e =
             allocate(sizeof(struct tabulation_element) +
                 3 * data->n_energies * sizeof(double));
         if (e == NULL) return NULL;
@@ -11240,16 +11412,16 @@ static struct pumas_physics_element * tabulation_element_create(
  * Get the energy loss table for an element from the temporary data and
  * put it on top of the stack.
  */
-static struct pumas_physics_element * tabulation_element_get(
-    struct pumas_physics_tabulation_data * data, int element)
+struct physics_element * tabulation_element_get(
+    struct physics_tabulation_data * data, int element)
 {
-        struct pumas_physics_element * e;
+        struct physics_element * e;
         for (e = data->elements; e != NULL; e = e->prev) {
                 if (e->index == element) {
-                        struct pumas_physics_element * next = e->next;
+                        struct physics_element * next = e->next;
                         if (next != NULL) {
                                 /* Put the element on top of the stack. */
-                                struct pumas_physics_element * prev = e->prev;
+                                struct physics_element * prev = e->prev;
                                 if (prev != NULL) prev->next = next;
                                 next->prev = prev;
                                 data->elements->next = e;
@@ -11266,18 +11438,42 @@ static struct pumas_physics_element * tabulation_element_get(
 }
 
 /**
- * Tabulate the energy loss for the given material and kinetic energies.
+ * Tabulate the energy loss for the given material and set of energies.
+ *
+ * @param physics    Handle for the Physics tables.
+ * @param data       The tabulation settings.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
+ *
+ * This function allows to generate an energy loss file for a given material and
+ * a set of kinetic energy values. **Note** that the Physics must have been
+ * initialised with the `_init` function in dry mode. The material atomic
+ * composition is specified by the MDF provided at initialisation. Additional
+ * Physical properties can be specified by filling the input *data* structure.
+ *
+ * __Warnings__
+ *
+ * This function is **not** thread safe.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INDEX_ERROR     The material index is not valid.
+ *
+ *     PUMAS_RETURN_IO_ERROR        The output file already exists.
+ *
+ *     PUMAS_RETURN_MEMORY_ERROR    Some memory couldn't be allocated.
+ *
+ *     PUMAS_RETURN_PATH_ERROR      The output file could not be created.
+ *
  */
-enum pumas_return pumas_physics_tabulate(
-    struct pumas_physics * physics, struct pumas_physics_tabulation_data * data)
+enum pumas_return physics_tabulate(struct pumas_physics * physics,
+    struct physics_tabulation_data * data, struct error_context * error_)
 {
-        ERROR_INITIALISE(pumas_physics_create);
-
         /* Check the material index */
         const int material = data->material;
         if ((material < 0) ||
             (material >= physics->n_materials - physics->n_composites)) {
-                return ERROR_FORMAT(PUMAS_RETURN_INDEX_ERROR,
+                return ERROR_VREGISTER(PUMAS_RETURN_INDEX_ERROR,
                     "invalid material index [%d]", material);
         }
 
@@ -11347,7 +11543,7 @@ enum pumas_return pumas_physics_tabulate(
                  * Get the requested element's data and put them on top of
                  * the stack for further usage.
                  */
-                struct pumas_physics_element * e =
+                struct physics_element * e =
                     tabulation_element_get(data, component->element);
 
                 if (e == NULL) {
@@ -11466,16 +11662,25 @@ enum pumas_return pumas_physics_tabulate(
 
 /**
  * Clear the temporary memory used for the tabulation of materials.
+ *
+ * @param data    The tabulation data.
+ *
+ * This function allows to clear any temporary memory allocated by the
+ * `pumas_physics_tabulate` function.
+ *
+ * __Warnings__
+ *
+ * This function is **not** thread safe.
  */
-void pumas_physics_tabulation_clear(const struct pumas_physics * physics,
-    struct pumas_physics_tabulation_data * data)
+void physics_tabulation_clear(const struct pumas_physics * physics,
+    struct physics_tabulation_data * data)
 {
         deallocate(data->path);
         data->path = NULL;
 
-        struct pumas_physics_element * e;
+        struct physics_element * e;
         for (e = data->elements; e != NULL;) {
-                struct pumas_physics_element * prev = e->prev;
+                struct physics_element * prev = e->prev;
                 deallocate(e);
                 e = prev;
         }

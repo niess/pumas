@@ -162,8 +162,6 @@ enum pumas_return {
         PUMAS_RETURN_RAISE_ERROR,
         /** Some input string is too long. */
         PUMAS_RETURN_TOO_LONG,
-        /** No energy loss path specified. */
-        PUMAS_RETURN_UNDEFINED_DEDX,
         /** No MDF file specified. */
         PUMAS_RETURN_UNDEFINED_MDF,
         /** An unkwon element was specified. */
@@ -681,6 +679,25 @@ struct pumas_physics_settings {
          * be used, i.e. "DRSS".
          */
         const char * photonuclear;
+        /** The number of kinetic energy values to tabulate. Providing a value
+         * of zero or less results in a default energy grid being used.
+         */
+        int n_energies;
+        /** Array of kinetic energy values to tabulate. Providing a `NULL`
+         * value results in a default energy grid being used.
+         */
+        double * energy;
+        /** Flag to force updating existing energy loss file(s). */
+        int update;
+        /** Flag to enable dry mode.
+         *
+         * In dry mode energy loss files are generated but the physics is
+         * not created. This is usefull e.g. if only energy loss files are
+         * needed as a speed up.
+         *
+         * __Warning__ : in dry mode no physics (`NULL`) is returned.
+         */
+        int dry;
 };
 
 /**
@@ -697,7 +714,9 @@ struct pumas_physics_settings {
  * Initialise the Physics from a MDF and a set of energy loss tabulations. Load
  * the materials data and precompute various properties. *mdf_path* and/or
  * *dedx_path* can be set to `NULL`. If so the corresponding path is read from
- * the `PUMAS_MDF` or `PUMAS_DEDX` environment variable.
+ * `PUMAS_MDF` or `PUMAS_DEDX` environment variable(s). Note that an MDF file
+ * *must* be provided either way. The energy loss path can however be left
+ * unspecified in which case it defaults to the current working directory.
  *
  * Optionaly extra physics settings can be specified by providing a
  * `pumas_physics_settings` structure. If `NULL` is provided then PUMAS default
@@ -732,8 +751,6 @@ struct pumas_physics_settings {
  *
  *     PUMAS_RETURN_TOO_LONG                Some XML node in the MDF is
  * too long.
- *
- *     PUMAS_RETURN_UNDEFINED_DEDX          No energy loss path was provided.
  *
  *     PUMAS_RETURN_UNDEFINED_MDF           No MDF was provided.
  *
@@ -1731,172 +1748,6 @@ typedef void pumas_deallocate_cb (void * ptr);
  * This function is **not** thread safe.
  */
 PUMAS_API void pumas_memory_deallocator(pumas_deallocate_cb * deallocator);
-
-/**
- * Handle for an atomic element within a material.
- *
- * This structure is a proxy exposing some data of an atomic element within
- * the material last processed by `pumas_tabulation_tabulate`.
- */
-struct pumas_physics_element {
-        /** Linked list pointer to the previous element. */
-        struct pumas_physics_element * prev;
-        /** Linked list pointer to the next element. */
-        struct pumas_physics_element * next;
-        /** The element index. */
-        int index;
-        /** The mass fraction of the element in the current material. */
-        double fraction;
-};
-
-/**
- * Handle for tabulation data.
- *
- * This structure gathers data related to the tabulation of the energy loss of
- * materials with the `pumas_physics_tabulate` function. **Note** that the two
- * last parameters: *path* and *elements* should not be set directly. They are
- * filled in (updated) by the `pumas_physics_tabulate` function. Note also
- * that if no energy grid is provided then a default one is set.
- *
- * **Warning**: the energy grid should not be changed between successive calls
- * to `pumas_physics_tabulate`. If a new energy grid is needed then a new
- * `pumas_physics_tabulation_data` object must be created.
- */
-struct pumas_physics_tabulation_data {
-        /** The number of kinetic energy values to tabulate. Providing a value
-         * of zero or less results in a default energy grid being set.
-         */
-        int n_energies;
-        /** Array of kinetic energy values to tabulate. Providing a `NULL`
-         * value results in a default energy grid being set.
-         */
-        double * energy;
-        /** Flag to enable overwriting an existing energy loss file. */
-        int overwrite;
-        /** Path to a directory where the tabulation should be written. */
-        char * outdir;
-        /** Index of the material to tabulate */
-        int material;
-        /** Path to the energy loss file of the last tabulated material. */
-        char * path;
-        /** List of atomic elements contained in the tabulated material(s). */
-        struct pumas_physics_element * elements;
-};
-
-/**
- * Tabulate the energy loss for the given material and set of energies.
- *
- * @param physics    Handle for the Physics tables.
- * @param data       The tabulation settings.
- * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
- * code is returned as detailed below.
- *
- * This function allows to generate an energy loss file for a given material and
- * a set of kinetic energy values. **Note** that the Physics must have been
- * initialised with the `pumas_physics_create_tabulation` function. The
- * material atomic composition is specified by the MDF provided at
- * initialisation. Additional Physical properties can be specified by filling
- * the input *data* structure.
- *
- * __Warnings__
- *
- * This function is **not** thread safe.
- *
- * __Error codes__
- *
- *     PUMAS_RETURN_INDEX_ERROR     The material index is not valid.
- *
- *     PUMAS_RETURN_IO_ERROR        The output file already exists.
- *
- *     PUMAS_RETURN_MEMORY_ERROR    Some memory couldn't be allocated.
- *
- *     PUMAS_RETURN_PATH_ERROR      The output file could not be created.
- *
- */
-PUMAS_API enum pumas_return pumas_physics_tabulate(
-    struct pumas_physics * physics,
-    struct pumas_physics_tabulation_data * data);
-
-/**
- * Clear the temporary memory used for the tabulation of materials.
- *
- * @param data    The tabulation data.
- *
- * This function allows to clear any temporary memory allocated by the
- * `pumas_physics_tabulate` function.
- *
- * __Warnings__
- *
- * This function is **not** thread safe.
- */
-PUMAS_API void pumas_physics_tabulation_clear(
-    const struct pumas_physics * physics,
-    struct pumas_physics_tabulation_data * data);
-
-/**
- * Initialise the Physics in tabulation mode.
- *
- * @param physics      Handle for the Physics tables.
- * @param particle     The type of the particle to transport.
- * @param mdf_path     The path to a Material Description File (MDF) or `NULL`.
- * @param settings     Extra physics settings or `NULL`.
- * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
- * code is returned as detailed below.
- *
- * Initialise the Physics tables in reduced mode using a MDF. The materials data
- * are not loaded. This mode is not suitable for particle's transport. It is
- * meant for pre-computation of the material tables using the
- * `pumas_physics_tabulate` function. **Note** that *mdf_path* can be `NULL`
- * Then it is read from the `PUMAS_MDF` environment variable.
- *
- * Optionaly extra physics settings can be specified by providing a
- * `pumas_physics_settings` structure. If `NULL` is provided then PUMAS default
- * physics settings are used which should perform well for most use cases.
- * **Note** that the *cutoff* parameter is not used in tabulation mode.
- *
- * Call `pumas_physics_destroy` in order to unload the Physics and release
- * allocated memory. **Note** that in addition any temporary memory allocated by
- * `pumas_physics_tabulate` must be explictly freed by calling the
- * `pumas_physics_tabulation_clear` function.
- *
- * **Warnings** : this function is not thread safe.
- *
- * __Error codes__
- *
- *     PUMAS_RETURN_END_OF_FILE             And unexpected EOF occured.
- *
- *     PUMAS_RETURN_FORMAT_ERROR            A file has a wrong format.
- *
- *     PUMAS_RETURN_INCOMPLETE_FILE         There are missing entries in
- * the MDF.
- *
- *     PUMAS_RETURN_IO_ERROR                A file couldn't be read.
- *
- *     PUMAS_RETURN_MEMORY_ERROR            Couldn't allocate memory.
- *
- *     PUMAS_RETURN_MODEL_ERROR             A requested DCS model is not valid.
- *
- *     PUMAS_RETURN_PATH_ERROR              A file couldn't be opened.
- *
- *     PUMAS_RETURN_PHYSICS_ERROR           A `NULL` physics pointer was
- * provided.
- *
- *     PUMAS_RETURN_TOO_LONG                Some XML node in the MDF is
- * too long.
- *
- *     PUMAS_RETURN_UNDEFINED_MDF           No MDF was provided.
- *
- *     PUMAS_RETURN_UNKNOWN_ELEMENT         An element in the MDF wasn't
- * defined.
- *
- *     PUMAS_RETURN_UNKNOWN_MATERIAL        An material in the MDF wasn't
- * defined.
- *
- *     PUMAS_RETURN_UNKNOWN_PARTICLE        The given type is not supported.
- */
-PUMAS_API enum pumas_return pumas_physics_create_tabulation(
-    struct pumas_physics ** physics, enum pumas_particle particle,
-    const char * mdf_path, const struct pumas_physics_settings * settings);
 
 /**
  * Get the physics Differential Cross-Section (DCS) for a given process.

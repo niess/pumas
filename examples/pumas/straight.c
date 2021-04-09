@@ -30,11 +30,6 @@
  * Standard Rock. If a maximum kinetic energy is provided the flux is
  * integrated between energy_min and energy_max. Otherwise a point estimate
  * of the flux is done, at the provided kinetic energy.
- *
- * Note that for this example to work you need the corresponding MDF and energy
- * loss tables. Those can be downloaded with git, as following:
- *
- * git clone https://gitub.com/niess/pumas-materials materials
  */
 
 /* Standard library includes */
@@ -101,7 +96,7 @@ int main(int narg, char * argv[])
          * can a few seconds, depending on the number of materials in the MDF.
          */
         pumas_physics_create(&physics, PUMAS_PARTICLE_MUON,
-            "materials/mdf/examples/standard.xml", "materials/dedx/muon", NULL);
+            "examples/data/materials.xml", "examples/data", NULL);
 
         /* Map the PUMAS material index */
         pumas_physics_material_index(physics, MATERIAL_NAME, &medium.material);

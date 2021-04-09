@@ -1,0 +1,41 @@
+<!-- A set of standard materials for the examples -->
+<pumas>
+  <!-- Atomic elements -->
+  <element name="H"  Z="1"  A="1.008700"  I="19.2"  />
+  <element name="C"  Z="6"  A="12.010800" I="78.0"  />
+  <element name="N"  Z="7"  A="14.007200" I="82.0"  />
+  <element name="O"  Z="8"  A="15.999300" I="95.0"  />
+  <element name="Rk" Z="11" A="22.000000" I="136.4" />
+  <element name="Ar" Z="18" A="39.948100" I="188.0" />
+
+  <!-- PDG standard rock
+       Ref: https://pdg.lbl.gov/2020/AtomicNuclearProperties/HTML/standard_rock.html
+    -->
+  <material name="StandardRock" file="standard_rock.txt" density="2.65">
+    <component name="Rk" fraction="1" />
+  </material>
+
+  <!-- Liquid water
+       Ref: https://pdg.lbl.gov/2020/AtomicNuclearProperties/HTML/water_liquid.html
+    -->
+  <material name="Water" file="water.txt" density="1" I="79.7">
+    <component name="O" fraction="0.888106" />
+    <component name="H" fraction="0.111894" />
+  </material>
+
+  <!-- Dry air at sea level atmospheric pressure
+       Ref: https://pdg.lbl.gov/2020/AtomicNuclearProperties/HTML/air_dry_1_atm.html
+    -->
+  <material name="Air" file="air.txt" density="0.001205">
+    <component name="N"  fraction="0.755267" />
+    <component name="O"  fraction="0.231781" />
+    <component name="Ar" fraction="0.012827" />
+    <component name="C"  fraction="0.000124" />
+  </material>
+
+  <!-- Mesoscopic composite of Standard Rock and water -->
+  <composite name="WetRock">
+    <component name="StandardRock" fraction="0.5"/>
+    <component name="Water" fraction="0.5"/>
+  </composite>
+</pumas>

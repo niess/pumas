@@ -1,11 +1,5 @@
 # PUMAS examples
-
-_**Note** that for the examples to work you need their corresponding MDF and
-energy loss tables distributed separately. Those can be downloaded with git, as
-following:_
-```bash
-git clone https://gitub.com/niess/pumas-materials materials
-```
+*Examples of usage of the PUMAS library.*
 
 ## Description
 
@@ -58,14 +52,16 @@ The compiled examples are located under the `bin/` folder e.g. as
 `-DPUMAS_BUILD_EXAMPLES=ON`.
 
 The other examples require a prior installation of
-[TURTLE](https://github.com/niess/turtle) or
-[Geant4](https://geant4.web.cern.ch/node/1). Then the corresponding examples can
+[Geant4](https://geant4.web.cern.ch/node/1) or of
+[TURTLE](https://github.com/niess/turtle). Then the corresponding examples can
 be compiled using the PUMAS Makefile as:
 ```bash
 make examples-turtle
 make examples-geant4
 ```
-Building with CMake is not currently implemented for these extended examples.
+Building the [Geant4](https://geant4.web.cern.ch/node/1) or
+[TURTLE](https://github.com/niess/turtle) examples with CMake is not currently
+implemented.
 
 ## License
 The examples are provided independently of the PUMAS library under a separate

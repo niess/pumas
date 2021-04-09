@@ -29,11 +29,7 @@
  * and generates a binary dump for subsequent usage.
  *
  * Note that this example needs to be run before some other examples since the
- * generated physics dump is needed by those. Note also that for this example
- * to work you need the corresponding MDF and energy loss tables. Those can be
- * downloaded with git, as following:
- *
- * git clone https://gitub.com/niess/pumas-materials materials
+ * generated physics dump is needed by those.
  */
 
 /* Standard library includes */
@@ -46,15 +42,16 @@ int main(int argc, char * argv[])
 {
         /* Parse any arguments */
         const char * mdf = (argc >= 2) ?
-            argv[1] : "materials/mdf/examples/standard.xml";
-        const char * dedx = (argc >= 3) ? argv[2] : "materials/dedx/muon";
-        const char * dump = (argc >= 4) ? argv[3] : "materials/examples.pumas";
+            argv[1] : "examples/data/materials.xml";
+        const char * dedx = (argc >= 3) ? argv[2] : "examples/data";
+        const char * dump = (argc >= 4) ?
+            argv[3] : "examples/data/materials.pumas";
 
         /* Compute the material's physics data */
         struct pumas_physics * physics;
         pumas_physics_create(&physics, PUMAS_PARTICLE_MUON, mdf, dedx, NULL);
 
-        /* Dump the physics data for subsquent usage */
+        /* Dump the physics data for subsequent usage */
         FILE * stream = fopen(dump, "wb");
         if (stream != NULL) {
                 pumas_physics_dump(physics, stream);

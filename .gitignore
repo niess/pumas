@@ -13,7 +13,6 @@ bin
 docs
 materials
 pages
-wiki
 
 # Ignore temporary build(s)
 build*
@@ -21,3 +20,9 @@ build*
 
 # Ignore TURTLE files
 include/turtle.h
+
+# Ignore temporary material data for the examples
+examples/data/air.txt
+examples/data/standard_rock.txt
+examples/data/water.txt
+examples/data/materials.pumas

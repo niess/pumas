@@ -27,11 +27,6 @@
 
 /* This example generates PUMAS energy loss tabulations from a Material
  * Description File (MDF).
- *
- * Note that for this example to work you need the corresponding MDF and energy
- * loss tables. Those can be downloaded with git, as following:
- *
- * git clone https://gitub.com/niess/pumas-materials materials
  */
 
 /* Standard library includes */
@@ -43,29 +38,17 @@
 int main(int argc, char * argv[])
 {
         /* Parse any arguments */
-        char * mdf = (argc >= 2) ?
-            argv[1] : "materials/mdf/examples/standard.xml";
-        char * outdir = (argc >= 3) ?
-            argv[2] : "materials/dedx/examples";
+        char * mdf = (argc >= 2) ? argv[1] : "examples/data/materials.xml";
+        char * dedx = (argc >= 3) ? argv[2] : "examples/data";
 
-        /* Create a physics object in tabulation mode */
+        /* Create a physics object in dry mode since only energy loss
+         * tabulations are needed
+         */
         struct pumas_physics * physics;
-        pumas_physics_create_tabulation(
-            &physics, PUMAS_PARTICLE_MUON, mdf, NULL);
+        struct pumas_physics_settings settings = { .dry = 1, .update = 1};
+        pumas_physics_create(
+            &physics, PUMAS_PARTICLE_MUON, mdf, dedx, &settings);
 
-        /* Initialise the tabulation data handle */
-        struct pumas_physics_tabulation_data data = {
-                .overwrite = 1, .outdir = outdir};
-
-        /* Loop over base materials and compute the energy loss tables */
-        const int n = pumas_physics_material_length(physics) -
-            pumas_physics_composite_length(physics);
-        for (data.material = 0; data.material < n; data.material++)
-                pumas_physics_tabulate(physics, &data);
-
-        /* Clean and exit to the OS */
-        pumas_physics_tabulation_clear(physics, &data);
-        pumas_physics_destroy(&physics);
-
+        /* Exit to the OS */
         exit(EXIT_SUCCESS);
 }
