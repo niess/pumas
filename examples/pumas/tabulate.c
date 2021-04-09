@@ -39,7 +39,7 @@ int main(int argc, char * argv[])
 {
         /* Parse any arguments */
         char * mdf = (argc >= 2) ? argv[1] : "examples/data/materials.xml";
-        char * dedx = (argc >= 3) ? argv[2] : "examples/data";
+        char * dedx = (argc >= 3) ? argv[2] : NULL;
 
         /* Create a physics object in dry mode since only energy loss
          * tabulations are needed

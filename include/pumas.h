@@ -716,7 +716,8 @@ struct pumas_physics_settings {
  * *dedx_path* can be set to `NULL`. If so the corresponding path is read from
  * `PUMAS_MDF` or `PUMAS_DEDX` environment variable(s). Note that an MDF file
  * *must* be provided either way. The energy loss path can however be left
- * unspecified in which case it defaults to the current working directory.
+ * unspecified in which case it defaults to the directory containing the MDF
+ * file.
  *
  * Optionaly extra physics settings can be specified by providing a
  * `pumas_physics_settings` structure. If `NULL` is provided then PUMAS default

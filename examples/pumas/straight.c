@@ -96,7 +96,7 @@ int main(int narg, char * argv[])
          * can a few seconds, depending on the number of materials in the MDF.
          */
         pumas_physics_create(&physics, PUMAS_PARTICLE_MUON,
-            "examples/data/materials.xml", "examples/data", NULL);
+            "examples/data/materials.xml", NULL, NULL);
 
         /* Map the PUMAS material index */
         pumas_physics_material_index(physics, MATERIAL_NAME, &medium.material);

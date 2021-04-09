@@ -43,7 +43,7 @@ int main(int argc, char * argv[])
         /* Parse any arguments */
         const char * mdf = (argc >= 2) ?
             argv[1] : "examples/data/materials.xml";
-        const char * dedx = (argc >= 3) ? argv[2] : "examples/data";
+        const char * dedx = (argc >= 3) ? argv[2] : NULL;
         const char * dump = (argc >= 4) ?
             argv[3] : "examples/data/materials.pumas";
 

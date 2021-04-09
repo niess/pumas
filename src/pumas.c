@@ -1351,7 +1351,7 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         /* Check the path to energy loss tables. */
         struct pumas_physics * physics = NULL;
         if (dedx_path == NULL) dedx_path = getenv("PUMAS_DEDX");
-        if (dedx_path == NULL) dedx_path = ".";
+        if (dedx_path == NULL) dedx_path = "@";
 
         /* Parse the MDF. */
         const int size_mdf = 2048;
