@@ -1409,6 +1409,14 @@ START_TEST(test_api_dcs)
         ck_assert_ptr_ne(dcs_br, dcs_pn);
         ck_assert_ptr_ne(dcs_pp, dcs_pn);
 
+        pumas_dcs_t * dcs_el;
+        pumas_dcs_get(PUMAS_PROCESS_ELASTIC, NULL, &dcs_el);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_ptr_nonnull(dcs_el);
+        ck_assert_ptr_ne(dcs_br, dcs_el);
+        ck_assert_ptr_ne(dcs_pp, dcs_el);
+        ck_assert_ptr_ne(dcs_pn, dcs_el);
+
         /* Test the getter */
         pumas_dcs_get(PUMAS_PROCESS_BREMSSTRAHLUNG, "KKP", &dcs);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
@@ -1537,6 +1545,8 @@ START_TEST(test_api_dcs)
         E = 1E+10;
         ck_assert_double_nonnan(dcs(Z, A, m, E - m, 3E-07 * E));
         ck_assert_double_nonnan(dcs(Z, A, m, E - m, 0.5 * E));
+
+        /* XXX Check values of elastic DCS ? */
 
         /* Free the data */
         pumas_physics_destroy(&physics);

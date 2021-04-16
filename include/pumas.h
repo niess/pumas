@@ -223,7 +223,9 @@ enum pumas_process {
         /** The e+e- pair production process */
         PUMAS_PROCESS_PAIR_PRODUCTION,
         /** The photonuclear process */
-        PUMAS_PROCESS_PHOTONUCLEAR
+        PUMAS_PROCESS_PHOTONUCLEAR,
+        /** The elastic (Coulomb) scattering process */
+        PUMAS_PROCESS_ELASTIC
 };
 
 /** Indices for PUMAS library constants. */
@@ -613,7 +615,7 @@ struct pumas_physics;
  * function.
  *
  * **Note** : only the Bremsstrahlung, pair creation and photonuclear processes
- * can be redefined.
+ * can be modified.
  */
 typedef double pumas_dcs_t (double Z, double A, double m, double K, double q);
 
@@ -1805,7 +1807,7 @@ PUMAS_API enum pumas_return pumas_constant(
  * the model name must not be already used otherwise an error is returned.  In
  * addition, only the following radiative models can be user defined:
  * Bremsstrahlung, e^(+)e^(-) pair production or photonuclear interactions.
- * Ionisation loss & Coulomb multiple scattering are built-in.
+ * Ionisation loss & elastic scattering are built-in.
  *
  * **Note**: it is not possible to un-register a model.
  *
