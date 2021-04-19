@@ -40,7 +40,7 @@ browse the provided [examples](examples).
 _**Note** that for the examples to work you need the corresponding MDF and
 energy loss tables. Those can be downloaded with git, as following:_
 ```bash
-git clone https://gitub.com/niess/pumas-materials materials
+git clone https://github.com/niess/pumas-materials materials
 ```
 
 ## License
