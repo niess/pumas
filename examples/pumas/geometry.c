@@ -88,12 +88,12 @@ static double locals_air(struct pumas_medium * medium,
         const double h = 12E+03;
         locals->density = rho0 * exp(-state->position[2] / h);
 
-        /* Propose a maximum stepping distance as 1 percent of the projected
-         * attenuation length, for the density
+        /* Propose a local stepping distance as the projected attenuation
+         * length for the density
          */
         const double eps = 5E-02;
         const double uz = fabs(state->direction[2]);
-        return 1E-02 * h / ((uz <= eps) ? eps : uz);
+        return h / ((uz <= eps) ? eps : uz);
 }
 
 /* The media container */
@@ -287,16 +287,18 @@ int main(int narg, char * argv[])
                             context, &state, &event, medium);
 
                         /* Check if the muon has exit the simulation area */
-                        if (event == PUMAS_EVENT_MEDIUM) {
-                                if (medium[1] == NULL) {
+                        if ((event == PUMAS_EVENT_MEDIUM) &&
+                            (medium[1] == NULL)) {
+                                if (state.position[2] >=
+                                     PRIMARY_ALTITUDE - FLT_EPSILON) {
                                         /* Update the integrated flux */
                                         const double wi = state.weight *
                                         flux_gccly(-state.direction[2],
                                             state.energy, state.charge);
                                         w += wi;
                                         w2 += wi * wi;
-                                        break;
                                 }
+                                break;
                         } else if (event != PUMAS_EVENT_LIMIT_ENERGY) {
                                 /* This should not happen */
                                 fprintf(stderr,
@@ -312,7 +314,7 @@ int main(int narg, char * argv[])
         const double sigma =
             (rock_thickness <= 0.) ? 0. : sqrt(((w2 / n) - w * w) / n);
         const char * unit = rk ? "" : "GeV^{-1} ";
-        printf("Flux : %.5lE \\pm %.5lE %sm^{-2} s^{-2} sr^{-1}\n", w, sigma,
+        printf("Flux : %.5lE \\pm %.5lE %sm^{-2} s^{-1} sr^{-1}\n", w, sigma,
             unit);
 
         /* Clean and exit to the OS */

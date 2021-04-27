@@ -184,7 +184,7 @@ int main(int narg, char * argv[])
             (rock_thickness <= 0.) ? 0. : sqrt(((w2 / n) - w * w) / n);
 
         const char * unit = rk ? "" : "GeV^{-1} ";
-        printf("Flux : %.5lE \\pm %.5lE %sm^{-2} s^{-2} sr^{-1}\n", w, sigma,
+        printf("Flux : %.5lE \\pm %.5lE %sm^{-2} s^{-1} sr^{-1}\n", w, sigma,
             unit);
 
         /* Clean and exit to the OS */
