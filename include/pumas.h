@@ -124,8 +124,6 @@ enum pumas_return {
         PUMAS_RETURN_SUCCESS = 0,
         /** The requested accuracy is not valid. */
         PUMAS_RETURN_ACCURACY_ERROR,
-        /** The requested cutoff is not valid. */
-        PUMAS_RETURN_CUTOFF_ERROR,
         /** End of file was reached. */
         PUMAS_RETURN_END_OF_FILE,
         /** The specified decay mode is not valid. */
@@ -210,7 +208,7 @@ enum pumas_event {
         PUMAS_EVENT_VERTEX = 2016,
         /** The particle has a nul or negative weight. */
         PUMAS_EVENT_WEIGHT = 2048,
-        /** Extra flag for records tagging the 1st transport step. */
+        /** Extra flag for records tagging the first transport step. */
         PUMAS_EVENT_START = 4096,
         /** Extra flag for records tagging the last transport step. */
         PUMAS_EVENT_STOP = 8192
@@ -630,6 +628,15 @@ struct pumas_physics_settings {
          * et al., https://doi.org/10.1103/PhysRevD.64.074015).
          */
         double cutoff;
+        /** Ratio of the elastic hard path length w.r.t. the first transport
+         * path length.
+         *
+         * The lower the ratio the more detailed the simulation of elastic
+         * scattering  (see e.g. Fernandez-Varea et al.,
+         * https://doi.org/10.1016/0168-583X(93)95827-R)).  Setting a null or
+         * negative value results in the default ratio to be used i.e. 1E-04.
+         */
+        double elastic_ratio;
         /** Physics model for the Bremsstrahlung process.
          *
          *  Available models are:
@@ -732,8 +739,6 @@ struct pumas_physics_settings {
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_CUTOFF_ERROR            A bad cutoff value was provided.
- *
  *     PUMAS_RETURN_END_OF_FILE             And unexpected EOF occured.
  *
  *     PUMAS_RETURN_FORMAT_ERROR            A file has a wrong format.
@@ -764,6 +769,9 @@ struct pumas_physics_settings {
  * defined.
  *
  *     PUMAS_RETURN_UNKNOWN_PARTICLE        The given type is not supported.
+ *
+ *     PUMAS_RETURN_VALUE_ERROR             A bad cutoff or elastic ratio
+ * was provided.
  */
 PUMAS_API enum pumas_return pumas_physics_create(
     struct pumas_physics ** physics, enum pumas_particle particle,
@@ -850,6 +858,20 @@ PUMAS_API enum pumas_return pumas_physics_load(
  * modified afterwards. Instead a new physics object must be created.
  */
 PUMAS_API double pumas_physics_cutoff(const struct pumas_physics * physics);
+
+/**
+ * Get the elastic ratio value used by the physics.
+ *
+ * @param context Handle for the physics tables.
+ * @return The elastic ratio or -1 if the physics is not properly initialised.
+ *
+ * The ratio of elastic hard path length w.r.t. the first transport path length
+ * is specified during the physics initialisation with `pumas_physics_create`.
+ * It cannot be modified afterwards. Instead a new physics object must be
+ * created.
+ */
+PUMAS_API double pumas_physics_elastic_ratio(
+    const struct pumas_physics * physics);
 
 /**
  * Transport a particle according to the configured `pumas_context`.

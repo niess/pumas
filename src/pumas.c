@@ -78,16 +78,15 @@
  */
 #define DEFAULT_CUTOFF 5E-02
 /**
+ * Default ratio for the elastic scattering.
+ */
+#define DEFAULT_ELASTIC_RATIO 1E-04
+/**
  * Exponents of the differential cross section approximation in Backward
  * Monte-Carlo (BMC).
  */
 #define RMC_ALPHA_LOW 2.5
 #define RMC_ALPHA_HIGH 1.4
-/**
- * Ratio of the Coulomb interaction length, restricted to catastrophic events,
- * to the multiple scattering 1st transport path length.
- */
-#define EHS_OVER_MSC 1E-04
 /**
  * Maximum path length for Elastic Hard Scattering (EHS) events, in kg/m^-2.
  */
@@ -653,7 +652,7 @@ struct pumas_physics {
  * Version tag for the physics data format. Increment whenever the
  * structure changes.
  */
-#define PHYSICS_BINARY_DUMP_TAG 6
+#define PHYSICS_BINARY_DUMP_TAG 7
 
         /** The total byte size of the shared data. */
         int size;
@@ -684,6 +683,8 @@ struct pumas_physics {
         double mass;
         /** The relative cutoff between CEL and DELs. */
         double cutoff;
+        /** Ratio of EHS path length w.r.t. the first transport path length. */
+        double elastic_ratio;
         /** Path to the current MDF. */
         char * mdf_path;
         /** Path where the dE/dX files are stored. */
@@ -1311,17 +1312,28 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         /* Check and unpack any extra settings */
         struct pumas_physics_settings opts = {
                 DEFAULT_CUTOFF,
+                DEFAULT_ELASTIC_RATIO,
                 DEFAULT_BREMSSTRAHLUNG,
                 DEFAULT_PAIR_PRODUCTION,
                 DEFAULT_PHOTONUCLEAR
         };
         if (settings_ != NULL) {
                 if (settings_->cutoff >= 1) {
-                        return ERROR_FORMAT(PUMAS_RETURN_CUTOFF_ERROR,
-                            "bad cutoff value (expected a value in ]0, 1[, "
-                            " got %g)", settings_->cutoff);
+                        return ERROR_FORMAT(PUMAS_RETURN_VALUE_ERROR,
+                            "bad cutoff value for energy losses (expected a "
+                            "value in ]0, 1[,  got %g)",
+                            settings_->cutoff);
                 } else if (settings_->cutoff > 0) {
                         opts.cutoff = settings_->cutoff;
+                }
+
+                if (settings_->elastic_ratio >= 1) {
+                        return ERROR_FORMAT(PUMAS_RETURN_VALUE_ERROR,
+                            "bad ratio value for elastic scattering "
+                            "(expected a value in ]0, 1[,  got %g)",
+                            settings_->elastic_ratio);
+                } else if (settings_->elastic_ratio > 0) {
+                        opts.elastic_ratio = settings_->elastic_ratio;
                 }
 
                 if (settings_->bremsstrahlung != NULL) {
@@ -1580,8 +1592,9 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         physics->dcs_model_offset = settings.dcs_model_offset;
         strcpy(physics->mdf_path, file_mdf);
 
-        /* Set the cutoff */
+        /* Set the cutoff and elastic ratio */
         physics->cutoff = opts.cutoff;
+        physics->elastic_ratio = opts.elastic_ratio;
 
         /* Allocate a new MDF buffer. */
         if ((mdf = allocate(sizeof(struct mdf_buffer) + size_mdf)) == NULL) {
@@ -1966,6 +1979,11 @@ double pumas_physics_cutoff(const struct pumas_physics * physics)
         return (physics == NULL) ? -1 : physics->cutoff;
 }
 
+double pumas_physics_elastic_ratio(const struct pumas_physics * physics)
+{
+        return (physics == NULL) ? -1 : physics->elastic_ratio;
+}
+
 const char * pumas_error_function(pumas_function_t * caller)
 {
 #define TOSTRING(function)                                                     \
@@ -2010,6 +2028,7 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_constant)
         TOSTRING(pumas_dcs_default)
         TOSTRING(pumas_physics_cutoff)
+        TOSTRING(pumas_physics_elastic_ratio)
         TOSTRING(pumas_physics_destroy)
         TOSTRING(pumas_context_destroy)
         TOSTRING(pumas_context_physics_get)
@@ -9127,7 +9146,7 @@ enum pumas_return compute_coulomb_parameters(struct pumas_physics * physics,
 
         /* Set the hard scattering mean free path. */
         const double lb_m = 1. / invlb_m;
-        double lb_h = EHS_OVER_MSC / invlb1_m;
+        double lb_h = physics->elastic_ratio / invlb1_m;
         if (lb_h > EHS_PATH_MAX) lb_h = EHS_PATH_MAX;
 
         /* Compute the hard scattering cutoff angle, in the CM. */

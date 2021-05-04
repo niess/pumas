@@ -279,7 +279,7 @@ START_TEST(test_api_init)
         pumas_physics_create(&physics, PUMAS_PARTICLE_MUON,
             "materials/materials.xml", "materials/dedx/muon",
             &settings);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_CUTOFF_ERROR);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_VALUE_ERROR);
 
         /* Check the default cutoff */
         reset_error();
@@ -300,6 +300,37 @@ START_TEST(test_api_init)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq(settings.cutoff, pumas_physics_cutoff(physics));
         pumas_physics_destroy(&physics);
+        settings.cutoff = 0.;
+
+        /* Check the elastic ratio error */
+        reset_error();
+        settings.elastic_ratio = 2;
+        pumas_physics_create(&physics, PUMAS_PARTICLE_MUON,
+            "materials/materials.xml", "materials/dedx/muon",
+            &settings);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_VALUE_ERROR);
+
+        /* Check the default elastic ratio */
+        reset_error();
+        settings.elastic_ratio = 0;
+        pumas_physics_create(&physics, PUMAS_PARTICLE_MUON,
+            "materials/materials.xml", "materials/dedx/muon",
+            &settings);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_double_eq(1E-04, pumas_physics_elastic_ratio(physics));
+        pumas_physics_destroy(&physics);
+
+        /* Check the elastic ratio setter */
+        reset_error();
+        settings.elastic_ratio = 1E-02;
+        pumas_physics_create(&physics, PUMAS_PARTICLE_MUON,
+            "materials/materials.xml", "materials/dedx/muon",
+            &settings);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_double_eq(
+             settings.elastic_ratio, pumas_physics_elastic_ratio(physics));
+        pumas_physics_destroy(&physics);
+        settings.elastic_ratio = 0.;
 
         /* Check the initialisation and dump */
         reset_error();
