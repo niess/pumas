@@ -1084,7 +1084,7 @@ static double step_randn(struct pumas_context * context);
 static double transport_hard_coulomb_objective(
     const struct pumas_physics * physics, double mu, void * parameters);
 static void step_rotate_direction(struct pumas_context * context,
-    struct pumas_state * state, double cos_theta);
+    struct pumas_state * state, double mu);
 /**
  * I/O utility routines.
  */
@@ -5045,8 +5045,8 @@ void transport_do_del(const struct pumas_physics * physics,
         /* Update the direction. */
         if ((context->mode.scattering == PUMAS_MODE_FULL_SPACE) &&
             (polar_func != NULL)) {
-                const double ct = polar_func(physics, context, ki, kf);
-                step_rotate_direction(context, state, ct);
+                const double mu = polar_func(physics, context, ki, kf);
+                step_rotate_direction(context, state, mu);
         }
 }
 
@@ -5071,7 +5071,7 @@ void transport_do_ehs(const struct pumas_physics * physics,
         double mu0 = 0., invlb1 = 0.;
         table_get_msc(physics, context, material, kinetic, &mu0, &invlb1);
 
-        /* Compute the scattering parameters and the the total Coulomb
+        /* Compute the scattering parameters and the total Coulomb
          * cross section.
          */
         int i;
@@ -5144,11 +5144,22 @@ void transport_do_ehs(const struct pumas_physics * physics,
         /* Transform from the CM frame to the Lab frame. */
         const double gamma = data->fCM[0];
         const double tau = data->fCM[1];
-        const double a = gamma * (tau + 1. - 2. * mu1);
-        const double ct_h = a / sqrt(4. * mu1 * (1. - mu1) + a * a);
+        double mu;
+        if (mu1 > 1E-06) {
+                /* Use the exact expression */
+                const double a = gamma * (tau + 1. - 2. * mu1);
+                const double ct_h = a / sqrt(4. * mu1 * (1. - mu1) + a * a);
+                mu = 0.5 * (1. - ct_h);
+        } else {
+                /* Use the asymptotic expression. Note that the exact one
+                 * is numericaly unstable for small angles.
+                 */
+                const double d = gamma * (1. + tau);
+                mu = mu1 * (d * d);
+        }
 
         /* Apply the rotation. */
-        step_rotate_direction(context, state, ct_h);
+        step_rotate_direction(context, state, mu);
 }
 
 /**
@@ -6265,13 +6276,13 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
 
         /* Apply the multiple scattering. */
         if ((invlb1 > 0.) || (context_->step_invlb1 > 0.)) {
-                double ilb1 = 0.5 * step * (invlb1 + context_->step_invlb1);
+                double ilb1 = 0.25 * step * (invlb1 + context_->step_invlb1);
                 if (ilb1 > 1.) ilb1 = 1.;
-                double ct;
-                do
-                        ct = 1. + ilb1 * log(context->random(context));
-                while (ct < -1.);
-                step_rotate_direction(context, state, ct);
+                double mu;
+                do {
+                        mu = -ilb1 * log(context->random(context));
+                } while (mu > 1.);
+                step_rotate_direction(context, state, mu);
         }
 
         return PUMAS_RETURN_SUCCESS;
@@ -6397,20 +6408,21 @@ static double step_randn(struct pumas_context * context)
  *
  * @param context   The simulation context.
  * @param state     The initial/final state.
- * @param cos_theta The cosine of the polar rotation angle.
+ * @param mu        The polar variable, as mu = 0.5 * (1 - cos(theta)).
  *
  * The direction is randomly rotated around the initial direction with the
  * constraint that the cosine of the angle between both directions is
  * *cos_theta*.
  */
 void step_rotate_direction(struct pumas_context * context,
-    struct pumas_state * state, double cos_theta)
+    struct pumas_state * state, double mu)
 {
         /* Unpack data. */
         double * const direction = state->direction;
 
         /* Check the numerical sine. */
-        const double stsq = 1. - cos_theta * cos_theta;
+        const double cos_theta = 1 - 2 * mu;
+        const double stsq = 4 * mu * (1. - mu);
         if (stsq <= 0.) return;
         const double st = sqrt(stsq);
 
@@ -10131,7 +10143,7 @@ polar_function_t * polar_get(int process)
  * @param context The simulation context.
  * @param ki      The initial kinetic energy.
  * @param kf      The final kinetic energy.
- * @return The cosine of the polar angle.
+ * @return The polar parameters as 0.5 * (1 - cos_theta).
  */
 double polar_bremsstrahlung(const struct pumas_physics * physics,
     struct pumas_context * context, double ki, double kf)
@@ -10143,7 +10155,8 @@ double polar_bremsstrahlung(const struct pumas_physics * physics,
         double r = context->random(context) * rmax2 / (1. + rmax2);
         r = sqrt(r / (1. - r));
 
-        return cos(r * physics->mass * q / (e * (kf + physics->mass)));
+        return 0.5 * (1. -
+            cos(r * physics->mass * q / (e * (kf + physics->mass))));
 }
 
 /**
@@ -10153,7 +10166,7 @@ double polar_bremsstrahlung(const struct pumas_physics * physics,
  * @param context The simulation context.
  * @param ki      The initial kinetic energy.
  * @param kf      The final kinetic energy.
- * @return The cosine of the polar angle.
+ * @return The polar parameters as 0.5 * (1 - cos_theta).
  *
  * The polar angle is sampled assuming a virtual Bremsstrahlung event.
  */
@@ -10170,7 +10183,7 @@ double polar_pair_production(const struct pumas_physics * physics,
  * @param context The simulation context.
  * @param ki      The initial kinetic energy.
  * @param kf      The final kinetic energy.
- * @return The cosine of the polar angle.
+ * @return The polar parameters as 0.5 * (1 - cos_theta).
  */
 double polar_photonuclear(const struct pumas_physics * physics,
     struct pumas_context * context, double ki, double kf)
@@ -10187,17 +10200,17 @@ double polar_photonuclear(const struct pumas_physics * physics,
         const double p = context->random(context);
         const double r = tmax * (tmin + t1) / (tmin * (tmax + t1));
         const double tp = tmax * t1 / ((tmax + t1) * pow(r, p) - tmax);
-        const double ct = 1. -
+        const double mu = 0.5 *
             (tp - tmin) / (2. * (e * (kf + physics->mass) -
                                     physics->mass * physics->mass) -
                               tmin);
 
-        if (ct < 0.)
+        if (mu < 0.)
                 return 0.;
-        else if (ct > 1.)
+        else if (mu > 1.)
                 return 1.;
         else
-                return ct;
+                return mu;
 }
 
 /**
@@ -10207,7 +10220,7 @@ double polar_photonuclear(const struct pumas_physics * physics,
  * @param context The simulation context.
  * @param ki      The initial kinetic energy.
  * @param kf      The final kinetic energy.
- * @return The cosine of the polar angle.
+ * @return The polar parameters as 0.5 * (1 - cos_theta).
  *
  * The polar angle is set from energy-momentum conservation assuming that the
  * electron is initially at rest. See for example appendix A of Fernandez-Varea
@@ -10224,7 +10237,7 @@ double polar_ionisation(const struct pumas_physics * physics,
         const double p12 = kf * (kf + 2. * physics->mass);
         const double ke = ki - kf;
         const double pe2 = ke * (ke + 2. * ELECTRON_MASS);
-        return 0.5 * (p02 + p12 - pe2) / sqrt(p02 * p12);
+        return 0.5 * (1. - 0.5 * (p02 + p12 - pe2) / sqrt(p02 * p12));
 }
 
 /*
