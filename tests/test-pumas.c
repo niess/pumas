@@ -173,6 +173,8 @@ START_TEST(test_api_error)
         CHECK_STRING(pumas_dcs_default);
         CHECK_STRING(pumas_dcs_get);
         CHECK_STRING(pumas_dcs_register);
+        CHECK_STRING(pumas_elastic_dcs);
+        CHECK_STRING(pumas_elastic_length);
         CHECK_STRING(pumas_error_catch);
         CHECK_STRING(pumas_error_function);
         CHECK_STRING(pumas_error_handler_get);
@@ -196,12 +198,14 @@ START_TEST(test_api_error)
         CHECK_STRING(pumas_physics_particle);
         CHECK_STRING(pumas_physics_print);
         CHECK_STRING(pumas_physics_property_cross_section);
+        CHECK_STRING(pumas_physics_property_elastic_scattering_length);
+        CHECK_STRING(pumas_physics_property_elastic_cutoff_angle);
         CHECK_STRING(pumas_physics_property_energy_loss);
         CHECK_STRING(pumas_physics_property_grammage);
         CHECK_STRING(pumas_physics_property_kinetic_energy);
         CHECK_STRING(pumas_physics_property_magnetic_rotation);
+        CHECK_STRING(pumas_physics_property_multiple_scattering_length);
         CHECK_STRING(pumas_physics_property_proper_time);
-        CHECK_STRING(pumas_physics_property_scattering_length);
         CHECK_STRING(pumas_physics_table_index);
         CHECK_STRING(pumas_physics_table_length);
         CHECK_STRING(pumas_physics_table_value);
@@ -774,7 +778,18 @@ START_TEST(test_api_property)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         reset_error();
-        pumas_physics_property_scattering_length(physics, 0, 0., &value);
+        pumas_physics_property_elastic_scattering_length(
+            physics, 0, 0., &value);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
+
+        reset_error();
+        pumas_physics_property_elastic_cutoff_angle(
+            physics, 0, 0., &value);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
+
+        reset_error();
+        pumas_physics_property_multiple_scattering_length(
+            physics, 0, 0., &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         /* Load the muon data */
@@ -830,7 +845,18 @@ START_TEST(test_api_property)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
-        pumas_physics_property_scattering_length(physics, 4, 0., &value);
+        pumas_physics_property_elastic_scattering_length(
+            physics, 4, 0., &value);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
+
+        reset_error();
+        pumas_physics_property_elastic_cutoff_angle(
+            physics, 4, 0., &value);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
+
+        reset_error();
+        pumas_physics_property_multiple_scattering_length(
+            physics, 4, 0., &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         /* Check some values */
@@ -909,11 +935,20 @@ START_TEST(test_api_property)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_gt(value, 8.498);
 
-        pumas_physics_property_scattering_length(physics, 0, 1E-02, &value);
+        pumas_physics_property_elastic_scattering_length(
+            physics, 0, 1E+00, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        value *= 1E-03; /* Normalise to electrons in Al */
-        ck_assert_double_gt(value, 0.3);
-        ck_assert_double_lt(value, 3.);
+        ck_assert_double_eq_tol(195.45, value, 1E-02);
+
+        pumas_physics_property_elastic_cutoff_angle(
+            physics, 0, 1E+00, &value);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_double_eq_tol(0.9965, value, 1E-04);
+
+        pumas_physics_property_multiple_scattering_length(
+            physics, 0, 1E+00, &value);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_double_eq_tol(2.319E+06, value, 1E+03);
 
         /* Check overflows */
         double vmax;
@@ -1115,11 +1150,22 @@ START_TEST(test_api_table)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(index, 17);
 
-        /* Check unsuported properties  */
-        pumas_physics_table_value(
-            physics, PUMAS_PROPERTY_SCATTERING_LENGTH, 0, 0, 17, &value);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
+        pumas_physics_table_value(physics,
+            PUMAS_PROPERTY_ELASTIC_SCATTERING_LENGTH, 0, 0, 17, &value);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_double_eq_tol(1.138E-04, value, 1E-07);
 
+        pumas_physics_table_value(physics,
+            PUMAS_PROPERTY_ELASTIC_CUTOFF_ANGLE, 0, 0, 17, &value);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_double_eq_tol(0.9965, value, 1E-04);
+
+        pumas_physics_table_value(physics,
+            PUMAS_PROPERTY_MULTIPLE_SCATTERING_LENGTH, 0, 0, 17, &value);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_double_eq_tol(6.097E-04, value, 1E-07);
+
+        /* Check unsuported properties  */
         pumas_physics_table_index(
             physics, PUMAS_PROPERTY_CROSS_SECTION, 0, 0, value, &index);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
@@ -1128,8 +1174,12 @@ START_TEST(test_api_table)
             physics, PUMAS_PROPERTY_ENERGY_LOSS, 0, 0, value, &index);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
-        pumas_physics_table_index(
-            physics, PUMAS_PROPERTY_SCATTERING_LENGTH, 0, 0, value, &index);
+        pumas_physics_table_index(physics,
+            PUMAS_PROPERTY_ELASTIC_SCATTERING_LENGTH, 0, 0, value, &index);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
+
+        pumas_physics_table_index(physics,
+            PUMAS_PROPERTY_MULTIPLE_SCATTERING_LENGTH, 0, 0, value, &index);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         /* Unload the data */
@@ -1440,14 +1490,6 @@ START_TEST(test_api_dcs)
         ck_assert_ptr_ne(dcs_br, dcs_pn);
         ck_assert_ptr_ne(dcs_pp, dcs_pn);
 
-        pumas_dcs_t * dcs_el;
-        pumas_dcs_get(PUMAS_PROCESS_ELASTIC, NULL, &dcs_el);
-        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_ptr_nonnull(dcs_el);
-        ck_assert_ptr_ne(dcs_br, dcs_el);
-        ck_assert_ptr_ne(dcs_pp, dcs_el);
-        ck_assert_ptr_ne(dcs_pn, dcs_el);
-
         /* Test the getter */
         pumas_dcs_get(PUMAS_PROCESS_BREMSSTRAHLUNG, "KKP", &dcs);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
@@ -1577,8 +1619,6 @@ START_TEST(test_api_dcs)
         ck_assert_double_nonnan(dcs(Z, A, m, E - m, 3E-07 * E));
         ck_assert_double_nonnan(dcs(Z, A, m, E - m, 0.5 * E));
 
-        /* XXX Check values of elastic DCS ? */
-
         /* Free the data */
         pumas_physics_destroy(&physics);
 
@@ -1627,6 +1667,36 @@ START_TEST(test_api_dcs)
             "materials/materials.xml", "materials/dedx/muon",
             &settings);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_MODEL_ERROR);
+}
+END_TEST
+
+/* Test the elastic API */
+START_TEST(test_api_elastic)
+{
+        /* Load the muon data */
+        load_muon();
+
+        /* Test some numerical values of the dcs */
+        const double Z = 11;
+        const double A = 22;
+        const double m = 0.10566;
+        const double k = 1.;
+
+        double v;
+        v = pumas_elastic_dcs(Z, A, m, k, 1E-03);
+        ck_assert_double_eq_tol(8.359E-22, v, 1E-25);
+
+        v = pumas_elastic_dcs(Z, A, m, k, 1E+00);
+        ck_assert_double_eq_tol(4.997E-39, v, 1E-42);
+
+        /* Test some numerical values of the path length */
+        v = pumas_elastic_length(0, Z, A, m, k);
+        ck_assert_double_eq_tol(1.289E-03, v, 1E-06);
+
+        v = pumas_elastic_length(1, Z, A, m, k);
+        ck_assert_double_eq_tol(1.613E+06, v, 1E+03);
+
+        pumas_physics_destroy(&physics);
 }
 END_TEST
 
@@ -5131,6 +5201,7 @@ Suite * create_suite(void)
         tcase_add_test(tc_api, test_api_recorder);
         tcase_add_test(tc_api, test_api_print);
         tcase_add_test(tc_api, test_api_dcs);
+        tcase_add_test(tc_api, test_api_elastic);
 
         /* The no loss test case */
         TCase * tc_lossless = tcase_create("Lossless");

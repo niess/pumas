@@ -48,9 +48,22 @@ enum pumas_particle {
  * Keys for some of the tabulated properties used by PUMAS.
  */
 enum pumas_property {
-        /** The macroscopic inelastic cross-section, in m^(2)/kg. */
+        /**
+         * The restricted cross-section for inelastic and radiative
+         * processes, in m^(2)/kg.
+         */
         PUMAS_PROPERTY_CROSS_SECTION = 0,
-        /** The average energy loss, in GeV/(kg/m^(2)). */
+        /**
+         * Cutoff angle for single elastic events in the center of mass frame,
+         * in rad.
+         */
+        PUMAS_PROPERTY_ELASTIC_CUTOFF_ANGLE,
+        /**
+         * The restricted path length for elastic (Coulomb) processes,
+         * in kg/m^(2).
+         */
+        PUMAS_PROPERTY_ELASTIC_SCATTERING_LENGTH,
+        /** The average (continuous) energy loss, in GeV/(kg/m^(2)). */
         PUMAS_PROPERTY_ENERGY_LOSS,
         /** The particle range, in kg/m^(2). */
         PUMAS_PROPERTY_GRAMMAGE,
@@ -58,11 +71,13 @@ enum pumas_property {
         PUMAS_PROPERTY_KINETIC_ENERGY,
         /** The total magnetic rotation angle, in rad kg/m^(3). */
         PUMAS_PROPERTY_MAGNETIC_ROTATION,
-        /** The particle proper time, in kg/m^(2). */
-        PUMAS_PROPERTY_PROPER_TIME,
-        /** The macroscopic elastic scattering 1^(st) path length, in kg/m^(2).
+        /**
+         * The multiple scattering (first transport) path length for soft
+         * processes, in kg/m^(2).
          */
-        PUMAS_PROPERTY_SCATTERING_LENGTH
+        PUMAS_PROPERTY_MULTIPLE_SCATTERING_LENGTH,
+        /** The particle proper time, in kg/m^(2). */
+        PUMAS_PROPERTY_PROPER_TIME
 };
 
 /**
@@ -214,16 +229,14 @@ enum pumas_event {
         PUMAS_EVENT_STOP = 8192
 };
 
-/** Indices for customizable Physics processes. */
+/** Indices of customizable physics processes. */
 enum pumas_process {
         /** The Bremstrahlung process */
         PUMAS_PROCESS_BREMSSTRAHLUNG = 0,
         /** The e+e- pair production process */
         PUMAS_PROCESS_PAIR_PRODUCTION,
         /** The photonuclear process */
-        PUMAS_PROCESS_PHOTONUCLEAR,
-        /** The elastic (Coulomb) scattering process */
-        PUMAS_PROCESS_ELASTIC
+        PUMAS_PROCESS_PHOTONUCLEAR
 };
 
 /** Indices for PUMAS library constants. */
@@ -1324,34 +1337,80 @@ PUMAS_API enum pumas_return pumas_physics_property_energy_loss(
     int material, double energy, double * dedx);
 
 /**
- * Get the Multiple SCattering (MSC) 1^(st) transport path length for a
- * unit weight.
+ * Get the cutoff angle for hard elastic events.
  *
  * @param physics     Handle for the Physics tables.
  * @param material    The material index.
  * @param energy      The kinetic energy, in GeV.
- * @param length      The computed MSC length in kg/m^(2).
+ * @param angle       The corresponding angle, in rad.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * The MSC 1^(st) transport path length, &lambda;, is related to the standard
- * deviation of the polar scattering angle's as &theta;^(2) = X/(2&lambda;),
- * with X the column depth.
+ * The cutoff angle is given in the center of mass frame of the collision.
  *
  * __Error codes__
  *
  *     PUMAS_RETURN_INDEX_ERROR             The material index is not valid.
  *
  *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
- *
- *     PUMAS_RETURN_VALUE_ERROR             The MSC path length is infinite.
  */
-PUMAS_API enum pumas_return pumas_physics_property_scattering_length(
+PUMAS_API enum pumas_return pumas_physics_property_elastic_cutoff_angle(
+    const struct pumas_physics * physics, int material, double energy,
+    double * angle);
+
+/**
+ * Get the restricted interaction length for elastic processes.
+ *
+ * @param physics     Handle for the Physics tables.
+ * @param material    The material index.
+ * @param energy      The kinetic energy, in GeV.
+ * @param length      The corresponding length, in kg/m^(2).
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
+ *
+ * The interaction length is restricted to hard elastic events with an angle
+ * larger than an energy dependent cutoff value, as returned by
+ * `pumas_physics_property_elastic_cutoff_angle`. Soft events are included in
+ * the multiple scattering (see
+ * `pumas_physics_property_multiple_scattering_length`).
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INDEX_ERROR             The material index is not valid.
+ *
+ *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
+ */
+PUMAS_API enum pumas_return pumas_physics_property_elastic_scattering_length(
     const struct pumas_physics * physics, int material, double energy,
     double * length);
 
 /**
- * Get the macroscopic total inelastic cross-section.
+ * Get the multiple scattering (first transport) path length.
+ *
+ * @param physics     Handle for the Physics tables.
+ * @param material    The material index.
+ * @param energy      The kinetic energy, in GeV.
+ * @param length      The corresponding length, in kg/m^(2).
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
+ *
+ * The first transport path length, &lambda;, is related to the standard
+ * deviation of the polar multiple scattering angle's as &theta;^(2) =
+ * X/(2&lambda;), with X the column depth.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INDEX_ERROR             The material index is not valid.
+ *
+ *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
+ */
+PUMAS_API enum pumas_return pumas_physics_property_multiple_scattering_length(
+    const struct pumas_physics * physics, int material, double energy,
+    double * length);
+
+/**
+ * Get the macroscopic restricted cross-section for inelastic and radiative
+ * processes.
  *
  * @param physics          Handle for the Physics tables.
  * @param material         The material index.
@@ -1360,9 +1419,13 @@ PUMAS_API enum pumas_return pumas_physics_property_scattering_length(
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * The returned cross-section value is in unit m^(2)/kg. Multiply by the
- * density in order to get the inverse of the interaction length in unit of
- * distance.
+ * The returned cross-section is restricted to single events with fractionnal
+ * energy loss larger than the physics *cutoff*. Events with smaller energy loss
+ * are included in the continuous energy loss given by
+ * `pumas_physics_property_energy_loss`.
+ *
+ * The returned value is in unit m^(2)/kg. Multiply by the density in order to
+ * get the inverse of the interaction length in unit of distance.
  *
  * __Error codes__
  *
@@ -1884,6 +1947,50 @@ PUMAS_API enum pumas_return pumas_dcs_get(
  * process index is not valid then `NULL` is returned.
  */
 PUMAS_API const char * pumas_dcs_default(enum pumas_process process);
+
+/**
+ * The elastic scattering differential cross section.
+ *
+ * @param Z       The charge number of the target atom.
+ * @param A       The mass number of the target atom.
+ * @param m       The projectile rest mass, in GeV
+ * @param K       The projectile initial kinetic energy.
+ * @param theta   The scattering angle, in rad.
+ * @return The corresponding value of the atomic DCS, in m^(2) / rad.
+ *
+ * The elastic DCS is computed following Boschini et al. and Salvat. The
+ * first Born approximation is used with an effective mass in oder to account
+ * for the recoil. A spin correction factor is applied.
+ *
+ * References:
+ *      Boschini et al. (2011), https://arxiv.org/abs/1111.4042 &
+ *                              https://arxiv.org/abs/1011.4822
+ *      Salvat (2013), NIM B 316, 144-159
+ */
+PUMAS_API double pumas_elastic_dcs(
+    double Z, double A, double m, double K, double theta);
+
+/**
+ * The (transport) path length for elastic processes.
+ *
+ * @param order   The order of the distribution.
+ * @param Z       The charge number of the target atom.
+ * @param A       The mass number of the target atom.
+ * @param m       The projectile rest mass, in GeV
+ * @param K       The projectile initial kinetic energy.
+ * @param theta   The scattering angle, in rad.
+ * @return The corresponding path length, in kg / m^(2).
+ *
+ * The elastic path length is computed analytically from the DCS integral (see
+ * `pumas_elastic_dcs`). If *order* is 0 then the interaction length is
+ * returned. Else, if *order* is 1 then the first transport path length is
+ * returned. For other values of *order* -1 is returned.
+ *
+ * References:
+ *      Fernandez-Varea et al. (1993), NIM B 73, 447-473
+ */
+PUMAS_API double pumas_elastic_length(
+    int order, double Z, double A, double mass, double kinetic);
 
 #ifdef __cplusplus
 }

@@ -2017,7 +2017,9 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_physics_property_magnetic_rotation)
         TOSTRING(pumas_physics_property_kinetic_energy)
         TOSTRING(pumas_physics_property_energy_loss)
-        TOSTRING(pumas_physics_property_scattering_length)
+        TOSTRING(pumas_physics_property_elastic_scattering_length)
+        TOSTRING(pumas_physics_property_elastic_cutoff_angle)
+        TOSTRING(pumas_physics_property_multiple_scattering_length)
         TOSTRING(pumas_physics_property_cross_section)
         TOSTRING(pumas_physics_table_value)
         TOSTRING(pumas_physics_table_index)
@@ -2027,6 +2029,8 @@ const char * pumas_error_function(pumas_function_t * caller)
         /* Other library functions. */
         TOSTRING(pumas_constant)
         TOSTRING(pumas_dcs_default)
+        TOSTRING(pumas_elastic_dcs)
+        TOSTRING(pumas_elastic_length)
         TOSTRING(pumas_physics_cutoff)
         TOSTRING(pumas_physics_elastic_ratio)
         TOSTRING(pumas_physics_destroy)
@@ -2677,58 +2681,126 @@ enum pumas_return pumas_physics_property_energy_loss(
         return PUMAS_RETURN_SUCCESS;
 }
 
-/* Public library function: elastic scattering 1st transport path length. */
-enum pumas_return pumas_physics_property_scattering_length(
+/* Public library function: elastic cutoff angle. */
+enum pumas_return pumas_physics_property_elastic_cutoff_angle(
     const struct pumas_physics * physics, int material, double kinetic,
-    double * length)
+    double * angle)
 {
-        ERROR_INITIALISE(pumas_physics_property_scattering_length);
-        *length = 0.;
+        ERROR_INITIALISE(pumas_physics_property_elastic_cutoff_angle);
 
         if (physics == NULL) {
+                *angle = 0.;
                 return ERROR_NOT_INITIALISED();
         } else if ((material < 0) || (material >= physics->n_materials)) {
+                *angle = 0.;
                 return ERROR_INVALID_MATERIAL(material);
         }
 
-        double path = 0.;
-        int i = 0;
-        for (; i < physics->elements_in[material]; i++) {
-                const struct material_component * component =
-                    &physics->composition[material][i];
-                const struct atomic_element * element =
-                    physics->element[component->element];
-                double kinetic0, screening[3], coefficient[2], fCM[2];
-                coulomb_frame_parameters(element->Z, element->A, physics->mass,
-                    kinetic, &kinetic0, fCM);
-                coulomb_screening_parameters(element->Z, element->A,
-                    physics->mass, kinetic, kinetic0, screening);
-                const double fspin = coulomb_spin_factor(
-                    physics->mass, kinetic);
-                double a[3], b[3];
-                coulomb_pole_decomposition(screening, a, b);
-                coulomb_transport_coefficients(
-                    1., fspin, screening, a, b, coefficient);
-                double d = 1. / (fCM[0] * (1. + fCM[1]));
-                d *= d;
-                coefficient[1] *= d;
-                path += component->fraction /
-                    coulomb_wentzel_path(element->Z, element->A, physics->mass,
-                        kinetic, kinetic0, screening[0]) *
-                    coefficient[1];
+        double mu0;
+        const int imax = physics->n_energies - 1;
+        if (kinetic < *table_get_K(physics, 1)) {
+                mu0 = *table_get_Mu0(physics, material, 1);
+        } else if (kinetic >= *table_get_K(physics, imax)) {
+                mu0 = *table_get_Mu0(physics, material, imax);
+        } else {
+                const int i1 = table_index(
+                    physics, NULL, table_get_K(physics, 0), kinetic);
+                const int i2 = i1 + 1;
+                double h = (kinetic - *table_get_K(physics, i1)) /
+                    (*table_get_K(physics, i2) - *table_get_K(physics, i1));
+                mu0 = *table_get_Mu0(physics, material, i1) +
+                    h * (*table_get_Mu0(physics, material, i2) -
+                            *table_get_Mu0(physics, material, i1));
         }
 
-        if (path == 0.) {
-                *length = DBL_MAX;
-                return ERROR_MESSAGE(
-                    PUMAS_RETURN_VALUE_ERROR, "infinite scattering length");
+        if (mu0 < 1E-08) {
+                *angle = 2 * sqrt(mu0);
+        } else {
+                *angle = 1. - acos(1. - 2 * mu0);
         }
 
-        *length = 1. / path;
         return PUMAS_RETURN_SUCCESS;
 }
 
-/* Public library function: total inelastic cross section. */
+/* Public library function: elastic scattering path length. */
+enum pumas_return pumas_physics_property_elastic_scattering_length(
+    const struct pumas_physics * physics, int material, double kinetic,
+    double * length)
+{
+        ERROR_INITIALISE(pumas_physics_property_elastic_scattering_length);
+
+        if (physics == NULL) {
+                *length = 0.;
+                return ERROR_NOT_INITIALISED();
+        } else if ((material < 0) || (material >= physics->n_materials)) {
+                *length = 0.;
+                return ERROR_INVALID_MATERIAL(material);
+        }
+
+        const int imax = physics->n_energies - 1;
+        if (kinetic < *table_get_K(physics, 1)) {
+                /* Use asymptotic limit as lb ~ sqrt(kinetic). */
+                *length = *table_get_Lb(physics, material, 1) *
+                    sqrt((*table_get_K(physics, 1)) / kinetic);
+        } else if (kinetic >= *table_get_K(physics, imax)) {
+                /* Use asymptotic limit as lb ~ kinetic. */
+                *length = *table_get_Lb(physics, material, imax) *
+                    (*table_get_K(physics, imax)) / kinetic;
+        } else {
+                const int i1 = table_index(
+                    physics, NULL, table_get_K(physics, 0), kinetic);
+                const int i2 = i1 + 1;
+                double h = (kinetic - *table_get_K(physics, i1)) /
+                    (*table_get_K(physics, i2) - *table_get_K(physics, i1));
+                *length = *table_get_Lb(physics, material, i1) +
+                    h * (*table_get_Lb(physics, material, i2) -
+                            *table_get_Ms1(physics, material, i1));
+        }
+
+        return PUMAS_RETURN_SUCCESS;
+}
+
+/* Public library function: multiple scattering path length. */
+enum pumas_return pumas_physics_property_multiple_scattering_length(
+    const struct pumas_physics * physics, int material, double kinetic,
+    double * length)
+{
+        ERROR_INITIALISE(pumas_physics_property_multiple_scattering_length);
+
+        if (physics == NULL) {
+                *length = 0.;
+                return ERROR_NOT_INITIALISED();
+        } else if ((material < 0) || (material >= physics->n_materials)) {
+                *length = 0.;
+                return ERROR_INVALID_MATERIAL(material);
+        }
+
+        double invlb1;
+        const int imax = physics->n_energies - 1;
+        if (kinetic < *table_get_K(physics, 1)) {
+                /* Use asymptotic limit as lb1 ~ sqrt(kinetic). */
+                invlb1 = *table_get_Ms1(physics, material, 1) *
+                    sqrt((*table_get_K(physics, 1)) / kinetic);
+        } else if (kinetic >= *table_get_K(physics, imax)) {
+                /* Use asymptotic limit as lb1 ~ kinetic. */
+                invlb1 = *table_get_Ms1(physics, material, imax) *
+                    (*table_get_K(physics, imax)) / kinetic;
+        } else {
+                const int i1 = table_index(
+                    physics, NULL, table_get_K(physics, 0), kinetic);
+                const int i2 = i1 + 1;
+                double h = (kinetic - *table_get_K(physics, i1)) /
+                    (*table_get_K(physics, i2) - *table_get_K(physics, i1));
+                invlb1 = *table_get_Ms1(physics, material, i1) +
+                    h * (*table_get_Ms1(physics, material, i2) -
+                            *table_get_Ms1(physics, material, i1));
+        }
+        *length = (invlb1 > 0.) ? 1. / invlb1 : DBL_MAX;
+
+        return PUMAS_RETURN_SUCCESS;
+}
+
+/* Public library function: restricted inelastic and radiative cross section. */
 enum pumas_return pumas_physics_property_cross_section(
     const struct pumas_physics * physics, int material, double kinetic,
     double * cross_section)
@@ -3153,6 +3225,20 @@ enum pumas_return pumas_physics_table_value(
                 return PUMAS_RETURN_SUCCESS;
         } else if (property == PUMAS_PROPERTY_CROSS_SECTION) {
                 *value = *table_get_CS(physics, material, row);
+                return PUMAS_RETURN_SUCCESS;
+        } else if (property == PUMAS_PROPERTY_ELASTIC_SCATTERING_LENGTH) {
+                *value = *table_get_Lb(physics, material, row);
+                return PUMAS_RETURN_SUCCESS;
+        } else if (property == PUMAS_PROPERTY_ELASTIC_CUTOFF_ANGLE) {
+                const double mu0 = *table_get_Mu0(physics, material, row);
+                if (mu0 < 1E-08) {
+                        *value = 2 * sqrt(mu0);
+                } else {
+                        *value = 1. - acos(1. - 2 * mu0);
+                }
+                return PUMAS_RETURN_SUCCESS;
+        } else if (property == PUMAS_PROPERTY_MULTIPLE_SCATTERING_LENGTH) {
+                *value = *table_get_Ms1(physics, material, row);
                 return PUMAS_RETURN_SUCCESS;
         } else {
                 return ERROR_FORMAT(PUMAS_RETURN_INDEX_ERROR,
@@ -13104,58 +13190,6 @@ static double dcs_photonuclear_BBKS(
 #undef ALPHA
 }
 
-/**
- * The elastic scattering differential cross section.
- *
- * @param Z       The charge number of the target atom.
- * @param A       The mass number of the target atom.
- * @param m       The projectile rest mass, in GeV
- * @param K       The projectile initial kinetic energy.
- * @param theta   The scattering angle, in rad.
- * @return The corresponding value of the atomic DCS, in m^2 / rad.
- *
- * The elastic DCS is computed following Boschini et al. and Salvat. The
- * 1st Born approximation is used with an effective mass for the recoil.
- * A spin correction factor is applied.
- *
- * References:
- *      Boschini et al. (2011), https://arxiv.org/abs/1111.4042 &
- *                              https://arxiv.org/abs/1011.4822
- *      Salvat (2013), NIM B 316, 144–159
- */
-static double dcs_elastic(
-    double Z, double A, double m, double K, double theta)
-{
-        double kinetic0, screening[3], fCM[2];
-        coulomb_frame_parameters(Z, A, m, K, &kinetic0, fCM);
-        coulomb_screening_parameters(Z, A, m, K, kinetic0, screening);
-        const double fspin = coulomb_spin_factor(m, K);
-
-        const double c = cos(theta);
-        const double s = sin(theta);
-        const double gs = fCM[0] * s;
-        const double sd = sqrt(c * c + gs * gs * (1. - fCM[1] * fCM[1]));
-        const double cgs = c * c + gs * gs;
-        const double mu0 = 0.5 * (gs * gs * (1. + fCM[1]) + c * (c - sd)) / cgs;
-
-        const double num = fCM[0] * (c * fCM[1] + sd);
-        const double jac = num * num / (cgs * cgs * sd);
-
-        double dcs = 1.;
-        int i;
-        for (i = 0; i < sizeof(screening) / sizeof(screening[0]); i++) {
-                const double d = 1. / (screening[i] + mu0);
-                dcs *=  d * d;
-        }
-        dcs *= screening[1] * screening[1] * screening[2] * screening[2];
-
-        const double p0 = sqrt(kinetic0 * (kinetic0 + 2. * m));
-        const double p = sqrt(K * (K + 2. * m));
-        const double factor = 0.5 * ALPHA_EM * Z * (K + m) * HBAR_C / (p0 * p);
-
-        return factor * factor * dcs * jac * (1. - fspin * mu0);
-}
-
 /** Data structure for caracterising a DCS model */
 struct dcs_entry {
         enum pumas_process process;
@@ -13205,12 +13239,12 @@ static enum pumas_return dcs_check_model(enum pumas_process process,
 
 /** Routine for checking a process index */
 static enum pumas_return dcs_check_process(
-    enum pumas_process process, int n, struct error_context * error_)
+    enum pumas_process process, struct error_context * error_)
 {
-        if ((process < 0) || (process >= n)) {
+        if ((process < 0) || (process > PUMAS_PROCESS_PHOTONUCLEAR)) {
                 return ERROR_VREGISTER(PUMAS_RETURN_INDEX_ERROR,
                     "bad process (expected an index in [0, %d], got %u)",
-                    n - 1, process);
+                    PUMAS_PROCESS_PHOTONUCLEAR, process);
         } else {
                 return PUMAS_RETURN_SUCCESS;
         }
@@ -13223,7 +13257,7 @@ enum pumas_return pumas_dcs_register(
         ERROR_INITIALISE(pumas_dcs_register);
 
         /* Check the process index */
-        if (dcs_check_process(process, 3, error_) != PUMAS_RETURN_SUCCESS) {
+        if (dcs_check_process(process, error_) != PUMAS_RETURN_SUCCESS) {
                 return ERROR_RAISE();
         }
 
@@ -13270,13 +13304,8 @@ enum pumas_return pumas_dcs_get(
         ERROR_INITIALISE(pumas_dcs_get);
 
         /* Check the process index */
-        if (dcs_check_process(process, 4, error_) != PUMAS_RETURN_SUCCESS) {
+        if (dcs_check_process(process, error_) != PUMAS_RETURN_SUCCESS) {
                 return ERROR_RAISE();
-        }
-
-        if (process == PUMAS_PROCESS_ELASTIC) {
-                *dcs = &dcs_elastic;
-                return PUMAS_RETURN_SUCCESS;
         }
 
         /* Set the default model if none provided */
@@ -13318,4 +13347,58 @@ const char * pumas_dcs_default(enum pumas_process process)
                 return DEFAULT_PHOTONUCLEAR;
         else
                 return NULL;
+}
+
+/** Public library function: the elastic differential cross section. */
+double pumas_elastic_dcs(
+    double Z, double A, double m, double K, double theta)
+{
+        double kinetic0, screening[3], fCM[2];
+        coulomb_frame_parameters(Z, A, m, K, &kinetic0, fCM);
+        coulomb_screening_parameters(Z, A, m, K, kinetic0, screening);
+        const double fspin = coulomb_spin_factor(m, K);
+
+        const double c = cos(theta);
+        const double s = sin(theta);
+        const double gs = fCM[0] * s;
+        const double sd = sqrt(c * c + gs * gs * (1. - fCM[1] * fCM[1]));
+        const double cgs = c * c + gs * gs;
+        const double mu0 = 0.5 * (gs * gs * (1. + fCM[1]) + c * (c - sd)) / cgs;
+
+        const double num = fCM[0] * (c * fCM[1] + sd);
+        const double jac = num * num / (cgs * cgs * sd);
+
+        double dcs = 1.;
+        int i;
+        for (i = 0; i < sizeof(screening) / sizeof(screening[0]); i++) {
+                const double d = 1. / (screening[i] + mu0);
+                dcs *=  d * d;
+        }
+        dcs *= screening[1] * screening[1] * screening[2] * screening[2];
+
+        const double p0 = sqrt(kinetic0 * (kinetic0 + 2. * m));
+        const double p = sqrt(K * (K + 2. * m));
+        const double factor = 0.5 * ALPHA_EM * Z * (K + m) * HBAR_C / (p0 * p);
+
+        return factor * factor * dcs * jac * (1. - fspin * mu0);
+}
+
+/* Public library function: elastic scattering path length. */
+double pumas_elastic_length(
+    int order, double Z, double A, double mass, double kinetic)
+{
+        double kinetic0, screening[3], coefficient[2], fCM[2];
+        coulomb_frame_parameters(Z, A, mass, kinetic, &kinetic0, fCM);
+        coulomb_screening_parameters(Z, A, mass, kinetic, kinetic0, screening);
+        const double fspin = coulomb_spin_factor(mass, kinetic);
+        double a[3], b[3];
+        coulomb_pole_decomposition(screening, a, b);
+        coulomb_transport_coefficients(
+            1., fspin, screening, a, b, coefficient);
+        double d = 1. / (fCM[0] * (1. + fCM[1]));
+        d *= d;
+        d *= coefficient[order];
+
+        return coulomb_wentzel_path(
+            Z, A, mass, kinetic, kinetic0, screening[0]) / d;
 }
