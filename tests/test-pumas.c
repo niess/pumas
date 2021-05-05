@@ -789,7 +789,7 @@ START_TEST(test_api_property)
 
         reset_error();
         pumas_physics_property_multiple_scattering_length(
-            physics, 0, 0., &value);
+            physics, PUMAS_MODE_HYBRID, 0, 0., &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         /* Load the muon data */
@@ -856,7 +856,7 @@ START_TEST(test_api_property)
 
         reset_error();
         pumas_physics_property_multiple_scattering_length(
-            physics, 4, 0., &value);
+            physics, PUMAS_MODE_HYBRID, 4, 0., &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         /* Check some values */
@@ -946,7 +946,7 @@ START_TEST(test_api_property)
         ck_assert_double_eq_tol(0.9965, value, 1E-04);
 
         pumas_physics_property_multiple_scattering_length(
-            physics, 0, 1E+00, &value);
+            physics, PUMAS_MODE_HYBRID, 0, 1E+00, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq_tol(2.319E+06, value, 1E+03);
 
@@ -1163,7 +1163,7 @@ START_TEST(test_api_table)
         pumas_physics_table_value(physics,
             PUMAS_PROPERTY_MULTIPLE_SCATTERING_LENGTH, 0, 0, 17, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq_tol(6.097E-04, value, 1E-07);
+        ck_assert_double_eq_tol(1.640E+03, value, 1.);
 
         /* Check unsuported properties  */
         pumas_physics_table_index(

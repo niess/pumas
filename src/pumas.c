@@ -1011,7 +1011,7 @@ static double transverse_transport_ionisation(
     double kinetic);
 static double transverse_transport_photonuclear(
     const struct pumas_physics * physics, const struct atomic_element * element,
-    double kinetic);
+    double kinetic, double cutoff);
 /**
  * Routines for handling tables: interpolation and utility accessors.
  */
@@ -1060,9 +1060,9 @@ static inline double * table_get_Mu0(
 static inline double * table_get_Lb(
     const struct pumas_physics * physics, int material, int row);
 static inline double * table_get_Ms1(
-    const struct pumas_physics * physics, int material, int row);
-static inline double * table_get_ms1(
-    const struct pumas_physics * physics, int element, int row, double * table);
+    const struct pumas_physics * physics, int scheme, int material, int row);
+static inline double * table_get_ms1(const struct pumas_physics * physics,
+    int scheme, int element, int row, double * table);
 static inline float * table_get_dcs_coeff(const struct pumas_physics * physics,
     const struct atomic_element * element, int process, int kinetic);
 static inline float * table_get_dcs_value(const struct pumas_physics * physics,
@@ -1483,8 +1483,8 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
             pad_size);
         /* table_Ms1. */
         size_data[imem++] = memory_padded_size(
-            sizeof(double) * settings.n_materials * settings.n_energies,
-            pad_size);
+            sizeof(double) * (N_SCHEMES + 1) * settings.n_materials *
+            settings.n_energies, pad_size);
         /* elements_in. */
         size_data[imem++] =
             memory_padded_size(sizeof(int) * settings.n_materials, pad_size);
@@ -2754,7 +2754,7 @@ enum pumas_return pumas_physics_property_elastic_scattering_length(
                     (*table_get_K(physics, i2) - *table_get_K(physics, i1));
                 *length = *table_get_Lb(physics, material, i1) +
                     h * (*table_get_Lb(physics, material, i2) -
-                            *table_get_Ms1(physics, material, i1));
+                            *table_get_Lb(physics, material, i1));
         }
 
         return PUMAS_RETURN_SUCCESS;
@@ -2762,14 +2762,17 @@ enum pumas_return pumas_physics_property_elastic_scattering_length(
 
 /* Public library function: multiple scattering path length. */
 enum pumas_return pumas_physics_property_multiple_scattering_length(
-    const struct pumas_physics * physics, int material, double kinetic,
-    double * length)
+    const struct pumas_physics * physics, enum pumas_mode scheme, int material,
+    double kinetic, double * length)
 {
         ERROR_INITIALISE(pumas_physics_property_multiple_scattering_length);
 
         if (physics == NULL) {
                 *length = 0.;
                 return ERROR_NOT_INITIALISED();
+        } else if ((scheme < PUMAS_MODE_VIRTUAL) ||
+            (scheme >= PUMAS_MODE_DETAILED)) {
+                return ERROR_INVALID_SCHEME(scheme);
         } else if ((material < 0) || (material >= physics->n_materials)) {
                 *length = 0.;
                 return ERROR_INVALID_MATERIAL(material);
@@ -2779,11 +2782,11 @@ enum pumas_return pumas_physics_property_multiple_scattering_length(
         const int imax = physics->n_energies - 1;
         if (kinetic < *table_get_K(physics, 1)) {
                 /* Use asymptotic limit as lb1 ~ sqrt(kinetic). */
-                invlb1 = *table_get_Ms1(physics, material, 1) *
+                invlb1 = *table_get_Ms1(physics, scheme, material, 1) *
                     sqrt((*table_get_K(physics, 1)) / kinetic);
         } else if (kinetic >= *table_get_K(physics, imax)) {
                 /* Use asymptotic limit as lb1 ~ kinetic. */
-                invlb1 = *table_get_Ms1(physics, material, imax) *
+                invlb1 = *table_get_Ms1(physics, scheme, material, imax) *
                     (*table_get_K(physics, imax)) / kinetic;
         } else {
                 const int i1 = table_index(
@@ -2791,9 +2794,9 @@ enum pumas_return pumas_physics_property_multiple_scattering_length(
                 const int i2 = i1 + 1;
                 double h = (kinetic - *table_get_K(physics, i1)) /
                     (*table_get_K(physics, i2) - *table_get_K(physics, i1));
-                invlb1 = *table_get_Ms1(physics, material, i1) +
-                    h * (*table_get_Ms1(physics, material, i2) -
-                            *table_get_Ms1(physics, material, i1));
+                invlb1 = *table_get_Ms1(physics, scheme, material, i1) +
+                    h * (*table_get_Ms1(physics, scheme, material, i2) -
+                            *table_get_Ms1(physics, scheme, material, i1));
         }
         *length = (invlb1 > 0.) ? 1. / invlb1 : DBL_MAX;
 
@@ -3238,7 +3241,13 @@ enum pumas_return pumas_physics_table_value(
                 }
                 return PUMAS_RETURN_SUCCESS;
         } else if (property == PUMAS_PROPERTY_MULTIPLE_SCATTERING_LENGTH) {
-                *value = *table_get_Ms1(physics, material, row);
+                if ((scheme < PUMAS_MODE_VIRTUAL) ||
+                    (scheme >= PUMAS_MODE_DETAILED)) {
+                        return ERROR_INVALID_SCHEME(scheme);
+                }
+                const double invlb1 = *table_get_Ms1(
+                    physics, scheme, material, row);
+                *value = (invlb1 > 0.) ? 1. / invlb1 : DBL_MAX;
                 return PUMAS_RETURN_SUCCESS;
         } else {
                 return ERROR_FORMAT(PUMAS_RETURN_INDEX_ERROR,
@@ -3709,12 +3718,14 @@ void table_get_msc(const struct pumas_physics * physics,
         if (kinetic < *table_get_K(physics, 1)) {
                 *mu0 = *table_get_Mu0(physics, material, 1);
                 /* Use asymptotic limit as lb1 ~ sqrt(kinetic). */
-                *invlb1 = *table_get_Ms1(physics, material, 1) *
+                *invlb1 = *table_get_Ms1(
+                    physics, context->mode.energy_loss, material, 1) *
                     sqrt((*table_get_K(physics, 1)) / kinetic);
         } else if (kinetic >= *table_get_K(physics, imax)) {
                 *mu0 = *table_get_Mu0(physics, material, imax);
                 /* Use asymptotic limit as lb1 ~ kinetic. */
-                *invlb1 = *table_get_Ms1(physics, material, imax) *
+                *invlb1 = *table_get_Ms1(
+                    physics, context->mode.energy_loss, material, imax) *
                     (*table_get_K(physics, imax)) / kinetic;
         } else {
                 const int i1 = table_index(
@@ -3725,9 +3736,12 @@ void table_get_msc(const struct pumas_physics * physics,
                 *mu0 = *table_get_Mu0(physics, material, i1) +
                     h * (*table_get_Mu0(physics, material, i2) -
                             *table_get_Mu0(physics, material, i1));
-                *invlb1 = *table_get_Ms1(physics, material, i1) +
-                    h * (*table_get_Ms1(physics, material, i2) -
-                            *table_get_Ms1(physics, material, i1));
+                *invlb1 = *table_get_Ms1(
+                    physics, context->mode.energy_loss, material, i1) +
+                    h * (*table_get_Ms1(
+                        physics, context->mode.energy_loss, material, i2) -
+                            *table_get_Ms1(physics, context->mode.energy_loss,
+                                material, i1));
         }
 }
 
@@ -4117,29 +4131,36 @@ double * table_get_Lb(
  * Encapsulation of the Multiple SCattering (MSC) 1st transport path length.
  *
  * @param Physics  Handle for physics tables.
+ * @param scheme   The energy loss scheme.
  * @param material The material index.
  * @param row      The kinetic energy row index.
  * @return A pointer to the table element.
  */
 double * table_get_Ms1(
-    const struct pumas_physics * physics, int material, int row)
+    const struct pumas_physics * physics, int scheme, int material, int row)
 {
-        return physics->table_Ms1 + material * physics->n_energies + row;
+        scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
+        return physics->table_Ms1 +
+            ((scheme + 1) * physics->n_materials + material) *
+            physics->n_energies + row;
 }
 
 /*!
  * Encapsulation of the temporary MSC 1st transport path length, element wise.
  *
  * @param Physics  Handle for physics tables.
+ * @param scheme   The energy loss scheme.
  * @param element  The material index.
  * @param row      The kinetic energy row index.
  * @param table    The temporary table.
  * @return A pointer to the table element.
  */
-double * table_get_ms1(
-    const struct pumas_physics * physics, int element, int row, double * table)
+double * table_get_ms1(const struct pumas_physics * physics, int scheme,
+    int element, int row, double * table)
 {
-        return table + element * physics->n_energies + row;
+        scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
+        return table + (scheme * physics->n_elements + element) *
+            physics->n_energies + row;
 }
 
 /**
@@ -6936,6 +6957,7 @@ double transverse_transport_ionisation(const struct pumas_physics * physics,
  * @param Physics Handle for physics tables.
  * @param element The target atomic element.
  * @param kinetic The projectile initial kinetic energy.
+ * @param cutoff  The integration cutoff for CEL.
  * @return The inverse of the photonuclear 1st transport path length in kg/m^2.
  *
  * The doubly differential cross section is computed assuming a Q^2 dependency
@@ -6945,7 +6967,7 @@ double transverse_transport_ionisation(const struct pumas_physics * physics,
  * quadrature.
  */
 double transverse_transport_photonuclear(const struct pumas_physics * physics,
-    const struct atomic_element * element, double kinetic)
+    const struct atomic_element * element, double kinetic, double cutoff)
 {
         /* Integration over the kinetic transfer, q, done with a log sampling.
          */
@@ -6956,7 +6978,7 @@ double transverse_transport_photonuclear(const struct pumas_physics * physics,
 
         double xi, wi, lbipn = 0.;
         while (math_gauss_quad(0, &xi, &wi) == 0) { /* Stepping. */
-                const double nu = physics->cutoff * exp(xi);
+                const double nu = cutoff * exp(xi);
                 const double q = nu * kinetic;
 
                 /* Analytical integration over mu. */
@@ -9191,7 +9213,9 @@ enum pumas_return compute_coulomb_parameters(struct pumas_physics * physics,
         const double kinetic = *table_get_K(physics, row);
         if (kinetic <= 0.) {
                 *table_get_Mu0(physics, material, row) = 0.;
-                *table_get_Ms1(physics, material, row) = 0.;
+                *table_get_Ms1(physics, PUMAS_MODE_VIRTUAL, material, row) = 0.;
+                *table_get_Ms1(physics, PUMAS_MODE_CSDA, material, row) = 0.;
+                *table_get_Ms1(physics, PUMAS_MODE_HYBRID, material, row) = 0.;
                 return PUMAS_RETURN_SUCCESS;
         }
 
@@ -9320,94 +9344,83 @@ enum pumas_return compute_coulomb_parameters(struct pumas_physics * physics,
                                 return rc;
                 }
 
+                double invlb1 = 0., invlb1_csda = 0., invlb1_hybrid = 0.;
+                struct material_component * component =
+                    physics->composition[material];
+                for (i = 0, data = workspace->data;
+                     i < physics->elements_in[material];
+                     i++, data++, component++) {
+                        /* Elastic contribution to the transport. */
+                        double G[2];
+                        coulomb_transport_coefficients(mu0, data->fspin,
+                            data->screening, data->a, data->b, G);
+                        double d = 1. / (data->fCM[0] * (1. + data->fCM[1]));
+                        d *= d;
+                        invlb1 += data->invlambda * d * G[1] *
+                            component->fraction;
+
+                        /* Other precomputed soft scattering terms. */
+                        const int iel = component->element;
+                        invlb1_csda += *table_get_ms1(physics, PUMAS_MODE_CSDA,
+                            iel, row, ms1_table) * component->fraction;
+                        invlb1_hybrid += *table_get_ms1(physics,
+                            PUMAS_MODE_HYBRID, iel, row, ms1_table) *
+                            component->fraction;
+                }
+                *table_get_Ms1(physics, PUMAS_MODE_VIRTUAL, material, row) =
+                    invlb1;
+                *table_get_Ms1(physics, PUMAS_MODE_CSDA, material, row) =
+                    invlb1 + invlb1_csda;
+                *table_get_Ms1(physics, PUMAS_MODE_HYBRID, material, row) =
+                    invlb1 + invlb1_hybrid;
+        } else {
+                /* We have a composite material. First we loop on atomic
+                 * elements and compute the elastic scattering contribution.
+                 */
                 double invlb1 = 0.;
                 struct material_component * component =
                     physics->composition[material];
                 for (i = 0, data = workspace->data;
                      i < physics->elements_in[material];
                      i++, data++, component++) {
-                        /* Screened nucleus contribution to the transport. */
+                        /* Elastic contribution to the transport. */
                         double G[2];
                         coulomb_transport_coefficients(mu0, data->fspin,
                             data->screening, data->a, data->b, G);
                         double d = 1. / (data->fCM[0] * (1. + data->fCM[1]));
                         d *= d;
-                        invlb1 += data->invlambda * d * G[1];
-
-                        /* Other precomputed soft scattering terms. */
-                        const int iel = component->element;
-                        invlb1 += *table_get_ms1(physics, iel, row, ms1_table) *
+                        invlb1 += data->invlambda * d * G[1] *
                             component->fraction;
                 }
-                *table_get_Ms1(physics, material, row) = invlb1;
-        } else {
-                /* We have a composite material. Let's loop on the base
-                 * material components.
+
+                /* Then, let's loop on the base material components and add
+                 * contributions from other processes.
                  */
+                double invlb1_csda = 0., invlb1_hybrid = 0.;
                 const struct composite_material * composite =
                     physics->composite[material - n0];
-                double invlb1 = 0.;
                 int icomp;
                 for (icomp = 0; icomp < composite->n_components; icomp++) {
                         const struct composite_component * c =
                             composite->component + icomp;
                         const int imat = c->material;
-                        struct material_component * component =
-                            physics->composition[imat];
-
-                        /* Compute the variation of the Coulomb scattering. */
-                        const double mu0b = *table_get_Mu0(physics, imat, row);
-                        double delta_invlb1 = 0.;
-                        for (i = 0, data = workspace->data;
-                             i < physics->elements_in[imat];
-                             i++, data++, component++) {
-                                /* Compute the scattering parameters for the
-                                 * base material.
-                                 */
-                                double G[2];
-                                const struct atomic_element * const element =
-                                    physics->element[component->element];
-                                double kinetic0;
-                                coulomb_frame_parameters(element->Z, element->A,
-                                    physics->mass, kinetic, &kinetic0,
-                                    data->fCM);
-                                data->fspin = coulomb_spin_factor(
-                                    physics->mass, kinetic);
-                                coulomb_screening_parameters(element->Z,
-                                    element->A, physics->mass, kinetic,
-                                    kinetic0, data->screening);
-                                coulomb_pole_decomposition(
-                                    data->screening, data->a, data->b);
-                                coulomb_transport_coefficients(1., data->fspin,
-                                    data->screening, data->a, data->b, G);
-                                const double invlb = component->fraction /
-                                    coulomb_wentzel_path(element->Z, element->A,
-                                        physics->mass, kinetic, kinetic0,
-                                        data->screening[0]);
-
-                                /* Variation of the screened nucleus
-                                 * contribution to the transport.
-                                 */
-                                double deltaG;
-                                coulomb_transport_coefficients(mu0, data->fspin,
-                                    data->screening, data->a, data->b, G);
-                                deltaG = G[1];
-                                coulomb_transport_coefficients(mu0b,
-                                    data->fspin, data->screening, data->a,
-                                    data->b, G);
-                                deltaG -= G[1];
-                                double d =
-                                    1. / (data->fCM[0] * (1. + data->fCM[1]));
-                                d *= d;
-                                delta_invlb1 += invlb * d * deltaG;
-                        }
 
                         /* Base material soft scattering. */
-                        invlb1 += (*table_get_Ms1(physics, imat, row) +
-                                      delta_invlb1) *
+                        const double tmp = *table_get_Ms1(
+                            physics, PUMAS_MODE_VIRTUAL, imat, row);
+                        invlb1_csda += (*table_get_Ms1(
+                            physics, PUMAS_MODE_CSDA, imat, row) - tmp) *
+                            c->fraction;
+                        invlb1_hybrid += (*table_get_Ms1(
+                            physics, PUMAS_MODE_HYBRID, imat, row) - tmp) *
                             c->fraction;
                 }
-                *table_get_Ms1(physics, material, row) = invlb1;
+                *table_get_Ms1(physics, PUMAS_MODE_VIRTUAL, material, row) =
+                    invlb1;
+                *table_get_Ms1(physics, PUMAS_MODE_CSDA, material, row) =
+                    invlb1 + invlb1_csda;
+                *table_get_Ms1(physics, PUMAS_MODE_HYBRID, material, row) =
+                    invlb1 + invlb1_hybrid;
         }
 
         return PUMAS_RETURN_SUCCESS;
@@ -9444,8 +9457,8 @@ enum pumas_return compute_coulomb_soft(struct pumas_physics * physics, int row,
 
         /* Allocate the temporary table. */
         if (ms1_table == NULL) {
-                ms1_table = allocate(
-                    physics->n_elements * physics->n_energies * sizeof(double));
+                ms1_table = allocate(N_SCHEMES * physics->n_elements *
+                    physics->n_energies * sizeof(double));
                 if (ms1_table == NULL) return ERROR_REGISTER_MEMORY();
         }
 
@@ -9454,17 +9467,26 @@ enum pumas_return compute_coulomb_soft(struct pumas_physics * physics, int row,
         int iel;
         for (iel = 0; iel < physics->n_elements; iel++) {
                 struct atomic_element * element = physics->element[iel];
-                double invlb1 = 0.;
+                double invlb1_csda = 0., invlb1_hybrid = 0.;
 
                 /* Electron shells contribution to the transverse transport. */
-                invlb1 =
+                const double invlb1_inel =
                     transverse_transport_ionisation(physics, element, kinetic);
+                invlb1_csda += invlb1_inel;
+                invlb1_hybrid += invlb1_inel;
 
                 /* Photonuclear contribution to the transverse transport. */
-                invlb1 += transverse_transport_photonuclear(
-                    physics, element, kinetic);
+                invlb1_csda += transverse_transport_photonuclear(
+                    physics, element, kinetic, 1.);
+                invlb1_hybrid += transverse_transport_photonuclear(
+                    physics, element, kinetic, physics->cutoff);
 
-                *table_get_ms1(physics, iel, row, ms1_table) = invlb1;
+                *table_get_ms1(
+                    physics, PUMAS_MODE_CSDA, iel, row, ms1_table) =
+                        invlb1_csda;
+                *table_get_ms1(
+                    physics, PUMAS_MODE_HYBRID, iel, row, ms1_table) =
+                        invlb1_hybrid;
         }
 
         *data = ms1_table;

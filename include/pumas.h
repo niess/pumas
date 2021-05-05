@@ -1388,6 +1388,7 @@ PUMAS_API enum pumas_return pumas_physics_property_elastic_scattering_length(
  * Get the multiple scattering (first transport) path length.
  *
  * @param physics     Handle for the Physics tables.
+ * @param scheme      The energy loss scheme.
  * @param material    The material index.
  * @param energy      The kinetic energy, in GeV.
  * @param length      The corresponding length, in kg/m^(2).
@@ -1405,8 +1406,8 @@ PUMAS_API enum pumas_return pumas_physics_property_elastic_scattering_length(
  *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_multiple_scattering_length(
-    const struct pumas_physics * physics, int material, double energy,
-    double * length);
+    const struct pumas_physics * physics, enum pumas_mode scheme, int material,
+    double energy, double * length);
 
 /**
  * Get the macroscopic restricted cross-section for inelastic and radiative
