@@ -342,14 +342,20 @@ enum mdf_settings_operation {
 struct coulomb_data {
         /** The partial cross section for hard events. */
         double cs_hard;
-        /** The inverse of the mean free grammage. */
-        double invlambda;
+        /** The normalisation of the macroscopic cross-section. */
+        double normalisation;
+        /** The number of screening parameters */
+        int n_parameters;
+        /** The amplitudes of the atomic screening terms. */
+        double amplitude[3];
         /** The atomic and nuclear screening parameters. */
-        double screening[3];
+        double screening[5];
+        /** The number of poles in the reduction */
+        int n_poles;
         /** The 1st order coefficients of the pole reduction of the DCS. */
-        double a[3];
+        double a[5];
         /** The 2nd order coefficients of the pole reduction of the DCS. */
-        double b[3];
+        double b[5];
         /** The spin correction factor. */
         double fspin;
         /**
@@ -992,20 +998,23 @@ static enum pumas_return error_format(struct error_context * context,
  * Routines for the Coulomb scattering and Transverse Transport (TT).
  */
 static void coulomb_screening_parameters(double Z, double A, double m,
-    double kinetic, double kinetic0, double * screening);
-static double coulomb_wentzel_path(double Z, double A, double mass,
-    double kinetic, double kinetic0, double screening);
+    double kinetic, double kinetic0, int * n_parameters, double * amplitude,
+    double * screening);
+static double coulomb_normalisation(double Z, double A, double mass,
+    double kinetic, double kinetic0);
 static double coulomb_ehs_length(const struct pumas_physics * physics,
     struct pumas_context * context, int material, double kinetic);
 static double coulomb_spin_factor(double mass, double kinetic);
 static void coulomb_frame_parameters(double Z, double A, double mass,
     double kinetic, double * kinetic0, double * parameters);
-static void coulomb_pole_decomposition(
-    double * screening, double * a, double * b);
-static double coulomb_restricted_cs(
-    double mu0, double fspin, double * screening, double * a, double * b);
+static void coulomb_pole_reduction(int n_parameters,
+    const double * amplitude, const double * screening, int * n_poles,
+    double * a, double * b);
+static double coulomb_restricted_cs(double mu0, double fspin,
+    int n_poles, const double * screening, const double * a, const double * b);
 static void coulomb_transport_coefficients(double mu, double fspin,
-    double * screening, double * a, double * b, double * coefficient);
+    int n_poles, const double * screening, const double * a,
+    const double * b, double * coefficient);
 static double transverse_transport_ionisation(
     const struct pumas_physics * physics, const struct atomic_element * element,
     double kinetic);
@@ -1082,8 +1091,6 @@ static void step_fluctuate(const struct pumas_physics * physics,
 static double step_fluctuations2(
     const struct pumas_physics * physics, int material, double kinetic);
 static double step_randn(struct pumas_context * context);
-static double transport_hard_coulomb_objective(
-    const struct pumas_physics * physics, double mu, void * parameters);
 static void step_rotate_direction(struct pumas_context * context,
     struct pumas_state * state, double mu);
 /**
@@ -2771,7 +2778,7 @@ enum pumas_return pumas_physics_property_multiple_scattering_length(
                 *length = 0.;
                 return ERROR_NOT_INITIALISED();
         } else if ((scheme < PUMAS_MODE_VIRTUAL) ||
-            (scheme >= PUMAS_MODE_DETAILED)) {
+            (scheme >= PUMAS_MODE_DETAILED)) { 
                 return ERROR_INVALID_SCHEME(scheme);
         } else if ((material < 0) || (material >= physics->n_materials)) {
                 *length = 0.;
@@ -5215,18 +5222,20 @@ void transport_do_ehs(const struct pumas_physics * physics,
                     kinetic, &kinetic0, data->fCM);
                 data->fspin = coulomb_spin_factor(physics->mass, kinetic);
                 coulomb_screening_parameters(element->Z, element->A,
-                    physics->mass, kinetic, kinetic0, data->screening);
-                coulomb_pole_decomposition(data->screening, data->a, data->b);
-                data->invlambda = component->fraction /
-                    coulomb_wentzel_path(element->Z, element->A, physics->mass,
-                        kinetic, kinetic0, data->screening[0]);
+                    physics->mass, kinetic, kinetic0, &data->n_parameters,
+                    data->amplitude, data->screening);
+                coulomb_pole_reduction(data->n_parameters, data->amplitude,
+                    data->screening, &data->n_poles, data->a, data->b);
+                data->normalisation = component->fraction /
+                    coulomb_normalisation(element->Z, element->A, physics->mass,
+                        kinetic, kinetic0);
 
                 /* Compute the restricted Coulomb cross-section in the
                  * CM frame.
                  */
-                data->cs_hard =
-                    data->invlambda * coulomb_restricted_cs(mu0, data->fspin,
-                                          data->screening, data->a, data->b);
+                data->cs_hard = data->normalisation * coulomb_restricted_cs(
+                    mu0, data->fspin, data->n_poles, data->screening,
+                    data->a, data->b);
                 cs_tot += data->cs_hard;
         }
 
@@ -5243,28 +5252,29 @@ void transport_do_ehs(const struct pumas_physics * physics,
                 }
         }
 
-        /* Compute the asymptotic hard angular parameter. */
+        /* Compute the hard angular parameter using a rejection sampling method
+         * with the Rutherford cross section as upper bound.
+         */
         data = workspace->data + ihard;
-        const double A = data->screening[0];
-        const double mu2 = 1. - mu0;
-        const double zeta = context->random(context);
-        double mu1 = mu0 + (A + mu0) * zeta * mu2 / (1. + A - zeta * mu2);
+        double mu1;
+        for (;;) {
+                /* Randomise with a Rutherford cross-section, i.e. 1 / mu^2. */
+                const double zeta = context->random(context);
+                mu1 = mu0 / (1. - zeta * (1. - mu0));
 
-        /* Configure for the root solver. */
-        workspace->material = material;
-        workspace->ihard = ihard;
-        workspace->cs_h = data->cs_hard * (1. - zeta);
+                /* Ratio of the actual elastic DCS to the Rutherford one. */
+                int i;
+                double ratio = 0.;
+                for (i = 0; i < data->n_parameters - 2; i++) {
+                        ratio += data->amplitude[i] * mu1 /
+                            (data->screening[i] + mu1);
+                }
+                ratio *= data->screening[i] / (data->screening[i] + mu1);
+                i++;
+                ratio *= data->screening[i] / (data->screening[i] + mu1);
+                ratio *= ratio * (1. - data->fspin * mu1);
 
-        /* Check the asymptotic value. */
-        const double f1 =
-            transport_hard_coulomb_objective(physics, mu1, workspace);
-        if ((f1 < 0.) && (-f1 / workspace->cs_h >= 1E-06)) {
-                /* We hit a form factor suppression. Let's call the
-                 * root solver.
-                 */
-                const double f0 = data->cs_hard * zeta;
-                math_find_root(transport_hard_coulomb_objective, physics, mu0,
-                    mu1, &f0, &f1, 1E-06 * mu0, 1E-06, 100, workspace, &mu1);
+                if (context->random(context) <= ratio) break;
         }
 
         /* Transform from the CM frame to the Lab frame. */
@@ -5286,34 +5296,6 @@ void transport_do_ehs(const struct pumas_physics * physics,
 
         /* Apply the rotation. */
         step_rotate_direction(context, state, mu);
-}
-
-/**
- * Objective function for solving the Coulomb scattering angle.
- *
- * @param Physics    Handle for physics tables.
- * @param mu         The proposed Coulomb scattering angular parameter.
- * @param parameters A pointer to the scattering workspace.
- * @return The difference between the current and expected restricted cross-
- * section.
- *
- * This is a wrapper for the root solver. It provides the objective function
- * to resolve.
- */
-double transport_hard_coulomb_objective(
-    const struct pumas_physics * physics, double mu, void * parameters)
-{
-        /* Unpack the workspace. */
-        struct coulomb_workspace * workspace = parameters;
-        struct coulomb_data * data = workspace->data + workspace->ihard;
-
-        /* Compute the restricted cross section. */
-        double cs_exp =
-            data->invlambda * coulomb_restricted_cs(mu, data->fspin,
-                                  data->screening, data->a, data->b);
-
-        /* Return the difference with the expectation. */
-        return cs_exp - workspace->cs_h;
 }
 
 /**
@@ -6647,13 +6629,16 @@ static enum pumas_return material_index(const struct pumas_physics * physics,
 /**
  * Compute the atomic and nuclear screening parameters.
  *
- * @param Z         The atomic charge number.
- * @param A         The atomic mass number.
- * @param mass      The projectile mass.
- * @param kinetic   The projectile kinetic energy.
- * @param kinetic0  The projectile kinetic energy in the CM frame.
- * @param screening The computed screening parameters.
+ * @param Z            The atomic charge number.
+ * @param A            The atomic mass number.
+ * @param mass         The projectile mass.
+ * @param kinetic      The projectile kinetic energy.
+ * @param kinetic0     The projectile kinetic energy in the CM frame.
+ * @param n_parameters The number of screening parameters.
+ * @param amplitude    The amplitudes of the atomic screening terms.
+ * @param screening    The computed screening parameters.
  *
+ * XXX document
  * The atomic screening parameter is computed according to Moliere. The nuclear
  * form factor is approximated from Helm's uniform-uniform distribution.
  *
@@ -6662,46 +6647,177 @@ static enum pumas_return material_index(const struct pumas_physics * physics,
  *      Salvat et al., CPC 165 (2005) 157–190
  */
 void coulomb_screening_parameters(double Z, double A, double mass,
-    double kinetic, double kinetic0, double * screening)
+    double kinetic, double kinetic0, int * n_parameters,
+    double * amplitude, double * screening)
 {
+        /* Atomic screening */
+        static const double prefactor[2][103] = {{
+             -7.05665E-06,-2.25920E-01,6.04537E-01,3.27766E-01,
+             2.32684E-01,1.53676E-01,9.95750E-02,6.25130E-02,3.68040E-02,
+             1.88410E-02,7.44440E-01,6.42349E-01,6.00152E-01,5.15971E-01,
+             4.38675E-01,5.45871E-01,7.24889E-01,2.19124E+00,4.85607E-02,
+             5.80017E-01,5.54340E-01,1.11950E-02,3.18350E-02,1.07503E-01,
+             4.97556E-02,5.11841E-02,5.00039E-02,4.73509E-02,7.70967E-02,
+             4.00041E-02,1.08344E-01,6.09767E-02,2.11561E-02,4.83575E-01,
+             4.50364E-01,4.19036E-01,1.73438E-01,3.35694E-02,6.88939E-02,
+             1.17552E-01,2.55689E-01,2.69313E-01,2.20138E-01,2.75057E-01,
+             2.71053E-01,2.78363E-01,2.56210E-01,2.27100E-01,2.49215E-01,
+             2.15313E-01,1.80560E-01,1.30772E-01,5.88293E-02,4.45145E-01,
+             2.70796E-01,1.72814E-01,1.94726E-01,1.91338E-01,1.86776E-01,
+             1.66461E-01,1.62350E-01,1.58016E-01,1.53759E-01,1.58729E-01,
+             1.45327E-01,1.41260E-01,1.37360E-01,1.33614E-01,1.29853E-01,
+             1.26659E-01,1.28806E-01,1.30256E-01,1.38420E-01,1.50030E-01,
+             1.60803E-01,1.72164E-01,1.83411E-01,2.23043E-01,2.28909E-01,
+             2.09753E-01,2.70821E-01,2.37958E-01,2.28771E-01,1.94059E-01,
+             1.49995E-01,9.55262E-02,3.19155E-01,2.40406E-01,2.26579E-01,
+             2.17619E-01,2.41294E-01,2.44758E-01,2.46231E-01,2.55572E-01,
+             2.53567E-01,2.43832E-01,2.41898E-01,2.44050E-01,2.40237E-01,
+             2.34997E-01,2.32114E-01,2.27937E-01,2.29571E-01
+            }, {
+             -1.84386E+02,1.22592E+00,3.95463E-01,6.72234E-01,
+             7.67316E-01,8.46324E-01,9.00425E-01,9.37487E-01,9.63196E-01,
+             9.81159E-01,2.55560E-01,3.57651E-01,3.99848E-01,4.84029E-01,
+             5.61325E-01,-5.33329E-01,-7.54809E-01,-2.2852E+00,7.75935E-01,
+             4.19983E-01,4.45660E-01,6.83176E-01,6.75303E-01,7.16172E-01,
+             6.86632E-01,6.99533E-01,7.14201E-01,7.29404E-01,7.95083E-01,
+             7.59034E-01,7.48941E-01,7.15671E-01,6.70932E-01,5.16425E-01,
+             5.49636E-01,5.80964E-01,7.25336E-01,7.81581E-01,7.20203E-01,
+             6.58088E-01,5.82051E-01,5.75262E-01,5.61797E-01,5.94338E-01,
+             6.11921E-01,6.06653E-01,6.50520E-01,6.15496E-01,6.43990E-01,
+             6.11497E-01,5.76688E-01,5.50366E-01,5.48174E-01,5.54855E-01,
+             6.52415E-01,6.84485E-01,6.38429E-01,6.46684E-01,6.55810E-01,
+             7.05677E-01,7.13311E-01,7.20978E-01,7.28385E-01,7.02414E-01,
+             7.42619E-01,7.49352E-01,7.55797E-01,7.61947E-01,7.68005E-01,
+             7.73365E-01,7.52781E-01,7.32428E-01,7.09596E-01,6.87141E-01,
+             6.65932E-01,6.46849E-01,6.30598E-01,6.17575E-01,6.11402E-01,
+             6.00426E-01,6.42829E-01,6.30789E-01,6.21959E-01,6.10455E-01,
+             6.03147E-01,6.05994E-01,6.23324E-01,6.56665E-01,6.42246E-01,
+             6.24013E-01,6.30394E-01,6.29816E-01,6.31596E-01,6.49005E-01,
+             6.53604E-01,6.43738E-01,6.48850E-01,6.70318E-01,6.76319E-01,
+             6.65571E-01,6.88406E-01,6.94394E-01,6.82014E-01
+        }};
+
+        static const double exponent[3][103] = {{
+            4.92969E+00,5.52725E+00,2.81741E+00,4.54302E+00,
+            5.99006E+00,8.04043E+00,1.08122E+01,1.48233E+01,2.14001E+01,
+            3.49994E+01,4.12050E+00,4.72663E+00,5.14051E+00,5.84918E+00,
+            6.67070E+00,6.37029E+00,6.21183E+00,5.54701E+00,3.02597E+01,
+            6.32184E+00,6.63280E+00,9.97569E+01,4.25330E+01,1.89587E+01,
+            3.18642E+01,3.18251E+01,3.29153E+01,3.47580E+01,2.53264E+01,
+            4.03429E+01,2.01922E+01,2.91996E+01,6.24873E+01,8.78242E+00,
+            9.33480E+00,9.91420E+00,1.71659E+01,5.52077E+01,3.13659E+01,
+            2.20537E+01,1.42403E+01,1.40442E+01,1.59176E+01,1.43137E+01,
+            1.46537E+01,1.46455E+01,1.55878E+01,1.69141E+01,1.61552E+01,
+            1.77931E+01,1.98751E+01,2.41540E+01,3.99955E+01,1.18053E+01,
+            1.65915E+01,2.23966E+01,2.07637E+01,2.12350E+01,2.18033E+01,
+            2.39492E+01,2.45984E+01,2.52966E+01,2.60169E+01,2.54973E+01,
+            2.75466E+01,2.83460E+01,2.91604E+01,2.99904E+01,3.08345E+01,
+            3.16806E+01,3.13526E+01,3.12166E+01,3.00767E+01,2.86302E+01,
+            2.75684E+01,2.65861E+01,2.57339E+01,2.29939E+01,2.28644E+01,
+            2.44080E+01,2.09409E+01,2.29872E+01,2.37917E+01,2.66951E+01,
+            3.18397E+01,4.34890E+01,2.00150E+01,2.45012E+01,2.56843E+01,
+            2.65542E+01,2.51930E+01,2.52522E+01,2.54271E+01,2.51526E+01,
+            2.55959E+01,2.65567E+01,2.70360E+01,2.72673E+01,2.79152E+01,
+            2.86446E+01,2.93353E+01,3.01040E+01,3.02650E+01
+        }, {
+            2.00272E+00,2.39924E+00,6.62463E-01,9.85154E-01,
+            1.21347E+00,1.49129E+00,1.76868E+00,2.04035E+00,2.30601E+00,
+            2.56621E+00,8.71798E-01,1.00247E+00,1.01529E+00,1.17314E+00,
+            1.34102E+00,2.55169E+00,3.38827E+00,4.56873E+00,3.12426E+00,
+            1.00935E+00,1.10227E+00,4.12865E+00,3.94043E+00,3.06375E+00,
+            3.78110E+00,3.77161E+00,3.79085E+00,3.82989E+00,3.39276E+00,
+            3.94645E+00,3.47325E+00,4.12525E+00,4.95015E+00,1.69671E+00,
+            1.79002E+00,1.88354E+00,3.11025E+00,4.28418E+00,4.24121E+00,
+            4.03254E+00,2.97020E+00,2.86107E+00,3.36719E+00,2.73701E+00,
+            2.71828E+00,2.61549E+00,2.74124E+00,3.08408E+00,2.88189E+00,
+            3.29372E+00,3.80921E+00,4.61191E+00,5.91318E+00,1.79673E+00,
+            2.69645E+00,3.45951E+00,3.46574E+00,3.48193E+00,3.50982E+00,
+            3.51987E+00,3.55603E+00,3.59628E+00,3.63834E+00,3.73639E+00,
+            3.72882E+00,3.77625E+00,3.82444E+00,3.87344E+00,3.92327E+00,
+            3.97271E+00,4.09040E+00,4.20492E+00,4.24918E+00,4.24261E+00,
+            4.23412E+00,4.19992E+00,4.14615E+00,3.73461E+00,3.69138E+00,
+            3.96429E+00,3.24563E+00,3.62172E+00,3.77959E+00,4.25824E+00,
+            4.92848E+00,5.85205E+00,2.90906E+00,3.55241E+00,3.79223E+00,
+            4.00437E+00,3.67795E+00,3.63966E+00,3.61328E+00,3.43021E+00,
+            3.43474E+00,3.59089E+00,3.59411E+00,3.48061E+00,3.50331E+00,
+            3.61870E+00,3.55697E+00,3.58685E+00,3.64085E+00
+        }, {
+            1.99732E+00,1.00000E+00,1.00000E+00,1.00000E+00,
+            1.00000E+00,1.00000E+00,1.00000E+00,1.00000E+00,1.00000E+00,
+            1.00000E+00,1.00000E+00,1.00000E+00,1.00000E+00,1.00000E+00,
+            1.00000E+00,1.67534E+00,1.85964E+00,2.04455E+00,7.32637E-01,
+            1.00000E+00,1.00000E+00,1.00896E+00,1.05333E+00,1.00137E+00,
+            1.12787E+00,1.16064E+00,1.19152E+00,1.22089E+00,1.14261E+00,
+            1.27594E+00,1.00643E+00,1.18447E+00,1.35819E+00,1.00000E+00,
+            1.00000E+00,1.00000E+00,7.17673E-01,8.57842E-01,9.47152E-01,
+            1.01806E+00,1.01699E+00,1.05906E+00,1.15477E+00,1.10923E+00,
+            1.12336E+00,1.43183E+00,1.14079E+00,1.26189E+00,9.94156E-01,
+            1.14781E+00,1.28288E+00,1.41954E+00,1.54707E+00,1.00000E+00,
+            6.81361E-01,8.07311E-01,8.91057E-01,9.01112E-01,9.10636E-01,
+            8.48620E-01,8.56929E-01,8.65025E-01,8.73083E-01,9.54998E-01,
+            8.88981E-01,8.96917E-01,9.04803E-01,9.12768E-01,9.20306E-01,
+            9.28838E-01,1.00717E+00,1.09456E+00,1.16966E+00,1.23403E+00,
+            1.29699E+00,1.35350E+00,1.40374E+00,1.44284E+00,1.48856E+00,
+            1.53432E+00,1.11214E+00,1.23735E+00,1.25338E+00,1.35772E+00,
+            1.46828E+00,1.57359E+00,7.20714E-01,8.37599E-01,9.33468E-01,
+            1.02385E+00,9.69895E-01,9.82474E-01,9.92527E-01,9.32751E-01,
+            9.41671E-01,1.01827E+00,1.02554E+00,9.66447E-01,9.74347E-01,
+            1.04137E+00,9.90568E-01,9.98878E-01,1.04473E+00
+        }};
+
+        const double p02 = kinetic0 * (kinetic0 + 2. * mass);
+        const double d = 0.25 * HBAR_C * HBAR_C / p02;
+        const int iZ = (int)Z - 1;
+        int n;
+        if (exponent[2][iZ] == 1.) {
+                n = 2;
+                amplitude[0] = prefactor[0][iZ];
+                amplitude[1] = 1. - amplitude[0];
+        } else {
+                n = 3;
+                amplitude[0] = prefactor[0][iZ];
+                amplitude[1] = prefactor[1][iZ];
+                amplitude[2] = 1. - (amplitude[0] + amplitude[1]);
+        }
+
+        /* Moliere correction to the 1st Born approximation (XXX or Kuraev?)*/
+        const double aZE = ALPHA_EM * Z * (kinetic + mass);
+        const double p2 = kinetic * (kinetic + 2. * mass);
+        const double zeta2 = aZE * aZE / p2;
+
+        int i;
+        for (i = 0; i < n; i++) {
+                const double a = exponent[i][iZ] / BOHR_RADIUS;
+                screening[i] = d * a * a * (1.13 + 3.76 * zeta2);
+        }
+
         /* Nuclear screening. */
         const double RN = 1.07E-15 * pow(A, 1. / 3.);
         const double R1 = 0.962 * RN + 0.435E-15;
         const double R2 = 2.E-15;
-        const double p02 = kinetic0 * (kinetic0 + 2. * mass);
-        const double d = 2.5 * HBAR_C * HBAR_C / p02;
-        screening[1] = d / (R1 * R1);
-        screening[2] = d / (R2 * R2);
+        screening[n++] = 10. * d / (R1 * R1);
+        screening[n++] = 10. * d / (R2 * R2);
 
-        /* Atomic screening a la Moliere. */
-        const double aZE = ALPHA_EM * Z * (kinetic + mass);
-        const double p2 = kinetic * (kinetic + 2. * mass);
-        const double zeta2 =  aZE * aZE / p2;
-        const double R = 0.885 * BOHR_RADIUS * pow(Z, -1. / 3.);
-        screening[0] = 0.25 * HBAR_C * HBAR_C / (R * R * p02) *
-            (1.13 + 3.76 * zeta2);
+        *n_parameters = n;
 }
 
 /**
- * Compute the Coulomb mean free path assuming a Wentzel DCS with only atomic
- * screening.
+ * Compute the Coulomb macroscopic cross-section normalisation.
  *
  * @param Z         The atomic number of the target element.
  * @param A         The atomic mass of the target element.
  * @param mass      The projectile mass.
  * @param kinetic   The projectile kinetic energy.
  * @param kinetic0  The projectile kinetic energy in the CM frame.
- * @param screening The atomic screening factor.
- * @return The mean free path in kg/m^2.
+ * @return The normalisation in kg/m^2.
  */
-double coulomb_wentzel_path(double Z, double A, double mass, double kinetic,
-    double kinetic0, double screening)
+double coulomb_normalisation(
+    double Z, double A, double mass, double kinetic, double kinetic0)
 {
         const double p2 = kinetic * (kinetic + 2. * mass);
         const double p02 = kinetic0 * (kinetic0 + 2. * mass);
         double d = ALPHA_EM * Z * HBAR_C * (kinetic + mass);
-        return A * 1E-03 * screening * (1. + screening) * p2 * p02 /
-            (d * d * M_PI * AVOGADRO_NUMBER);
+        return A * 1E-03 * p2 * p02 / (d * d * M_PI * AVOGADRO_NUMBER);
 }
 
 /**
@@ -6780,136 +6896,206 @@ void coulomb_frame_parameters(double Z, double A, double mass, double kinetic,
 /**
  * Compute the coefficients of the Coulomb DCS pole reduction.
  *
+ * @param n_parameters The number of screening parameters.
+ * @param amplitude The amplitudes of the atomic screening terms.
  * @param screening The screening parameters: A, N1 and N2.
+ * @param n_poles   The number of poles of the reduction.
  * @param a         The vector of coefficients for 1st order poles.
  * @param b         The vector of coefficients for 2nd order poles.
  *
- * The Coulomb DCS goes as 1/(A+mu)^2*1/(N1+mu)^2*1/(N2+mu)^2, with A the atomic
- * screening angle and Ni the nuclear ones. It is reduced to a sum over poles
- * as: a0/(A+mu)+b0/(A+mu)^2+...+a2/(N2+mu)+b2/(N2+mu)^2.
+ * The Coulomb DCS goes as sum(1/(Ai+mu))^2*N1^2/(N1+mu)^2*N2^2/(N2+mu)^2, with
+ * Ai the atomic screening angles and Ni the nuclear ones. It is reduced to a
+ * sum over poles as: a0/(A0+mu)+b0/(A0+mu)^2+...+an-1/(N2+mu)+bn-1/(N2+mu)^2.
  */
-void coulomb_pole_decomposition(double * screening, double * a, double * b)
+void coulomb_pole_reduction(int n_parameters, const double * amplitude,
+    const double * screening, int * n_poles, double * a, double * b)
 {
-        const double d01 = 1. / (screening[0] - screening[1]);
-        const double d02 = 1. / (screening[0] - screening[2]);
-        const double d12 = 1. / (screening[1] - screening[2]);
-        b[0] = d01 * d01 * d02 * d02;
-        b[1] = d01 * d01 * d12 * d12;
-        b[2] = d12 * d12 * d02 * d02;
-        a[0] = 2. * b[0] * (d01 + d02);
-        a[1] = 2. * b[1] * (d12 - d01);
-        a[2] = -2. * b[2] * (d12 + d02);
+        const double nuclear_screening =
+            (screening[1] < screening[2]) ? screening[1] : screening[2];
+        if (nuclear_screening > 1E+03) {
+                /* We neglect the nucleus finite size. */
+                if (n_parameters == 4) {
+                        *n_poles = 2;
+                        a[0] = 2 * amplitude[1] * amplitude[0] /
+                            (screening[1] - screening[0]);
+                        a[1] = -a[0];
+                        b[0] = amplitude[0] * amplitude[0];
+                        b[1] = amplitude[1] * amplitude[1];
+                } else {
+                        *n_poles = 3;
+                        const double t10 = 2 * amplitude[1] * amplitude[0] /
+                            (screening[1] - screening[0]);
+                        const double t20 = 2 * amplitude[2] * amplitude[0] /
+                            (screening[2] - screening[0]);
+                        const double t21 = 2 * amplitude[2] * amplitude[1] /
+                            (screening[2] - screening[1]);
+                        a[0] = t10 + t20;
+                        a[1] = -t10 + t21;
+                        a[2] = -t20 - t21;
+
+                        b[0] = amplitude[0] * amplitude[0];
+                        b[1] = amplitude[1] * amplitude[1];
+                        b[2] = amplitude[2] * amplitude[2];
+                }
+        } else {
+                /* All terms are taken into account */
+                *n_poles = n_parameters;
+                memset(a, 0x0, n_parameters * sizeof(a[0]));
+                memset(b, 0x0, n_parameters * sizeof(b[0]));
+
+                const int i1 = n_parameters - 2;
+                const int i2 = n_parameters - 1;
+                int i0;
+                for (i0 = 0; i0 < n_parameters - 2; i0++) {
+                        const double f0 = amplitude[i0] * amplitude[i0];
+
+                        const double d01 = 1. / (screening[i0] - screening[i1]);
+                        const double d02 = 1. / (screening[i0] - screening[i2]);
+                        const double d12 = 1. / (screening[i1] - screening[i2]);
+                        const double b0 = f0 * d01 * d01 * d02 * d02;
+                        const double b1 = f0 * d01 * d01 * d12 * d12;
+                        const double b2 = f0 * d12 * d12 * d02 * d02;
+
+                        b[i0] += b0;
+                        b[i1] += b1;
+                        b[i2] += b2;
+                        a[i0] += 2. * b0 * (d01 + d02);
+                        a[i1] += 2. * b1 * (d12 - d01);
+                        a[i2] += -2. * b2 * (d12 + d02);
+                }
+
+                for (i0 = 1; i0 < n_parameters - 2; i0++) {
+                        int j0;
+                        for (j0 = 0; j0 < i0; j0++) {
+                                const double fij =
+                                    2 * amplitude[i0] * amplitude[j0] /
+                                    (screening[i0] - screening[j0]);
+
+                                double d01 =
+                                    1. / (screening[i0] - screening[i1]);
+                                double d02 =
+                                    1. / (screening[i0] - screening[i2]);
+                                const double d12 =
+                                    1. / (screening[i1] - screening[i2]);
+
+                                a[i0] -= fij * d01 * d01 * d02 * d02;
+                                const double tmpi1 =
+                                    fij * d01 * d01 * d12 * d12 * d12;
+                                a[i1] -= tmpi1 *
+                                    (2 * screening[i0] - 3 * screening[i1] +
+                                     screening[i2]);
+                                const double tmpi2 =
+                                    -fij * d02 * d02 * d12 * d12 * d12;
+                                a[i2] -= tmpi2 *
+                                    (2 * screening[i0] - 3 * screening[i2] +
+                                     screening[i1]);
+                                b[i1] -= fij * d01 * d12 * d12;
+                                b[i2] -= fij * d02 * d12 * d12;
+
+                                d01 = 1. / (screening[j0] - screening[i1]);
+                                d02 = 1. / (screening[j0] - screening[i2]);
+
+                                a[j0] += fij * d01 * d01 * d02 * d02;
+                                const double tmpj1 =
+                                    fij * d01 * d01 * d12 * d12 * d12;
+                                a[i1] += tmpj1 *
+                                    (2 * screening[j0] - 3 * screening[i1] +
+                                     screening[i2]);
+                                const double tmpj2 =
+                                    -fij * d02 * d02 * d12 * d12 * d12;
+                                a[i2] += tmpj2 *
+                                    (2 * screening[j0] - 3 * screening[i2] +
+                                     screening[i1]);
+                                b[i1] += fij * d01 * d12 * d12;
+                                b[i2] += fij * d02 * d12 * d12;
+                        }
+                }
+
+                const double d = screening[i1] * screening[i1] *
+                    screening[i2] * screening[i2];
+                for (i0 = 0; i0 < n_parameters; i0++) {
+                        a[i0] *= d;
+                        b[i0] *= d;
+                }
+        }
 }
 
 /**
  * Compute the restricted EHS cross-section in the CM frame.
  *
- * @param mu        The angular cut-off value.
- * @param fspin     The spin correction factors.
- * @param screening The screening parameters.
- * @param a         The 1st order pole coefficients.
- * @param b         The 2nd order pole coefficients.
+ * @param mu           The angular cut-off value.
+ * @param fspin        The spin correction factors.
+ * @param n_poles      The number of poles.
+ * @param screening    The screening parameters.
+ * @param a            The 1st order pole coefficients.
+ * @param b            The 2nd order pole coefficients.
  *
  * The restricted cross-section is integrated from *mu* to `1`.
  */
-double coulomb_restricted_cs(
-    double mu, double fspin, double * screening, double * a, double * b)
+double coulomb_restricted_cs(double mu, double fspin, int n_poles,
+    const double * screening, const double * a, const double * b)
 {
         if (mu >= 1.) return 0.;
 
-        const double nuclear_screening =
-            (screening[1] < screening[2]) ? screening[1] : screening[2];
-        if (mu < 1E-08 * nuclear_screening) {
-                /* We neglect the nucleus finite size. */
-                const double L = log((screening[0] + 1.) / (screening[0] + mu));
-                const double r =
-                    (1. - mu) / ((screening[0] + mu) * (screening[0] + 1.));
-                const double k = screening[0] * (1. + screening[0]);
-                return k * (r - fspin * (L - screening[0] * r));
-        } else {
-                /* We need to take all factors into account using a pole
-                 * reduction. */
-                double I0[3], I1[3], J0[3], J1[3];
-                int i;
-                for (i = 0; i < 3; i++) {
-                        const double L =
-                            log((screening[i] + 1.) / (screening[i] + mu));
-                        const double r = (1. - mu) /
-                            ((screening[i] + mu) * (screening[i] + 1.));
-                        I0[i] = r;
-                        J0[i] = L;
-                        I1[i] = L - screening[i] * r;
-                        J1[i] = 1. - mu - screening[i] * L;
-                }
+        /* Sum up all factors of the pole reduction. */
+        double cs = 0.;
+        int i;
+        for (i = 0; i < n_poles; i++) {
+                const double alp = screening[i];
+                const double alp1 = 1. / (alp + 1);
+                const double L = -log(alp1 * (alp + mu));
+                const double r = alp1 * (1. - mu) / (alp + mu);
+                const double I0 = r;
+                const double J0 = L;
+                const double I1 = L - alp * r;
+                const double J1 = 1. - mu - alp * L;
 
-                const double k = screening[0] * (1. + screening[0]) *
-                    screening[1] * screening[1] * screening[2] * screening[2];
-                double cs = 0.;
-                for (i = 0; i < 3; i++) {
-                        cs += a[i] * (J0[i] - fspin * J1[i]) +
-                            b[i] * (I0[i] - fspin * I1[i]);
-                }
-                return k * cs;
+                cs += a[i] * (J0 - fspin * J1) + b[i] * (I0 - fspin * I1);
         }
+
+        return cs;
 }
 
 /**
  * Compute the order 0 and 1 transport coefficients.
  *
- * @param mu          The angular cut-off.
- * @param fspin       The spin factor.
- * @param screening   The screening factors.
- * @param a           The poles 1st order coefficients.
- * @param b           The poles 2nd order coefficients.
- * @param coefficient The computed transport coefficients.
+ * @param mu           The angular cut-off.
+ * @param fspin        The spin factor.
+ * @param n_poles      The number of poles.
+ * @param screening    The screening factors.
+ * @param a            The poles 1st order coefficients.
+ * @param b            The poles 2nd order coefficients.
+ * @param coefficient  The computed transport coefficients.
  */
-void coulomb_transport_coefficients(double mu, double fspin, double * screening,
-    double * a, double * b, double * coefficient)
+void coulomb_transport_coefficients(double mu, double fspin, int n_poles,
+    const double * screening, const double * a, const double * b,
+    double * coefficient)
 {
-        const double nuclear_screening =
-            (screening[1] < screening[2]) ? screening[1] : screening[2];
-        if (mu < 1E-08 * nuclear_screening) {
-                /* We neglect the nucleus finite size. */
-                const double L = log(1. + mu / screening[0]);
-                const double r = mu / (mu + screening[0]);
-                const double k = screening[0] * (1. + screening[0]);
-                coefficient[0] = k * (r / screening[0] - fspin * (L - r));
-                const double I2 = mu + screening[0] * (r - 2. * L);
-                coefficient[1] = 2. * k * (L - r - fspin * I2);
-        } else {
-                /* We need to take all factors into account using a pole
-                 * reduction. */
-                double I0[3], I1[3], I2[3], J0[3], J1[3], J2[3];
-                int i;
-                double mu2 = 0.5 * mu * mu;
-                for (i = 0; i < 3; i++) {
-                        double r = mu / (mu + screening[i]);
-                        double L = log(1. + mu / screening[i]);
-                        double mu1 = mu;
-                        I0[i] = r / screening[i];
-                        J0[i] = L;
-                        I1[i] = L - r;
-                        r *= screening[i];
-                        L *= screening[i];
-                        J1[i] = mu1 - L;
-                        I2[i] = mu1 - 2. * L + r;
-                        L *= screening[i];
-                        mu1 *= screening[i];
-                        J2[i] = mu2 + L - mu1;
-                }
+        /* Sum up all factors of the pole reduction. */
+        double cs0 = 0., cs1 = 0.;
+        int i;
+        double mu2 = 0.5 * mu * mu;
+        for (i = 0; i < n_poles; i++) {
+                double r = mu / (mu + screening[i]);
+                double L = log(1. + mu / screening[i]);
+                double mu1 = mu;
+                const double I0 = r / screening[i];
+                const double J0 = L;
+                const double I1 = L - r;
+                r *= screening[i];
+                L *= screening[i];
+                const double J1 = mu1 - L;
+                const double I2 = mu1 - 2. * L + r;
+                L *= screening[i];
+                mu1 *= screening[i];
+                const double J2 = mu2 + L - mu1;
 
-                const double k = screening[0] * (1. + screening[0]) *
-                    screening[1] * screening[1] * screening[2] * screening[2];
-                coefficient[0] = coefficient[1] = 0.;
-                for (i = 0; i < 3; i++) {
-                        coefficient[0] += a[i] * (J0[i] - fspin * J1[i]) +
-                            b[i] * (I0[i] - fspin * I1[i]);
-                        coefficient[1] += a[i] * (J1[i] - fspin * J2[i]) +
-                            b[i] * (I1[i] - fspin * I2[i]);
-                }
-                coefficient[0] *= k;
-                coefficient[1] *= 2. * k;
+                cs0 += a[i] * (J0 - fspin * J1) + b[i] * (I0 - fspin * I1);
+                cs1 += a[i] * (J1 - fspin * J2) + b[i] * (I1 - fspin * I2);
         }
+
+        coefficient[0] = cs0;
+        coefficient[1] = 2 * cs1;
 }
 
 /**
@@ -9238,20 +9424,22 @@ enum pumas_return compute_coulomb_parameters(struct pumas_physics * physics,
                     physics->mass, kinetic, &kinetic0, data->fCM);
                 data->fspin = coulomb_spin_factor(physics->mass, kinetic);
                 coulomb_screening_parameters(element->Z, element->A,
-                    physics->mass, kinetic, kinetic0, data->screening);
-                coulomb_pole_decomposition(data->screening, data->a, data->b);
-                coulomb_transport_coefficients(
-                    1., data->fspin, data->screening, data->a, data->b, G);
-                const double invlb = component->fraction /
-                    coulomb_wentzel_path(element->Z, element->A,
-                        physics->mass, kinetic, kinetic0, data->screening[0]);
+                    physics->mass, kinetic, kinetic0, &data->n_parameters,
+                    data->amplitude, data->screening);
+                coulomb_pole_reduction(data->n_parameters, data->amplitude,
+                    data->screening, &data->n_poles, data->a, data->b);
+                coulomb_transport_coefficients(1., data->fspin, data->n_poles,
+                    data->screening, data->a, data->b, G);
+                const double normalisation = component->fraction /
+                    coulomb_normalisation(element->Z, element->A,
+                        physics->mass, kinetic, kinetic0);
 
-                invlb_m += invlb * G[0];
-                s_m_h += data->screening[0] * invlb;
-                s_m_l += invlb / data->screening[0];
-                data->invlambda = invlb;
+                invlb_m += normalisation * G[0];
+                s_m_h += data->screening[0] * normalisation;
+                s_m_l += normalisation / data->screening[0];
+                data->normalisation = normalisation;
                 const double d = 1. / (data->fCM[0] * (1. + data->fCM[1]));
-                invlb1_m += invlb * G[1] * d * d;
+                invlb1_m += normalisation * G[1] * d * d;
         }
 
         /* Set the hard scattering mean free path. */
@@ -9353,10 +9541,11 @@ enum pumas_return compute_coulomb_parameters(struct pumas_physics * physics,
                         /* Elastic contribution to the transport. */
                         double G[2];
                         coulomb_transport_coefficients(mu0, data->fspin,
-                            data->screening, data->a, data->b, G);
+                            data->n_poles, data->screening, data->a, data->b,
+                            G);
                         double d = 1. / (data->fCM[0] * (1. + data->fCM[1]));
                         d *= d;
-                        invlb1 += data->invlambda * d * G[1] *
+                        invlb1 += data->normalisation * d * G[1] *
                             component->fraction;
 
                         /* Other precomputed soft scattering terms. */
@@ -9386,10 +9575,11 @@ enum pumas_return compute_coulomb_parameters(struct pumas_physics * physics,
                         /* Elastic contribution to the transport. */
                         double G[2];
                         coulomb_transport_coefficients(mu0, data->fspin,
-                            data->screening, data->a, data->b, G);
+                            data->n_poles, data->screening, data->a, data->b,
+                            G);
                         double d = 1. / (data->fCM[0] * (1. + data->fCM[1]));
                         d *= d;
-                        invlb1 += data->invlambda * d * G[1] *
+                        invlb1 += data->normalisation * d * G[1] *
                             component->fraction;
                 }
 
@@ -9487,6 +9677,8 @@ enum pumas_return compute_coulomb_soft(struct pumas_physics * physics, int row,
                 *table_get_ms1(
                     physics, PUMAS_MODE_HYBRID, iel, row, ms1_table) =
                         invlb1_hybrid;
+
+                /* XXX Other terms? */
         }
 
         *data = ms1_table;
@@ -9517,8 +9709,9 @@ double compute_cutoff_objective(
         struct coulomb_data * data;
         for (i = 0, data = workspace->data; i < n; i++, data++) {
                 cs_tot +=
-                    data->invlambda * coulomb_restricted_cs(mu, data->fspin,
-                                          data->screening, data->a, data->b);
+                    data->normalisation * coulomb_restricted_cs(mu, data->fspin,
+                                              data->n_poles, data->screening,
+                                              data->a, data->b);
         }
 
         /* Return the difference with the expectation. */
@@ -13375,9 +13568,11 @@ const char * pumas_dcs_default(enum pumas_process process)
 double pumas_elastic_dcs(
     double Z, double A, double m, double K, double theta)
 {
-        double kinetic0, screening[3], fCM[2];
+        int n_parameters;
+        double kinetic0, amplitude[3], screening[5], fCM[2];
         coulomb_frame_parameters(Z, A, m, K, &kinetic0, fCM);
-        coulomb_screening_parameters(Z, A, m, K, kinetic0, screening);
+        coulomb_screening_parameters(
+            Z, A, m, K, kinetic0, &n_parameters, amplitude, screening);
         const double fspin = coulomb_spin_factor(m, K);
 
         const double c = cos(theta);
@@ -13390,13 +13585,16 @@ double pumas_elastic_dcs(
         const double num = fCM[0] * (c * fCM[1] + sd);
         const double jac = num * num / (cgs * cgs * sd);
 
-        double dcs = 1.;
+        double dcs = 0.;
         int i;
-        for (i = 0; i < sizeof(screening) / sizeof(screening[0]); i++) {
-                const double d = 1. / (screening[i] + mu0);
-                dcs *=  d * d;
+        for (i = 0; i < n_parameters - 2; i++) {
+                dcs += amplitude[i] / (screening[i] + mu0);
         }
-        dcs *= screening[1] * screening[1] * screening[2] * screening[2];
+        dcs *= dcs;
+        for (i = n_parameters - 2; i < n_parameters; i++) {
+                const double d = screening[i] / (screening[i] + mu0);
+                dcs *= d * d;
+        }
 
         const double p0 = sqrt(kinetic0 * (kinetic0 + 2. * m));
         const double p = sqrt(K * (K + 2. * m));
@@ -13409,18 +13607,20 @@ double pumas_elastic_dcs(
 double pumas_elastic_length(
     int order, double Z, double A, double mass, double kinetic)
 {
-        double kinetic0, screening[3], coefficient[2], fCM[2];
+        int n_parameters, n_poles;
+        double kinetic0, amplitude[3], screening[5], coefficient[2], fCM[2];
         coulomb_frame_parameters(Z, A, mass, kinetic, &kinetic0, fCM);
-        coulomb_screening_parameters(Z, A, mass, kinetic, kinetic0, screening);
+        coulomb_screening_parameters(Z, A, mass, kinetic, kinetic0,
+            &n_parameters, amplitude, screening);
         const double fspin = coulomb_spin_factor(mass, kinetic);
-        double a[3], b[3];
-        coulomb_pole_decomposition(screening, a, b);
+        double a[5], b[5];
+        coulomb_pole_reduction(
+            n_parameters, amplitude, screening, &n_poles, a, b);
         coulomb_transport_coefficients(
-            1., fspin, screening, a, b, coefficient);
+            1., fspin, n_poles, screening, a, b, coefficient);
         double d = 1. / (fCM[0] * (1. + fCM[1]));
         d *= d;
         d *= coefficient[order];
 
-        return coulomb_wentzel_path(
-            Z, A, mass, kinetic, kinetic0, screening[0]) / d;
+        return coulomb_normalisation(Z, A, mass, kinetic, kinetic0) / d;
 }
