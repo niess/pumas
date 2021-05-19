@@ -176,6 +176,10 @@
 #define M_PI 3.14159265358979323846
 #endif
 /**
+ * Euler-Mascheroni constant
+ */
+#define EULER_CONSTANT 0.5772156649
+/**
  * Avogadro's number
  */
 #define AVOGADRO_NUMBER 6.02214076E+23
@@ -2723,7 +2727,7 @@ enum pumas_return pumas_physics_property_elastic_cutoff_angle(
         if (mu0 < 1E-08) {
                 *angle = 2 * sqrt(mu0);
         } else {
-                *angle = 1. - acos(1. - 2 * mu0);
+                *angle = acos(1. - 2 * mu0);
         }
 
         return PUMAS_RETURN_SUCCESS;
@@ -2745,24 +2749,23 @@ enum pumas_return pumas_physics_property_elastic_scattering_length(
         }
 
         const int imax = physics->n_energies - 1;
+        double lp2;
         if (kinetic < *table_get_K(physics, 1)) {
-                /* Use asymptotic limit as lb ~ sqrt(kinetic). */
-                *length = *table_get_Lb(physics, material, 1) *
-                    sqrt((*table_get_K(physics, 1)) / kinetic);
+                lp2 = *table_get_Lb(physics, material, 1);
         } else if (kinetic >= *table_get_K(physics, imax)) {
-                /* Use asymptotic limit as lb ~ kinetic. */
-                *length = *table_get_Lb(physics, material, imax) *
-                    (*table_get_K(physics, imax)) / kinetic;
+                lp2 = *table_get_Lb(physics, material, imax);
         } else {
                 const int i1 = table_index(
                     physics, NULL, table_get_K(physics, 0), kinetic);
                 const int i2 = i1 + 1;
                 double h = (kinetic - *table_get_K(physics, i1)) /
                     (*table_get_K(physics, i2) - *table_get_K(physics, i1));
-                *length = *table_get_Lb(physics, material, i1) +
+                lp2 = *table_get_Lb(physics, material, i1) +
                     h * (*table_get_Lb(physics, material, i2) -
                             *table_get_Lb(physics, material, i1));
         }
+        const double p2 = kinetic * (kinetic + 2 * physics->mass);
+        *length = lp2 / p2;
 
         return PUMAS_RETURN_SUCCESS;
 }
@@ -2778,7 +2781,7 @@ enum pumas_return pumas_physics_property_multiple_scattering_length(
                 *length = 0.;
                 return ERROR_NOT_INITIALISED();
         } else if ((scheme < PUMAS_MODE_VIRTUAL) ||
-            (scheme >= PUMAS_MODE_DETAILED)) { 
+            (scheme >= PUMAS_MODE_DETAILED)) {
                 return ERROR_INVALID_SCHEME(scheme);
         } else if ((material < 0) || (material >= physics->n_materials)) {
                 *length = 0.;
@@ -3237,14 +3240,20 @@ enum pumas_return pumas_physics_table_value(
                 *value = *table_get_CS(physics, material, row);
                 return PUMAS_RETURN_SUCCESS;
         } else if (property == PUMAS_PROPERTY_ELASTIC_SCATTERING_LENGTH) {
-                *value = *table_get_Lb(physics, material, row);
+                if (row == 0) {
+                        *value = 0.;
+                } else {
+                        const double k = *table_get_K(physics, row);
+                        const double p2 = k * (k + 2 * physics->mass);
+                        *value = *table_get_Lb(physics, material, row) / p2;
+                }
                 return PUMAS_RETURN_SUCCESS;
         } else if (property == PUMAS_PROPERTY_ELASTIC_CUTOFF_ANGLE) {
                 const double mu0 = *table_get_Mu0(physics, material, row);
                 if (mu0 < 1E-08) {
                         *value = 2 * sqrt(mu0);
                 } else {
-                        *value = 1. - acos(1. - 2 * mu0);
+                        *value = acos(1. - 2 * mu0);
                 }
                 return PUMAS_RETURN_SUCCESS;
         } else if (property == PUMAS_PROPERTY_MULTIPLE_SCATTERING_LENGTH) {
@@ -5183,7 +5192,7 @@ void transport_do_del(const struct pumas_physics * physics,
         }
 }
 
-/*!
+/*
  * Apply an Elastic Hard Scattering (EHS) event during the Monte-Carlo
  * propagation.
  *
@@ -5252,26 +5261,42 @@ void transport_do_ehs(const struct pumas_physics * physics,
                 }
         }
 
-        /* Compute the hard angular parameter using a rejection sampling method
-         * with the Rutherford cross section as upper bound.
+        /* Compute the hard angular parameter using a rejection sampling
+         * method with a Wentzel cross-section as upper bound.
          */
         data = workspace->data + ihard;
+        double A = data->screening[0];
+        for (i = 1; i < data->n_parameters - 2; i++) {
+                const double Ai = data->screening[i];
+                if (Ai < A) A = Ai;
+        }
         double mu1;
         for (;;) {
-                /* Randomise with a Rutherford cross-section, i.e. 1 / mu^2. */
+                /*
+                 * Randomise with a Wentzel cross-section, i.e.
+                 * 1 / (1 + mu)^2.
+                 */
                 const double zeta = context->random(context);
-                mu1 = mu0 / (1. - zeta * (1. - mu0));
+                const double tmp = 1. + A - zeta * (1 - mu0);
+                if (tmp <= 0.) continue;
+                mu1 = (A + mu0) * (A + 1.) / tmp - A;
+                if (mu1 < mu0) mu1 = mu0;
+                else if (mu1 > 1.) mu1 = 1;
 
-                /* Ratio of the actual elastic DCS to the Rutherford one. */
+                /*
+                 * Ratio of the actual elastic DCS to the Wentzel one.
+                 */
                 int i;
                 double ratio = 0.;
                 for (i = 0; i < data->n_parameters - 2; i++) {
-                        ratio += data->amplitude[i] * mu1 /
+                        ratio += data->amplitude[i] * (A + mu1) /
                             (data->screening[i] + mu1);
                 }
-                ratio *= data->screening[i] / (data->screening[i] + mu1);
+                ratio *= data->screening[i] /
+                    (data->screening[i] + mu1);
                 i++;
-                ratio *= data->screening[i] / (data->screening[i] + mu1);
+                ratio *= data->screening[i] /
+                    (data->screening[i] + mu1);
                 ratio *= ratio * (1. - data->fspin * mu1);
 
                 if (context->random(context) <= ratio) break;
@@ -6638,19 +6663,48 @@ static enum pumas_return material_index(const struct pumas_physics * physics,
  * @param amplitude    The amplitudes of the atomic screening terms.
  * @param screening    The computed screening parameters.
  *
- * XXX document
- * The atomic screening parameter is computed according to Moliere. The nuclear
- * form factor is approximated from Helm's uniform-uniform distribution.
+ * The atomic screening is parameterized by a sum of three exponentials
+ * following Salvat et al. (1987). A Coulomb correction is applied according
+ * to Kuraev et al. (2014). The nuclear form factor is approximated from
+ * Helm's uniform-uniform distribution (see e.g. Salvat et al. (2005)).
  *
  * References:
- *      Molière, Z. Naturforsh. A2 (1947), 133–145; A3 (1948), 78
- *      Salvat et al., CPC 165 (2005) 157–190
+ *      Salvat et al., Phys. Rev. A 36, 2 (1987)
+ *      Salvat et al., CPC 165 (2005) 157-190
+ *      Kuraev et al., Phys. ReV. D 89, 116016 (2014)
  */
 void coulomb_screening_parameters(double Z, double A, double mass,
     double kinetic, double kinetic0, int * n_parameters,
     double * amplitude, double * screening)
 {
-        /* Atomic screening */
+        /* KTV correction to the 1st Born approximation from Kuraev et al.
+         * (2014).
+         */
+        const double aZE = ALPHA_EM * Z * (kinetic + mass);
+        const double p2 = kinetic * (kinetic + 2. * mass);
+        const double zeta2 = aZE * aZE / p2;
+        double f;
+        if (zeta2 < 1) {
+                /* Use KTV serie expansion in zeta Riemann */
+                f = 1. / (1. + zeta2) +
+                    0.20205690315959424 -
+                    0.03692775514336999 * zeta2 +
+                    0.008349277381922926 * zeta2 * zeta2;
+                f *= zeta2;
+        } else {
+                /* Use the asymptotic expansion of the digamma function */
+                const double r2i = 1. / (1. + zeta2);
+                const double phi = -atan(sqrt(zeta2));
+
+                f = -0.5 * log(r2i) +
+                    0.5 * (1. - r2i) +
+                    1. / 12. * (1. - cos(2 * phi) * r2i) -
+                    1. / 120. * (1. - cos(4 * phi) * r2i * r2i) +
+                    1. / 252. * (1. - cos(6 * phi) * r2i * r2i * r2i);
+        }
+        const double ktv = exp(2 * (f + EULER_CONSTANT) - 1.);
+
+        /* Atomic screening parameters from Salvat et al. (1987) */
         static const double prefactor[2][103] = {{
              -7.05665E-06,-2.25920E-01,6.04537E-01,3.27766E-01,
              2.32684E-01,1.53676E-01,9.95750E-02,6.25130E-02,3.68040E-02,
@@ -6780,15 +6834,10 @@ void coulomb_screening_parameters(double Z, double A, double mass,
                 amplitude[2] = 1. - (amplitude[0] + amplitude[1]);
         }
 
-        /* Moliere correction to the 1st Born approximation (XXX or Kuraev?)*/
-        const double aZE = ALPHA_EM * Z * (kinetic + mass);
-        const double p2 = kinetic * (kinetic + 2. * mass);
-        const double zeta2 = aZE * aZE / p2;
-
         int i;
         for (i = 0; i < n; i++) {
                 const double a = exponent[i][iZ] / BOHR_RADIUS;
-                screening[i] = d * a * a * (1.13 + 3.76 * zeta2);
+                screening[i] = d * a * a * ktv;
         }
 
         /* Nuclear screening. */
@@ -9405,11 +9454,11 @@ enum pumas_return compute_coulomb_parameters(struct pumas_physics * physics,
                 return PUMAS_RETURN_SUCCESS;
         }
 
-        /* Compute the mean free paths, the screening factors and various
-         * averages used for the hard scattering.
+        /* Compute the mean free path, the first transport cross-section and
+         * the minimal screening.
          */
-        double invlb_m = 0., invlb1_m = 0.;
-        double s_m_l = 0., s_m_h = 0.;
+        double cs_m = 0., cs1_m = 0.;
+        double A = DBL_MAX, cs_A = 0.;
         int i;
         struct coulomb_data * data;
         for (i = 0, data = workspace->data; i < physics->elements_in[material];
@@ -9434,83 +9483,61 @@ enum pumas_return compute_coulomb_parameters(struct pumas_physics * physics,
                     coulomb_normalisation(element->Z, element->A,
                         physics->mass, kinetic, kinetic0);
 
-                invlb_m += normalisation * G[0];
-                s_m_h += data->screening[0] * normalisation;
-                s_m_l += normalisation / data->screening[0];
+                cs_m += normalisation * G[0];
                 data->normalisation = normalisation;
                 const double d = 1. / (data->fCM[0] * (1. + data->fCM[1]));
-                invlb1_m += normalisation * G[1] * d * d;
+                cs1_m += normalisation * G[1] * d * d;
+
+                int j;
+                for (j = 0; j < data->n_parameters - 2; j++) {
+                        const double Aj = data->screening[j];
+                        if (Aj < A) A  = Aj;
+                }
+                cs_A += normalisation;
         }
+        cs_A /= A * (A + 1.);
 
         /* Set the hard scattering mean free path. */
-        const double lb_m = 1. / invlb_m;
-        double lb_h = physics->elastic_ratio / invlb1_m;
-        if (lb_h > EHS_PATH_MAX) lb_h = EHS_PATH_MAX;
+        double cs_h = cs1_m / physics->elastic_ratio;
+        if (cs_h < 1. / EHS_PATH_MAX) cs_h = 1. / EHS_PATH_MAX;
 
         /* Compute the hard scattering cutoff angle, in the CM. */
         const double max_mu0 = 0.5 * (1. - cos(MAX_SOFT_ANGLE * M_PI / 180.));
-        double mu0 = 0.;
-        if (lb_m < lb_h) {
-                /* Initialise the root finder with an asymptotic starting
-                 * value. */
-                double s_m;
-                if (lb_h > 2. * lb_m) /* Asymptotic value when lb_h >> lb_m */
-                        s_m = s_m_h * lb_m;
-                else
-                        /* Asymptotic value when lb_h ~= lb_m */
-                        s_m = 1. / (s_m_l * lb_m);
-                mu0 = s_m * (lb_h - lb_m) / (s_m * lb_h + lb_m);
+        double mu0 = 0., lb_h;
+        if (cs_h < cs_m) {
+                /* Compute an upper bound on mu0 using a bounding Wentzel
+                 * cross-section.
+                 */
+                const double zeta = cs_h / cs_A;
+                double mu_max = A * (1. - zeta) / (A + zeta);
+                if (mu_max > max_mu0) mu_max = max_mu0;
 
                 /* Configure for the root solver. */
-                workspace->cs_h = 1. / lb_h;
+                workspace->cs_h = cs_h;
                 workspace->material = material;
                 workspace->ihard = -1;
 
-                /* Solve for the cut-off angle. We try an initial bracketing in
-                 * [0.25*mu0; 4.*mu0], with mu0 the asymptotic estimate. */
-                double mubest;
-                double mu_max = 4. * mu0;
-                if (mu_max > 1.) mu_max = 1.;
-                double mu_min = 0.25 * mu0;
-                double fmax =
+                const double mu_min = 0;
+                const double fmax =
                     compute_cutoff_objective(physics, mu_max, workspace);
-                double fmin;
-                if (fmax > 0.) {
-                        /* This shouldn't occur, but let's be safe and handle
-                         * this case. */
-                        mu_min = mu_max;
-                        fmin = fmax;
-                        mu_max = 1.;
-                        fmax = -workspace->cs_h;
+                const double fmin = cs_m - cs_h;
+                double mubest;
+                if (math_find_root(compute_cutoff_objective, physics, mu_min,
+                    mu_max, &fmin, &fmax, 1E-06 * mu_max,
+                    1E-06, 100, workspace, &mubest) == 0) {
+                        mu0 = mubest;
                 } else {
-                        fmin = compute_cutoff_objective(
-                            physics, mu_min, workspace);
-                        if (fmin < 0.) {
-                                /* This might occur at high energies when the
-                                 * nuclear screening becomes significant. */
-                                mu_max = mu_min;
-                                fmax = fmin;
-                                mu_min = 0.;
-                                fmin = compute_cutoff_objective(
-                                    physics, mu_min, workspace);
-                        }
-                }
-                if (mu_min < max_mu0) {
-                        if (mu_max > max_mu0) mu_max = max_mu0;
-                        if (math_find_root(compute_cutoff_objective, physics,
-                                mu_min, mu_max, &fmin, &fmax, 1E-06 * mu0,
-                                1E-06, 100, workspace, &mubest) == 0)
-                                mu0 = mubest;
+                        mu0 = mu_max;
                 }
                 if (mu0 > max_mu0) mu0 = max_mu0;
-                lb_h = compute_cutoff_objective(physics, mu0, workspace) +
-                    workspace->cs_h;
-                if (lb_h <= 1. / EHS_PATH_MAX)
+                cs_h += compute_cutoff_objective(physics, mu0, workspace);
+                if (cs_h <= 1. / EHS_PATH_MAX)
                         lb_h = EHS_PATH_MAX;
                 else
-                        lb_h = 1. / lb_h;
+                        lb_h = 1. / cs_h;
         } else
-                lb_h = lb_m;
+                lb_h = 1. / cs_m;
+
         *table_get_Mu0(physics, material, row) = mu0;
         *table_get_Lb(physics, material, row) =
             lb_h * kinetic * (kinetic + 2. * physics->mass);
@@ -9677,8 +9704,6 @@ enum pumas_return compute_coulomb_soft(struct pumas_physics * physics, int row,
                 *table_get_ms1(
                     physics, PUMAS_MODE_HYBRID, iel, row, ms1_table) =
                         invlb1_hybrid;
-
-                /* XXX Other terms? */
         }
 
         *data = ms1_table;
