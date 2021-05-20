@@ -951,28 +951,32 @@ START_TEST(test_api_property)
         ck_assert_double_eq_tol(2.411E+06, value, 1E+03);
 
         /* Check overflows */
-        double vmax;
+        double vmax, emax;
+        pumas_physics_table_value(physics, PUMAS_PROPERTY_KINETIC_ENERGY,
+            0, 0, -1, &emax);
+        emax *= 100.;
+
         pumas_physics_property_energy_loss(
-            physics, PUMAS_MODE_CSDA, 0, 1E+08, &value);
+            physics, PUMAS_MODE_CSDA, 0, 1E+11, &value);
         pumas_physics_table_value(physics, PUMAS_PROPERTY_ENERGY_LOSS,
-            PUMAS_MODE_CSDA, 0, 145, &vmax);
+            PUMAS_MODE_CSDA, 0, -1, &vmax);
         ck_assert_double_gt(value, vmax);
 
         pumas_physics_property_grammage(
-            physics, PUMAS_MODE_CSDA, 0, 1E+08, &value);
+            physics, PUMAS_MODE_CSDA, 0, 1E+11, &value);
         pumas_physics_table_value(
-            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_MODE_CSDA, 0, 145, &vmax);
+            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_MODE_CSDA, 0, -1, &vmax);
         ck_assert_double_gt(value, vmax);
 
         pumas_physics_property_proper_time(
-            physics, PUMAS_MODE_CSDA, 0, 1E+08, &value);
+            physics, PUMAS_MODE_CSDA, 0, 1E+11, &value);
         pumas_physics_table_value(physics, PUMAS_PROPERTY_PROPER_TIME,
-            PUMAS_MODE_CSDA, 0, 145, &vmax);
+            PUMAS_MODE_CSDA, 0, -1, &vmax);
         ck_assert_double_gt(value, vmax);
 
-        pumas_physics_property_cross_section(physics, 0, 1E+08, &value);
+        pumas_physics_property_cross_section(physics, 0, 1E+11, &value);
         pumas_physics_table_value(physics, PUMAS_PROPERTY_CROSS_SECTION,
-            PUMAS_MODE_HYBRID, 0, 145, &vmax);
+            PUMAS_MODE_HYBRID, 0, -1, &vmax);
         ck_assert_double_eq(value, vmax);
 
         /* Unload the data */
@@ -1005,7 +1009,7 @@ START_TEST(test_api_table)
         reset_error();
         index = pumas_physics_table_length(physics);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_int_eq(index, 146);
+        ck_assert_int_eq(index, 194);
 
         /* Check the index error */
         reset_error();
@@ -1105,7 +1109,7 @@ START_TEST(test_api_table)
         ck_assert_double_eq_tol(value, 5.476E+03, 1.);
 
         pumas_physics_table_value(
-            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_MODE_CSDA, 0, -1, &value);
+            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_MODE_CSDA, 0, -49, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq_tol(value, 1.676E+07, 1E+04);
 
@@ -3009,7 +3013,9 @@ START_TEST(test_csda_straight)
 
                 reset_error();
                 initialise_state();
-                state->energy = 1E+08;
+                pumas_physics_table_value(physics,
+                    PUMAS_PROPERTY_KINETIC_ENERGY, 0, 0, -1, &state->energy);
+                state->energy *= 1E+02;
                 pumas_physics_property_grammage(
                     physics, PUMAS_MODE_CSDA, 0, state->energy, &X);
                 pumas_physics_property_proper_time(
@@ -3314,7 +3320,14 @@ START_TEST(test_hybrid_straight)
 
                         reset_error();
                         initialise_state();
-                        state->energy = (ik == 0) ? 1E+08 : 1E+03;
+                        if (ik == 0) {
+                                pumas_physics_table_value(physics,
+                                    PUMAS_PROPERTY_KINETIC_ENERGY, 0, 0, -1,
+                                    &state->energy);
+                                state->energy *= 1E+02;
+                        } else {
+                                state->energy = 1E+03;
+                        }
                         pumas_physics_property_grammage(physics,
                             PUMAS_MODE_HYBRID, 0, state->energy, &X);
                         pumas_physics_property_proper_time(physics,
@@ -3329,7 +3342,7 @@ START_TEST(test_hybrid_straight)
                         ck_assert_double_le(state->grammage, X);
                         ck_assert_double_le(state->time, t0);
                         ck_assert_double_le(state->weight,
-                            exp(-state->time / ctau));
+                            exp(-state->time / ctau) + FLT_EPSILON);
                         ck_assert_double_eq(state->position[0], 0.);
                         ck_assert_double_eq(state->position[1], 0.);
                         ck_assert_double_le(

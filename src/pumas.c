@@ -11838,7 +11838,9 @@ enum pumas_return physics_tabulate(struct pumas_physics * physics,
                 data->energy = energy_;
 
                 if (physics->particle == PUMAS_PARTICLE_MUON) {
-                        /* For muons the PDG energy grid is used by default. */
+                        /* For muons an extended PDG like energy grid is used
+                         * by default.
+                         */
                         energy_[0] = 1.000E-03;
                         energy_[1] = 1.200E-03;
                         energy_[2] = 1.400E-03;
@@ -11857,7 +11859,7 @@ enum pumas_return physics_tabulate(struct pumas_physics * physics,
                         energy_[15] = 9.000E-03;
 
                         const int n_per_decade = 16;
-                        const int n_decades = 8;
+                        const int n_decades = 11;
                         data->n_energies = (n_decades + 1) * n_per_decade + 1;
 
                         int i;
