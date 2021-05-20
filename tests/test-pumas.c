@@ -1052,8 +1052,8 @@ START_TEST(test_api_table)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
-        pumas_physics_table_value(
-            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_MODE_CSDA, 0, -1, &value);
+        pumas_physics_table_value(physics, PUMAS_PROPERTY_GRAMMAGE,
+            PUMAS_MODE_CSDA, 0, -1000, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         /* Check some values */
@@ -1103,6 +1103,11 @@ START_TEST(test_api_table)
             physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_MODE_CSDA, 0, 49, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq_tol(value, 5.476E+03, 1.);
+
+        pumas_physics_table_value(
+            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_MODE_CSDA, 0, -1, &value);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_double_eq_tol(value, 1.676E+07, 1E+04);
 
         pumas_physics_table_value(physics, PUMAS_PROPERTY_GRAMMAGE,
             PUMAS_MODE_HYBRID, 0, 49, &value);

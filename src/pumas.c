@@ -3189,7 +3189,7 @@ enum pumas_return pumas_physics_composite_properties(
 /* Public library functions: info on tabulations. */
 enum pumas_return pumas_physics_table_value(
     const struct pumas_physics * physics, enum pumas_property property,
-    enum pumas_mode scheme, int material, int row, double * value)
+    enum pumas_mode scheme, int material, int row_, double * value)
 {
         ERROR_INITIALISE(pumas_physics_table_value);
 
@@ -3199,11 +3199,13 @@ enum pumas_return pumas_physics_table_value(
                 return ERROR_NOT_INITIALISED();
         }
 
+        const int row = (row_ < 0) ? physics->n_energies + row_ : row_;
+
         if ((material < 0) || (material >= physics->n_materials)) {
                 return ERROR_INVALID_MATERIAL(material);
         } else if ((row < 0) || (row >= physics->n_energies)) {
                 return ERROR_FORMAT(
-                    PUMAS_RETURN_INDEX_ERROR, "invalid `row' index [%d]", row);
+                    PUMAS_RETURN_INDEX_ERROR, "invalid `row' index [%d]", row_);
         }
 
         if (property == PUMAS_PROPERTY_KINETIC_ENERGY) {

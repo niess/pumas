@@ -1666,8 +1666,9 @@ PUMAS_API enum pumas_return pumas_physics_composite_properties(
  * tabulated data corresponding to the given `property` column and `row` index.
  * Each row of the table corresponds to a different kinetic energy value.
  *
- * **Note** that `PUMAS_PROPERTY_SCATTERING_LENGTH` is not supported since it
- * is not tabulated but computed on the fly.
+ * **Note** that negative row index can be provided in which case it refers to
+ * the end of the table. E.g. `row = -1` is the last entry and `row = -2` is
+ * the before last one.
  *
  * __Error codes__
  *
