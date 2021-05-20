@@ -1696,7 +1696,7 @@ START_TEST(test_api_elastic)
 
         /* Test some numerical values of the path length */
         v = pumas_elastic_length(0, Z, A, m, k);
-        ck_assert_double_eq_tol(1.094E-03, v, 1E-06);
+        ck_assert_double_eq_tol(9.884E-04, v, 1E-07);
 
         v = pumas_elastic_length(1, Z, A, m, k);
         ck_assert_double_eq_tol(1.660E+06, v, 1E+03);

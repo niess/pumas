@@ -6962,7 +6962,8 @@ void coulomb_pole_reduction(int n_parameters, const double * amplitude,
     const double * screening, int * n_poles, double * a, double * b)
 {
         const double nuclear_screening =
-            (screening[1] < screening[2]) ? screening[1] : screening[2];
+            (screening[n_parameters - 2] < screening[n_parameters - 1]) ?
+            screening[n_parameters - 2] : screening[n_parameters - 1];
         if (nuclear_screening > 1E+03) {
                 /* We neglect the nucleus finite size. */
                 if (n_parameters == 4) {
@@ -13634,6 +13635,8 @@ double pumas_elastic_dcs(
 double pumas_elastic_length(
     int order, double Z, double A, double mass, double kinetic)
 {
+        if ((order < 0) || (order > 1)) return 0.;
+
         int n_parameters, n_poles;
         double kinetic0, amplitude[3], screening[5], coefficient[2], fCM[2];
         coulomb_frame_parameters(Z, A, mass, kinetic, &kinetic0, fCM);
@@ -13645,9 +13648,11 @@ double pumas_elastic_length(
             n_parameters, amplitude, screening, &n_poles, a, b);
         coulomb_transport_coefficients(
             1., fspin, n_poles, screening, a, b, coefficient);
-        double d = 1. / (fCM[0] * (1. + fCM[1]));
-        d *= d;
-        d *= coefficient[order];
+        if (order == 1) {
+                const double d = 1. / (fCM[0] * (1. + fCM[1]));
+                coefficient[order] *= d * d;
+        }
 
-        return coulomb_normalisation(Z, A, mass, kinetic, kinetic0) / d;
+        return coulomb_normalisation(Z, A, mass, kinetic, kinetic0) /
+            coefficient[order];
 }
