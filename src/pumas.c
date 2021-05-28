@@ -176,10 +176,6 @@
 #define M_PI 3.14159265358979323846
 #endif
 /**
- * Euler-Mascheroni constant
- */
-#define EULER_CONSTANT 0.5772156649
-/**
  * Avogadro's number
  */
 #define AVOGADRO_NUMBER 6.02214076E+23
@@ -6666,13 +6662,14 @@ static enum pumas_return material_index(const struct pumas_physics * physics,
  * @param screening    The computed screening parameters.
  *
  * The atomic screening is parameterized by a sum of three exponentials
- * following Salvat et al. (1987). A Coulomb correction is applied according
- * to Kuraev et al. (2014). The nuclear form factor is approximated from
- * Helm's uniform-uniform distribution (see e.g. Salvat et al. (2005)).
+ * following Salvat et al. (1987). The nuclear form factor is set according to
+ * the r.m.s. of the proton charge distribution taken from the compilation of De
+ * Vries et al. (1987). In both cases, a Coulomb correction is applied according
+ * to Kuraev et al. (2014).
  *
  * References:
  *      Salvat et al., Phys. Rev. A 36, 2 (1987)
- *      Salvat et al., CPC 165 (2005) 157-190
+ *      De Vries et al., Atom. Data & Nucl. Tables 36, 495 (1987)
  *      Kuraev et al., Phys. ReV. D 89, 116016 (2014)
  */
 void coulomb_screening_parameters(double Z, double A, double mass,
@@ -6704,7 +6701,7 @@ void coulomb_screening_parameters(double Z, double A, double mass,
                     1. / 120. * (1. - cos(4 * phi) * r2i * r2i) +
                     1. / 252. * (1. - cos(6 * phi) * r2i * r2i * r2i);
         }
-        const double ktv = exp(2 * (f + EULER_CONSTANT) - 1.);
+        const double ktv = exp(2 * f);
 
         /* Atomic screening parameters from Salvat et al. (1987) */
         static const double prefactor[2][103] = {{
@@ -6822,8 +6819,10 @@ void coulomb_screening_parameters(double Z, double A, double mass,
         }};
 
         const double p02 = kinetic0 * (kinetic0 + 2. * mass);
-        const double d = 0.25 * HBAR_C * HBAR_C / p02;
-        const int iZ = (int)Z - 1;
+        const double d = 0.25 * HBAR_C * HBAR_C / p02 * ktv;
+        int iZ = (int)Z - 1;
+        const int nZ = sizeof(prefactor[0]) / sizeof(prefactor[0][0]);
+        if (iZ >= nZ) iZ = nZ - 1;
         int n;
         if (exponent[2][iZ] == 1.) {
                 n = 2;
@@ -6839,16 +6838,38 @@ void coulomb_screening_parameters(double Z, double A, double mass,
         int i;
         for (i = 0; i < n; i++) {
                 const double a = exponent[i][iZ] / BOHR_RADIUS;
-                screening[i] = d * a * a * ktv;
+                screening[i] = d * a * a;
         }
 
-        /* Nuclear screening. */
-        const double RN = 1.07E-15 * pow(A, 1. / 3.);
-        const double R1 = 0.962 * RN + 0.435E-15;
-        const double R2 = 2.E-15;
-        screening[n++] = 10. * d / (R1 * R1);
-        screening[n++] = 10. * d / (R2 * R2);
+        /* Nuclear r.m.s. radii, in fm. */
+        static double rN[119] = {
+            2.098, 0.859, 1.679, 2.400, 2.519, 2.405, 2.470, 2.548, 2.734,
+            2.900, 2.997, 2.940, 3.043, 3.035, 3.098, 3.187, 3.245, 3.387,
+            3.413, 3.407, 3.477, 3.466, 3.598, 3.602, 3.644, 3.680, 3.748,
+            3.848, 3.776, 3.943, 3.942, 4.032, 4.065, 4.078, 4.123, 4.135,
+            4.188, 4.209, 4.242, 4.250, 4.306, 4.321, 4.363, 4.387, 4.432,
+            4.435, 4.479, 4.520, 4.612, 4.646, 4.640, 4.630, 4.704, 4.695,
+            4.749, 4.769, 4.830, 4.850, 4.878, 4.897, 4.927, 4.957, 5.054,
+            5.093, 5.133, 5.177, 5.197, 5.210, 5.237, 5.301, 5.410, 5.370,
+            5.434, 5.480, 5.420, 5.400, 5.413, 5.411, 5.380, 5.316, 5.404,
+            5.471, 5.498, 5.521, 5.520, 5.529, 5.629, 5.637, 5.661, 5.669,
+            5.709, 5.701, 5.847, 5.778, 5.824, 5.817, 5.843, 5.843, 5.868,
+            5.875, 5.906, 5.912, 5.918, 5.937, 5.967, 5.973, 5.979, 5.985,
+            5.980, 6.033, 6.051, 6.056, 6.074, 6.079, 6.097, 6.097, 6.119,
+            6.125, 6.125};
 
+        int iN = (int)Z;
+        const int nN = sizeof(rN) / sizeof(rN[0]);
+        if (iN >= nN) iN = nN - 1;
+        const double RN = rN[iN] * 1E-15 / sqrt(2); /* fm */
+        const double epsilon = 0.05;
+        const double R1 = (1. - epsilon) * RN;
+        const double R2 = (1. + epsilon) * RN;
+        screening[n++] = 6. * d / (R1 * R1);
+        screening[n++] = 6. * d / (R2 * R2); /* the factor 6 corresponds to
+                                              * a 2nd order pole used in
+                                              * integrals.
+                                              */
         *n_parameters = n;
 }
 
@@ -6961,114 +6982,83 @@ void coulomb_frame_parameters(double Z, double A, double mass, double kinetic,
 void coulomb_pole_reduction(int n_parameters, const double * amplitude,
     const double * screening, int * n_poles, double * a, double * b)
 {
-        const double nuclear_screening =
-            (screening[n_parameters - 2] < screening[n_parameters - 1]) ?
-            screening[n_parameters - 2] : screening[n_parameters - 1];
-        if (nuclear_screening > 1E+03) {
-                /* We neglect the nucleus finite size. */
-                if (n_parameters == 4) {
-                        *n_poles = 2;
-                        a[0] = 2 * amplitude[1] * amplitude[0] /
-                            (screening[1] - screening[0]);
-                        a[1] = -a[0];
-                        b[0] = amplitude[0] * amplitude[0];
-                        b[1] = amplitude[1] * amplitude[1];
-                } else {
-                        *n_poles = 3;
-                        const double t10 = 2 * amplitude[1] * amplitude[0] /
-                            (screening[1] - screening[0]);
-                        const double t20 = 2 * amplitude[2] * amplitude[0] /
-                            (screening[2] - screening[0]);
-                        const double t21 = 2 * amplitude[2] * amplitude[1] /
-                            (screening[2] - screening[1]);
-                        a[0] = t10 + t20;
-                        a[1] = -t10 + t21;
-                        a[2] = -t20 - t21;
+        *n_poles = n_parameters;
+        memset(a, 0x0, n_parameters * sizeof(a[0]));
+        memset(b, 0x0, n_parameters * sizeof(b[0]));
 
-                        b[0] = amplitude[0] * amplitude[0];
-                        b[1] = amplitude[1] * amplitude[1];
-                        b[2] = amplitude[2] * amplitude[2];
+        const int i1 = n_parameters - 2;
+        const int i2 = n_parameters - 1;
+        int i0;
+        for (i0 = 0; i0 < n_parameters - 2; i0++) {
+                const double f0 = amplitude[i0] * amplitude[i0];
+
+                const double d01 = 1. / (screening[i0] - screening[i1]);
+                const double d02 = 1. / (screening[i0] - screening[i2]);
+                const double d12 = 1. / (screening[i1] - screening[i2]);
+                const double b0 = f0 * d01 * d01 * d02 * d02;
+                const double b1 = f0 * d01 * d01 * d12 * d12;
+                const double b2 = f0 * d12 * d12 * d02 * d02;
+
+                b[i0] += b0;
+                b[i1] += b1;
+                b[i2] += b2;
+                a[i0] += 2. * b0 * (d01 + d02);
+                a[i1] += 2. * b1 * (d12 - d01);
+                a[i2] += -2. * b2 * (d12 + d02);
+        }
+
+        for (i0 = 1; i0 < n_parameters - 2; i0++) {
+                int j0;
+                for (j0 = 0; j0 < i0; j0++) {
+                        const double fij =
+                            2 * amplitude[i0] * amplitude[j0] /
+                            (screening[i0] - screening[j0]);
+
+                        double d01 =
+                            1. / (screening[i0] - screening[i1]);
+                        double d02 =
+                            1. / (screening[i0] - screening[i2]);
+                        const double d12 =
+                            1. / (screening[i1] - screening[i2]);
+
+                        a[i0] -= fij * d01 * d01 * d02 * d02;
+                        const double tmpi1 =
+                            fij * d01 * d01 * d12 * d12 * d12;
+                        a[i1] -= tmpi1 *
+                            (2 * screening[i0] - 3 * screening[i1] +
+                             screening[i2]);
+                        const double tmpi2 =
+                            -fij * d02 * d02 * d12 * d12 * d12;
+                        a[i2] -= tmpi2 *
+                            (2 * screening[i0] - 3 * screening[i2] +
+                             screening[i1]);
+                        b[i1] -= fij * d01 * d12 * d12;
+                        b[i2] -= fij * d02 * d12 * d12;
+
+                        d01 = 1. / (screening[j0] - screening[i1]);
+                        d02 = 1. / (screening[j0] - screening[i2]);
+
+                        a[j0] += fij * d01 * d01 * d02 * d02;
+                        const double tmpj1 =
+                            fij * d01 * d01 * d12 * d12 * d12;
+                        a[i1] += tmpj1 *
+                            (2 * screening[j0] - 3 * screening[i1] +
+                             screening[i2]);
+                        const double tmpj2 =
+                            -fij * d02 * d02 * d12 * d12 * d12;
+                        a[i2] += tmpj2 *
+                            (2 * screening[j0] - 3 * screening[i2] +
+                             screening[i1]);
+                        b[i1] += fij * d01 * d12 * d12;
+                        b[i2] += fij * d02 * d12 * d12;
                 }
-        } else {
-                /* All terms are taken into account */
-                *n_poles = n_parameters;
-                memset(a, 0x0, n_parameters * sizeof(a[0]));
-                memset(b, 0x0, n_parameters * sizeof(b[0]));
+        }
 
-                const int i1 = n_parameters - 2;
-                const int i2 = n_parameters - 1;
-                int i0;
-                for (i0 = 0; i0 < n_parameters - 2; i0++) {
-                        const double f0 = amplitude[i0] * amplitude[i0];
-
-                        const double d01 = 1. / (screening[i0] - screening[i1]);
-                        const double d02 = 1. / (screening[i0] - screening[i2]);
-                        const double d12 = 1. / (screening[i1] - screening[i2]);
-                        const double b0 = f0 * d01 * d01 * d02 * d02;
-                        const double b1 = f0 * d01 * d01 * d12 * d12;
-                        const double b2 = f0 * d12 * d12 * d02 * d02;
-
-                        b[i0] += b0;
-                        b[i1] += b1;
-                        b[i2] += b2;
-                        a[i0] += 2. * b0 * (d01 + d02);
-                        a[i1] += 2. * b1 * (d12 - d01);
-                        a[i2] += -2. * b2 * (d12 + d02);
-                }
-
-                for (i0 = 1; i0 < n_parameters - 2; i0++) {
-                        int j0;
-                        for (j0 = 0; j0 < i0; j0++) {
-                                const double fij =
-                                    2 * amplitude[i0] * amplitude[j0] /
-                                    (screening[i0] - screening[j0]);
-
-                                double d01 =
-                                    1. / (screening[i0] - screening[i1]);
-                                double d02 =
-                                    1. / (screening[i0] - screening[i2]);
-                                const double d12 =
-                                    1. / (screening[i1] - screening[i2]);
-
-                                a[i0] -= fij * d01 * d01 * d02 * d02;
-                                const double tmpi1 =
-                                    fij * d01 * d01 * d12 * d12 * d12;
-                                a[i1] -= tmpi1 *
-                                    (2 * screening[i0] - 3 * screening[i1] +
-                                     screening[i2]);
-                                const double tmpi2 =
-                                    -fij * d02 * d02 * d12 * d12 * d12;
-                                a[i2] -= tmpi2 *
-                                    (2 * screening[i0] - 3 * screening[i2] +
-                                     screening[i1]);
-                                b[i1] -= fij * d01 * d12 * d12;
-                                b[i2] -= fij * d02 * d12 * d12;
-
-                                d01 = 1. / (screening[j0] - screening[i1]);
-                                d02 = 1. / (screening[j0] - screening[i2]);
-
-                                a[j0] += fij * d01 * d01 * d02 * d02;
-                                const double tmpj1 =
-                                    fij * d01 * d01 * d12 * d12 * d12;
-                                a[i1] += tmpj1 *
-                                    (2 * screening[j0] - 3 * screening[i1] +
-                                     screening[i2]);
-                                const double tmpj2 =
-                                    -fij * d02 * d02 * d12 * d12 * d12;
-                                a[i2] += tmpj2 *
-                                    (2 * screening[j0] - 3 * screening[i2] +
-                                     screening[i1]);
-                                b[i1] += fij * d01 * d12 * d12;
-                                b[i2] += fij * d02 * d12 * d12;
-                        }
-                }
-
-                const double d = screening[i1] * screening[i1] *
-                    screening[i2] * screening[i2];
-                for (i0 = 0; i0 < n_parameters; i0++) {
-                        a[i0] *= d;
-                        b[i0] *= d;
-                }
+        const double d = screening[i1] * screening[i1] *
+            screening[i2] * screening[i2];
+        for (i0 = 0; i0 < n_parameters; i0++) {
+                a[i0] *= d;
+                b[i0] *= d;
         }
 }
 
@@ -7089,7 +7079,11 @@ double coulomb_restricted_cs(double mu, double fspin, int n_poles,
 {
         if (mu >= 1.) return 0.;
 
-        /* Sum up all factors of the pole reduction. */
+        /* Sum up all factors of the pole reduction.
+         *
+         * Note: we make use of sum(a_i) = 0 in order to eliminate some
+         * terms of the summations.
+         */
         double cs = 0.;
         int i;
         for (i = 0; i < n_poles; i++) {
@@ -7100,7 +7094,7 @@ double coulomb_restricted_cs(double mu, double fspin, int n_poles,
                 const double I0 = r;
                 const double J0 = L;
                 const double I1 = L - alp * r;
-                const double J1 = 1. - mu - alp * L;
+                const double J1 = -alp * L;
 
                 cs += a[i] * (J0 - fspin * J1) + b[i] * (I0 - fspin * I1);
         }
@@ -7123,24 +7117,23 @@ void coulomb_transport_coefficients(double mu, double fspin, int n_poles,
     const double * screening, const double * a, const double * b,
     double * coefficient)
 {
-        /* Sum up all factors of the pole reduction. */
+        /* Sum up all factors of the pole reduction.
+         *
+         * Note: we make use of sum(a_i) = 0 in order to eliminate some
+         * unstable terms from the summation.
+         */
         double cs0 = 0., cs1 = 0.;
         int i;
-        double mu2 = 0.5 * mu * mu;
         for (i = 0; i < n_poles; i++) {
-                double r = mu / (mu + screening[i]);
-                double L = log(1. + mu / screening[i]);
-                double mu1 = mu;
-                const double I0 = r / screening[i];
+                const double alp = screening[i];
+                const double r = mu / (mu + alp);
+                const double L = log(1. + mu / alp);
+                const double I0 = r / alp;
                 const double J0 = L;
                 const double I1 = L - r;
-                r *= screening[i];
-                L *= screening[i];
-                const double J1 = mu1 - L;
-                const double I2 = mu1 - 2. * L + r;
-                L *= screening[i];
-                mu1 *= screening[i];
-                const double J2 = mu2 + L - mu1;
+                const double J1 = -alp * L;
+                const double I2 = mu + alp * (r - 2. * L);
+                const double J2 = alp * (alp * L - mu);
 
                 cs0 += a[i] * (J0 - fspin * J1) + b[i] * (I0 - fspin * I1);
                 cs1 += a[i] * (J1 - fspin * J2) + b[i] * (I1 - fspin * I2);
