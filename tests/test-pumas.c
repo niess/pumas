@@ -938,17 +938,17 @@ START_TEST(test_api_property)
         pumas_physics_property_elastic_scattering_length(
             physics, 0, 1E+00, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq_tol(166.048, value, 1E-02);
+        ck_assert_double_eq_tol(164.2, value, 1E-02);
 
         pumas_physics_property_elastic_cutoff_angle(
             physics, 0, 1E+00, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq_tol(0.00362, value, 1E-05);
+        ck_assert_double_eq_tol(0.00360, value, 1E-05);
 
         pumas_physics_property_multiple_scattering_length(
             physics, PUMAS_MODE_HYBRID, 0, 1E+00, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq_tol(2.411E+06, value, 1E+03);
+        ck_assert_double_eq_tol(2.382E+06, value, 1E+03);
 
         /* Check overflows */
         double vmax, emax;
@@ -1162,17 +1162,17 @@ START_TEST(test_api_table)
         pumas_physics_table_value(physics,
             PUMAS_PROPERTY_ELASTIC_SCATTERING_LENGTH, 0, 0, 17, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq_tol(5.292E-02, value, 1E-05);
+        ck_assert_double_eq_tol(5.225E-02, value, 1E-05);
 
         pumas_physics_table_value(physics,
             PUMAS_PROPERTY_ELASTIC_CUTOFF_ANGLE, 0, 0, 17, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq_tol(3.5369E-03, value, 1E-07);
+        ck_assert_double_eq_tol(3.5163E-03, value, 1E-07);
 
         pumas_physics_table_value(physics,
             PUMAS_PROPERTY_MULTIPLE_SCATTERING_LENGTH, 0, 0, 17, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq_tol(1.789E+03, value, 1.);
+        ck_assert_double_eq_tol(1.737E+03, value, 1.);
 
         /* Check unsuported properties  */
         pumas_physics_table_index(
@@ -1696,14 +1696,14 @@ START_TEST(test_api_elastic)
         ck_assert_double_eq_tol(8.358E-22, v, 1E-25);
 
         v = pumas_elastic_dcs(Z, A, m, k, 1E+00);
-        ck_assert_double_eq_tol(4.997E-39, v, 1E-42);
+        ck_assert_double_eq_tol(9.072E-51, v, 1E-54);
 
         /* Test some numerical values of the path length */
         v = pumas_elastic_length(0, Z, A, m, k);
-        ck_assert_double_eq_tol(9.884E-04, v, 1E-07);
+        ck_assert_double_eq_tol(8.469E-04, v, 1E-07);
 
         v = pumas_elastic_length(1, Z, A, m, k);
-        ck_assert_double_eq_tol(1.660E+06, v, 1E+03);
+        ck_assert_double_eq_tol(1.642E+06, v, 1E+03);
 
         pumas_physics_destroy(&physics);
 }
