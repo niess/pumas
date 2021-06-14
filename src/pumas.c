@@ -154,6 +154,10 @@
  */
 #define ELECTRON_MASS 0.510998910E-03
 /**
+ * The electron classical radius, in m.
+ */
+#define ELECTRON_RADIUS 2.817940285E-15
+/**
  * The muon mass in GeV/c^2.
  */
 #define MUON_MASS 0.10565839
@@ -2040,6 +2044,7 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_dcs_default)
         TOSTRING(pumas_elastic_dcs)
         TOSTRING(pumas_elastic_length)
+        TOSTRING(pumas_electronic_dcs)
         TOSTRING(pumas_physics_cutoff)
         TOSTRING(pumas_physics_elastic_ratio)
         TOSTRING(pumas_physics_destroy)
@@ -5349,13 +5354,10 @@ polar_function_t * del_randomise_forward(const struct pumas_physics * physics,
         const struct atomic_element * element = physics->element[info.element];
 
         if (info.process == 3) {
-                const double m1 = physics->mass - ELECTRON_MASS;
-                if (state->energy <= 0.5 * m1 * m1 / ELECTRON_MASS) {
-                        state->energy = dcs_ionisation_randomise(physics,
-                            context, element, state->energy, physics->cutoff);
-                        *process = info.process;
-                        return polar_get(info.process);
-                }
+                state->energy = dcs_ionisation_randomise(physics,
+                    context, element, state->energy, physics->cutoff);
+                *process = info.process;
+                return polar_get(info.process);
         }
 
         /* Interpolate the lower fractional threshold. */
@@ -9923,14 +9925,11 @@ double compute_dcs_integral(struct pumas_physics * physics, int mode,
     double xlow, int nint)
 {
 
-        /* Let us use the analytical form for ionisation when radiative
-         * corrections can be neglected.
-         */
-        const double m1 = physics->mass - ELECTRON_MASS;
-        if ((dcs == &dcs_ionisation) &&
-            (kinetic <= 0.5 * m1 * m1 / ELECTRON_MASS))
+        /* Let us use the analytical form for ionisation */
+        if (dcs == &dcs_ionisation) {
                 return dcs_ionisation_integrate(
                     physics, mode, element, kinetic, xlow);
+        }
 
         /* We integrate over the recoil energy using a logarithmic sampling. */
         double dcsint = 0.;
@@ -10211,6 +10210,28 @@ int dcs_photonuclear_check(double K, double q)
         return (q < 1.) || (q < 2E-03 * K);
 }
 
+/* API function for the effective electronic DCS */
+double pumas_electronic_dcs(double Z, double I, double m, double K, double q)
+{
+        const double P2 = K * (K + 2. * m);
+        const double E = K + m;
+        const double Wmax = 2. * ELECTRON_MASS * P2 /
+            (m * m + ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
+        if (q > Wmax) return 0.;
+        const double Wmin = (13.6 / 19.2) * I;
+        if (q <= Wmin) return 0.;
+
+        /* Close interactions for Q >> atomic binding energies. */
+        const double E2 = E * E;
+        const double beta2 = P2 / E2;
+        const double a0 = 0.5 / E2;
+        const double a1 = beta2 / Wmax;
+        const double cs = 2 * M_PI * ELECTRON_MASS * ELECTRON_RADIUS *
+            ELECTRON_RADIUS * Z * (a0 + 1. / q * (1 / q - a1)) / beta2;
+
+        return cs;
+}
+
 /**
  * The ionisation differential cross section.
  *
@@ -10221,42 +10242,15 @@ int dcs_photonuclear_check(double K, double q)
  * @return The differential cross section in m^2/kg
  *
  * The differential cross section for ionisation is computed following
- * Salvat et al., NIMB316 (2013) 144-159, considering only close interactions
+ * Salvat NIMB316 (2013) 144-159, considering only close interactions
  * for DELs. In addition a radiative correction is applied according to
  * Sokalski et al., Phys.Rev.D64 (2001) 074015 (MUM).
  */
 double dcs_ionisation(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double q)
 {
-        const double Z = element->Z;
-        const double A = element->A;
-        const double P2 = K * (K + 2. * physics->mass);
-        const double E = K + physics->mass;
-        const double Wmax = 2. * ELECTRON_MASS * P2 /
-            (physics->mass * physics->mass +
-                                ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
-        if ((Wmax < physics->cutoff * K) || (q > Wmax)) return 0.;
-        const double Wmin = 0.62 * element->I;
-        if (q <= Wmin) return 0.;
-
-        /* Close interactions for Q >> atomic binding energies. */
-        const double a0 = 0.5 / P2;
-        const double a1 = -1. / Wmax;
-        const double a2 = E * E / P2;
-        const double cs =
-            1.535336E-05 * E * Z / A * (a0 + 1. / q * (a1 + a2 / q));
-
-        /* Radiative correction. */
-        double Delta = 0.;
-        const double m1 = physics->mass - ELECTRON_MASS;
-        if (K >= 0.5 * m1 * m1 / ELECTRON_MASS) {
-                const double L1 = log(1. + 2. * q / ELECTRON_MASS);
-                Delta = 1.16141E-03 * L1 *
-                    (log(4. * E * (E - q) / (physics->mass * physics->mass)) -
-                            L1);
-        }
-
-        return cs * (1. + Delta);
+        return pumas_electronic_dcs(element->Z, element->I, physics->mass, K,
+            q) * (physics->mass + K) * AVOGADRO_NUMBER / (element->A * 1E-03);
 }
 
 /**
@@ -10285,7 +10279,7 @@ double dcs_ionisation_integrate(const struct pumas_physics * physics, int mode,
             (physics->mass * physics->mass +
                                 ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
         if (Wmax < physics->cutoff * K) return 0.;
-        double Wmin = 0.62 * element->I;
+        double Wmin = (13.6 / 19.2) * element->I;
         const double qlow = K * xlow;
         if (qlow >= Wmin) Wmin = qlow;
 
@@ -10293,20 +10287,22 @@ double dcs_ionisation_integrate(const struct pumas_physics * physics, int mode,
         if (Wmax <= Wmin) return 0.;
 
         /* Close interactions for Q >> atomic binding energies. */
-        const double a0 = 0.5 / P2;
-        const double a1 = -1. / Wmax;
-        const double a2 = E * E / P2;
+        const double E2 = E * E;
+        const double beta2 = P2 / E2;
+        const double a0 = 0.5 / E2;
+        const double a1 = beta2 / Wmax;
 
         double I;
         if (mode == 0) {
-                I = a0 * (Wmax - Wmin) + a1 * log(Wmax / Wmin) +
-                    a2 * (1. / Wmin - 1. / Wmax);
+                I = a0 * (Wmax - Wmin) - a1 * log(Wmax / Wmin) +
+                    1. / Wmin - 1. / Wmax;
         } else {
-                I = 0.5 * a0 * (Wmax * Wmax - Wmin * Wmin) +
-                    a1 * (Wmax - Wmin) + a2 * log(Wmax / Wmin);
+                I = 0.5 * a0 * (Wmax * Wmax - Wmin * Wmin) -
+                    a1 * (Wmax - Wmin) + log(Wmax / Wmin);
         }
 
-        return 1.535336E-05 * Z / A * I;
+        return 2 * M_PI * ELECTRON_MASS * ELECTRON_RADIUS * ELECTRON_RADIUS *
+            Z * AVOGADRO_NUMBER / (A * 1E-03 * beta2) * I;
 }
 
 double dcs_ionisation_randomise(const struct pumas_physics * physics,
@@ -10319,33 +10315,34 @@ double dcs_ionisation_randomise(const struct pumas_physics * physics,
             (physics->mass * physics->mass +
                                 ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
         if (Wmax < physics->cutoff * K) return K;
-        double Wmin = 0.62 * element->I;
+        double Wmin = (13.6 / 19.2) * element->I;
         const double qlow = K * xlow;
         if (qlow >= Wmin) Wmin = qlow;
 
         /* Close interactions for Q >> atomic binding energies. */
-        const double a0 = 0.5 / P2;
-        const double a1 = -1. / Wmax;
-        const double a2 = E * E / P2;
+        const double E2 = E * E;
+        const double beta2 = P2 / E2;
+        const double a0 = 0.5 / E2;
+        const double a1 = beta2 / Wmax;
 
         const double p0 = a0 * (Wmax - Wmin);
-        const double p2 = a2 * (1. / Wmin - 1. / Wmax);
+        const double p2 = 1. / Wmin - 1. / Wmax;
         double q;
         for (;;) {
-                /* Inverse sampling using an enveloppe. */
-                const double z = context->random(context) * (p0 + p2);
+                /* Inverse sampling using an enveloppe as a sum of two PDFs. */
+                double z = context->random(context) * (p0 + p2);
                 if (z <= p0) {
-                        q = (Wmax - Wmin) * context->random(context);
+                        z /= p0;
+                        q = (Wmax - Wmin) * z;
                 } else {
-                        q = Wmin /
-                            (1. -
-                                context->random(context) * (1. - Wmin / Wmax));
+                        z = (z - p0) / p2;
+                        q = Wmin * Wmax / (Wmax - z * (Wmax - Wmin));
                 }
 
                 /* Rejection sampling. */
-                const double r0 = a0 + a2 / (q * q);
-                const double r1 = r0 + a1 / q;
-                if (context->random(context) * r0 < r1) break;
+                const double r0 = a0 + 1 / (q * q);
+                const double r1 = r0 - a1 / q;
+                if (context->random(context) * r0 <= r1) break;
         }
 
         return K - q;

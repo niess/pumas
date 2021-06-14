@@ -175,6 +175,7 @@ START_TEST(test_api_error)
         CHECK_STRING(pumas_dcs_register);
         CHECK_STRING(pumas_elastic_dcs);
         CHECK_STRING(pumas_elastic_length);
+        CHECK_STRING(pumas_electronic_dcs);
         CHECK_STRING(pumas_error_catch);
         CHECK_STRING(pumas_error_function);
         CHECK_STRING(pumas_error_handler_get);
@@ -1682,9 +1683,6 @@ END_TEST
 /* Test the elastic API */
 START_TEST(test_api_elastic)
 {
-        /* Load the muon data */
-        load_muon();
-
         /* Test some numerical values of the dcs */
         const double Z = 11;
         const double A = 22;
@@ -1704,12 +1702,31 @@ START_TEST(test_api_elastic)
 
         v = pumas_elastic_length(1, Z, A, m, k);
         ck_assert_double_eq_tol(1.642E+06, v, 1E+03);
-
-        pumas_physics_destroy(&physics);
 }
 END_TEST
 
-/* Geometry for test cases  */
+/* Test the electronic API */
+START_TEST(test_api_electronic)
+{
+        /* Test some numerical values of the dcs */
+        const double Z = 11;
+        const double I = 136.4E-09;
+        const double m = 0.10566;
+        const double k = 1.;
+
+        double v;
+        v = pumas_electronic_dcs(Z, I, m, k, 1E-05);
+        ck_assert_double_eq_tol(2.83E-21, v, 1E-23);
+
+        v = pumas_electronic_dcs(Z, I, m, k, 1E-03);
+        ck_assert_double_eq_tol(2.80E-25, v, 1E-27);
+
+        v = pumas_electronic_dcs(Z, I, m, k, 1E-01);
+        ck_assert_double_eq_tol(5.68E-31, v, 1E-33);
+}
+END_TEST
+
+/* Geometry for test cases */
 static struct {
         int uniform;
         double magnet[3];
@@ -5220,6 +5237,7 @@ Suite * create_suite(void)
         tcase_add_test(tc_api, test_api_print);
         tcase_add_test(tc_api, test_api_dcs);
         tcase_add_test(tc_api, test_api_elastic);
+        tcase_add_test(tc_api, test_api_electronic);
 
         /* The no loss test case */
         TCase * tc_lossless = tcase_create("Lossless");

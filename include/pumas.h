@@ -229,7 +229,7 @@ enum pumas_event {
         PUMAS_EVENT_STOP = 8192
 };
 
-/** Indices of customizable physics processes. */
+/** Indices of customizable radiative processes. */
 enum pumas_process {
         /** The Bremstrahlung process */
         PUMAS_PROCESS_BREMSSTRAHLUNG = 0,
@@ -1993,6 +1993,27 @@ PUMAS_API double pumas_elastic_dcs(
  */
 PUMAS_API double pumas_elastic_length(
     int order, double Z, double A, double mass, double kinetic);
+
+/**
+ * The electronic differential cross section for close collisions.
+ *
+ * @param Z       The charge number of the target atom.
+ * @param I       The mean excitation energy of the target atom.
+ * @param m       The projectile rest mass, in GeV
+ * @param K       The projectile initial kinetic energy.
+ * @param q       The projectile energy loss, in GeV.
+ * @return The corresponding value of the atomic DCS, in m^(2) / GeV.
+ *
+ * The electronic DCS for close collisions is computed following Salvat.
+ * An effective model is used with a cutoff set as a fraction of the mean
+ * excitation energy, I. This reproduces Salvat for energy losses, q, larger
+ * than the electronic ionisation energies.
+ *
+ * References:
+ *      Salvat (2013), NIM B 316, 144-159
+ */
+PUMAS_API double pumas_electronic_dcs(
+    double Z, double I, double m, double K, double theta);
 
 #ifdef __cplusplus
 }
