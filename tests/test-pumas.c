@@ -176,6 +176,8 @@ START_TEST(test_api_error)
         CHECK_STRING(pumas_elastic_dcs);
         CHECK_STRING(pumas_elastic_length);
         CHECK_STRING(pumas_electronic_dcs);
+        CHECK_STRING(pumas_electronic_density_effect);
+        CHECK_STRING(pumas_electronic_energy_loss);
         CHECK_STRING(pumas_error_catch);
         CHECK_STRING(pumas_error_function);
         CHECK_STRING(pumas_error_handler_get);
@@ -1709,20 +1711,61 @@ END_TEST
 START_TEST(test_api_electronic)
 {
         /* Test some numerical values of the dcs */
-        const double Z = 11;
-        const double I = 136.4E-09;
-        const double m = 0.10566;
-        const double k = 1.;
+        {
+                const double Z = 11;
+                const double I = 136.4E-09;
+                const double m = 0.10566;
+                const double k = 1.;
 
-        double v;
-        v = pumas_electronic_dcs(Z, I, m, k, 1E-05);
-        ck_assert_double_eq_tol(2.83E-21, v, 1E-23);
+                double v;
+                v = pumas_electronic_dcs(Z, I, m, k, 1E-05);
+                ck_assert_double_eq_tol(2.83E-21, v, 1E-23);
 
-        v = pumas_electronic_dcs(Z, I, m, k, 1E-03);
-        ck_assert_double_eq_tol(2.80E-25, v, 1E-27);
+                v = pumas_electronic_dcs(Z, I, m, k, 1E-03);
+                ck_assert_double_eq_tol(2.80E-25, v, 1E-27);
 
-        v = pumas_electronic_dcs(Z, I, m, k, 1E-01);
-        ck_assert_double_eq_tol(5.68E-31, v, 1E-33);
+                v = pumas_electronic_dcs(Z, I, m, k, 1E-01);
+                ck_assert_double_eq_tol(5.68E-31, v, 1E-33);
+        }
+
+        /* Test the density effect computation */
+        {
+                const double Z = 92;
+                const double A = 238.0291;
+                const double I = 890E-09;
+                const double density = 18.95E+03;
+
+                double v;
+                v = pumas_electronic_density_effect(
+                    1, &Z, &A, NULL, I, density, 1E+00);
+                ck_assert_double_eq_tol(0.069, v, 1E-03);
+
+                v = pumas_electronic_density_effect(
+                    1, &Z, &A, NULL, I, density, 1E+02);
+                ck_assert_double_eq_tol(3.83, v, 1E-02);
+        }
+
+        /* Test the energy loss computation */
+        {
+                const double Z = 11;
+                const double A = 22;
+                const double I = 136.4E-09;
+                const double density = 2.65E+03;
+                const double m = 0.10566;
+
+                double v;
+                v = pumas_electronic_energy_loss(
+                    1, &Z, &A, NULL, I, density, m, 1E-02);
+                ck_assert_double_eq_tol(6.62E-07, v, 1E-09);
+
+                v = pumas_electronic_energy_loss(
+                    1, &Z, &A, NULL, I, density, m, 1E+00);
+                ck_assert_double_eq_tol(1.82E-07, v, 1E-09);
+
+                v = pumas_electronic_energy_loss(
+                    1, &Z, &A, NULL, I, density, m, 1E+02);
+                ck_assert_double_eq_tol(2.45E-07, v, 1E-09);
+        }
 }
 END_TEST
 

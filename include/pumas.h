@@ -1995,7 +1995,7 @@ PUMAS_API double pumas_elastic_length(
     int order, double Z, double A, double mass, double kinetic);
 
 /**
- * The electronic differential cross section for close collisions.
+ * The electronic differential cross section restricted to close collisions.
  *
  * @param Z       The charge number of the target atom.
  * @param I       The mean excitation energy of the target atom.
@@ -2004,16 +2004,72 @@ PUMAS_API double pumas_elastic_length(
  * @param q       The projectile energy loss, in GeV.
  * @return The corresponding value of the atomic DCS, in m^(2) / GeV.
  *
- * The electronic DCS for close collisions is computed following Salvat.
- * An effective model is used with a cutoff set as a fraction of the mean
- * excitation energy, I. This reproduces Salvat for energy losses, q, larger
- * than the electronic ionisation energies.
+ * The electronic DCS restricted to close collisions is computed following
+ * Salvat.  An effective model is used with a cutoff set as a fraction of the
+ * mean excitation energy, I. This reproduces Salvat for energy losses, q,
+ * larger than the electronic ionisation energies.
  *
  * References:
  *      Salvat (2013), NIM B 316, 144-159
  */
 PUMAS_API double pumas_electronic_dcs(
     double Z, double I, double m, double K, double theta);
+
+/**
+ * The electronic density effect for a material.
+ *
+ * @param n_elements    The number of atomic elements in the material.
+ * @param Z             The charge numbers of the constitutive atomic elements.
+ * @param A             The mass numbers of the constitutive atomic elements.
+ * @param w             The mass fractions of the atomic elements, or `NULL`.
+ * @param I             The mean excitation energy of the material, in GeV.
+ * @param density       The density of the material, in kg / m^(3).
+ * @param gamma         The relativistic gamma factor of the projectile.
+ * @return The corresponding density effect.
+ *
+ * The density effect is computed following Fano (1963). Oscillators strength
+ * and level have been set from atomic binding energies of individual atomic
+ * elements. A global scaling factor is applied in order to match the Mean
+ * Excitation Energy.
+ *
+ * The mass fractions of the elements, *w*, can be `NULL` in wich case they are
+ * assumed to be 1. The mass fractions do not need to be normalised to 1.
+ *
+ * Reference:
+ *     U. Fano, Ann. Rev. Nucl. Sci. 13, 1 (1963)
+ */
+PUMAS_API double pumas_electronic_density_effect(int n_elements,
+    const double * Z, const double * A, const double * w, double I,
+    double density, double gamma);
+
+/**
+ * The electronic energy loss for a material.
+ *
+ * @param n_elements    The number of atomic elements in the material.
+ * @param Z             The charge numbers of the constitutive atomic elements.
+ * @param A             The mass numbers of the constitutive atomic elements.
+ * @param w             The mass fractions of the atomic elements, or `NULL`.
+ * @param I             The mean excitation energy of the material, in GeV.
+ * @param density       The density of the material, in kg / m^(3).
+ * @param mass          The mass of the projectile, in GeV / c^(2).
+ * @param energy        The energy of the projectile, in GeV
+ * @return The corresponding energy loss per unit mass, in GeV m^(2) / kg.
+ *
+ * The electronic energy loss is computed following Salvat (2013). The result is
+ * identical to Groom et al. (2001) except for the density effect. The later is
+ * computed following Fano (1963), see e.g. `pumas_electronic_density_effect`.
+ *
+ * The mass fractions of the elements, *w*, can be `NULL` in wich case they are
+ * assumed to be 1. The mass fractions do not need to be normalised to 1.
+ *
+ * Reference:
+ *     F. Salvat NIMB 316 (2013)
+ *     Groom et al., Atomic Data and Nuclear Data Tables, 78 (2001)
+ *     U. Fano, Ann. Rev. Nucl. Sci. 13, 1 (1963)
+ */
+PUMAS_API double pumas_electronic_energy_loss(int n_elements, const double * Z,
+    const double * A, const double * w, double I, double density, double mass,
+    double energy);
 
 #ifdef __cplusplus
 }

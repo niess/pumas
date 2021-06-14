@@ -2045,6 +2045,8 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_elastic_dcs)
         TOSTRING(pumas_elastic_length)
         TOSTRING(pumas_electronic_dcs)
+        TOSTRING(pumas_electronic_density_effect)
+        TOSTRING(pumas_electronic_energy_loss)
         TOSTRING(pumas_physics_cutoff)
         TOSTRING(pumas_physics_elastic_ratio)
         TOSTRING(pumas_physics_destroy)
@@ -11584,6 +11586,76 @@ struct atomic_shell {
         double E;
 };
 
+/* Normalise electronic oscillators for given material properties
+ *
+ * Oscillators strength and level are scaled in order to match the Mean
+ * Excitation Energy, I.
+ */
+void atomic_shell_normalise(int n_shells, struct atomic_shell * shells,
+    double ZoA, double I, double density)
+{
+        double ftot = 0., lnI = 0.;
+        int i;
+        struct atomic_shell * shell;
+        for (i = 0, shell = shells; i < n_shells; i++, shell++) {
+                ftot += shell->f;
+                lnI += shell->f * log(shell->E);
+        }
+        ftot = 1. / ftot;
+        lnI *= ftot;
+
+        const double wp = 28.816 * sqrt(ZoA * density * 1E-03);
+        const double r = I * 1E+09 / (exp(lnI) * wp);
+
+        for (i = 0, shell = shells; i < n_shells; i++, shell++) {
+                shell->f *= ftot;
+                shell->E *= r;
+        }
+}
+
+/* Unpack atomic shells for a collection of elements */
+static struct atomic_shell * atomic_shell_unpack(int n_elements,
+    const double * Z, const double * A, const double * w, double I,
+    double density, double * ZoA, int * n_shells_ptr)
+{
+        int i, n_shells = 0;
+        for (i = 0; i < n_elements; i++) {
+                int iZ = (int)Z[i] - 1;
+                if (iZ >= 100) iZ = 99;
+                const int j0 = atomic_shell_index[iZ];
+                const int j1 = atomic_shell_index[iZ + 1];
+                n_shells += j1 - j0;
+        }
+
+        struct atomic_shell * shells = allocate(n_shells * sizeof(*shells));
+        if (shells == NULL) return NULL;
+
+        double Ztot = 0., Atot = 0.;
+        int is;
+        for (i = 0, is = 0; i < n_elements; i++) {
+                int iZ = (int)Z[i] - 1;
+                if (iZ >= 100) iZ = 99;
+                const int j0 = atomic_shell_index[iZ];
+                const int j1 = atomic_shell_index[iZ + 1] - 1;
+
+                const double wi = w[i] / A[i];
+                Ztot += Z[i] * wi;
+                Atot += w[i];
+                int j;
+                for (j = j0; j <= j1; j++, is++) {
+                        shells[is].f = wi * atomic_shell_occupancy[j];
+                        shells[is].E = atomic_shell_energy[j];
+                }
+        }
+
+        *n_shells_ptr = n_shells;
+        if (ZoA != NULL) *ZoA = Ztot / Atot;
+
+        atomic_shell_normalise(is, shells, Ztot / Atot, I, density);
+
+        return shells;
+}
+
 /* Build electronic oscillators for a material from atomic shells
  *
  * Oscillators strength and level are set from atomic binding energies of
@@ -11613,7 +11685,6 @@ static struct atomic_shell * atomic_shell_create(
 
         struct atomic_shell * shells = allocate(n_shells * sizeof(*shells));
 
-        double ftot = 0., lnI = 0.;
         int is = 0;
         for (i = 0; i < physics->elements_in[material]; i++) {
                 const struct material_component * const c =
@@ -11629,25 +11700,14 @@ static struct atomic_shell * atomic_shell_create(
                 for (j = j0; j <= j1; j++, is++) {
                         const double f = c->fraction / e->A *
                             atomic_shell_occupancy[j];
-                        ftot += f;
                         shells[is].f = f;
                         shells[is].E = atomic_shell_energy[j];
-
-                        lnI += f * log(shells[is].E);
                 }
         }
-        ftot = 1. / ftot;
-        lnI *= ftot;
 
-        const double wp = 28.816 * sqrt(physics->material_ZoA[material] *
-            physics->material_density[material] * 1E-03);
-        const double r = physics->material_I[material] * 1E+09 /
-            (exp(lnI) * wp);
-
-        for (i = 0; i < n_shells; i++) {
-                shells[i].f *= ftot;
-                shells[i].E *= r;
-        }
+        atomic_shell_normalise(n_shells, shells,
+            physics->material_ZoA[material], physics->material_I[material],
+            physics->material_density[material]);
 
         return shells;
 }
@@ -11663,13 +11723,10 @@ static struct atomic_shell * atomic_shell_create(
  *     U. Fano, Ann. Rev. Nucl. Sci. 13, 1 (1963)
  *     D. Liljequist, J. Phys. D: Appl. Phys. 16 1567 (1983)
  */
-static double electronic_density_effect(const struct pumas_physics * physics,
-    int material, int n_shells, struct atomic_shell * shells,
-    double kinetic)
+static double electronic_density_effect(
+    int n_shells, struct atomic_shell * shells, double gamma)
 {
-        const double gamma = 1. + kinetic / physics->mass;
         const double y = 1. / (gamma * gamma);
-
         double ymax = 0.;
         int i;
         for (i = 0; i < n_shells; i++) {
@@ -11707,34 +11764,71 @@ static double electronic_density_effect(const struct pumas_physics * physics,
 }
 
 /* The average energy loss from atomic electrons. */
-static double electronic_energy_loss(const struct pumas_physics * physics,
-    int material, int n_shells, struct atomic_shell * shells, double kinetic,
-    double * delta)
+static double electronic_energy_loss(double ZoA, double I, int n_shells,
+    struct atomic_shell * shells,  double mass, double kinetic,
+    double * delta_ptr)
 {
         /* Kinematic factors. */
-        const double E = kinetic + physics->mass;
-        const double P2 = kinetic * (kinetic + 2. * physics->mass);
+        const double E = kinetic + mass;
+        const double P2 = kinetic * (kinetic + 2. * mass);
         const double beta2 = P2 / (E * E);
+        const double gamma = E / mass;
 
         /* Electronic Bremsstrahlung correction. */
-        const double r = ELECTRON_MASS / physics->mass;
+        const double r = ELECTRON_MASS / mass;
         const double Qmax =
-            2. * r * P2 / (physics->mass * (1. + r * r) + 2. * r * E);
-        const double lQ = log(2. * Qmax / ELECTRON_MASS);
+            2. * r * P2 / (mass * (1. + r * r) + 2. * r * E);
+        const double lQ = log(1. + 2. * Qmax / ELECTRON_MASS);
         const double Delta =
-            5.8070487E-04 * (log(2. * E / physics->mass) - lQ / 3.) * lQ * lQ;
+            ALPHA_EM / (2 * M_PI) * (log(2. * gamma) - lQ / 3.) * lQ * lQ;
 
         /* Density effect. */
-        *delta = electronic_density_effect(
-            physics, material, n_shells, shells, kinetic);
+        const double delta = electronic_density_effect(
+            n_shells, shells, gamma);
+        if (delta_ptr != NULL) * delta_ptr = delta;
 
-        /* Bethe-Bloch equation. */
-        const double I = physics->material_I[material];
-        return 0.307075E-04 * physics->material_ZoA[material] *
-            (0.5 / beta2 * (log(2. * ELECTRON_MASS * P2 * Qmax /
-                                (physics->mass * physics->mass * I * I)) -
-                               *delta) -
-                   1. + 0.125 * Qmax * Qmax / P2 + Delta);
+        /* Modified Bethe-Bloch equation. */
+        return 2 * M_PI * ELECTRON_RADIUS * ELECTRON_RADIUS * ELECTRON_MASS *
+            AVOGADRO_NUMBER * ZoA / beta2 * (
+            log(2. * ELECTRON_MASS * beta2 * gamma * gamma * Qmax / (I * I)) -
+            2 * beta2 - delta + 0.25 * Qmax * Qmax / (E * E) + Delta);
+}
+
+double pumas_electronic_density_effect(int n_elements, const double * Z,
+    const double * A, const double * w, double I, double density, double gamma)
+{
+        struct atomic_shell *  shells;
+        int n_shells;
+        double w1 = 1;
+        if (w == NULL) w = &w1;
+        shells = atomic_shell_unpack(
+            n_elements, Z, A, w, I, density, NULL, &n_shells);
+        if (shells == NULL) return -1.;
+
+        const double d = electronic_density_effect(n_shells, shells, gamma);
+        free(shells);
+
+        return d;
+}
+
+double pumas_electronic_energy_loss(int n_elements, const double * Z,
+    const double * A, const double * w, double I, double density, double mass,
+    double energy)
+{
+        struct atomic_shell  * shells;
+        int n_shells;
+        double w1 = 1;
+        if (w == NULL) w = &w1;
+        double ZoA;
+        shells = atomic_shell_unpack(
+            n_elements, Z, A, w, I, density, &ZoA, &n_shells);
+        if (shells == NULL) return -1.;
+
+        const double d = electronic_energy_loss(
+            ZoA, I, n_shells, shells, mass, energy, NULL);
+        free(shells);
+
+        return d;
 }
 
 /* Container for atomic element tabulation data */
@@ -12006,8 +12100,10 @@ enum pumas_return physics_tabulate(struct pumas_physics * physics,
         for (i = 0; i < data->n_energies; i++) {
                 /* Compute the electronic energy loss. */
                 double delta = 0.;
-                double elec = electronic_energy_loss(physics, material,
-                     n_shells, shells, data->energy[i], &delta);
+                double elec = electronic_energy_loss(
+                    physics->material_ZoA[material],
+                    physics->material_I[material], n_shells, shells,
+                    physics->mass, data->energy[i], &delta);
 
                 double brad[N_DEL_PROCESSES - 1];
                 memset(brad, 0x0, sizeof(brad));
