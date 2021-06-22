@@ -11789,7 +11789,7 @@ static double electronic_energy_loss(double ZoA, double I, int n_shells,
 
         /* Modified Bethe-Bloch equation. */
         return 2 * M_PI * ELECTRON_RADIUS * ELECTRON_RADIUS * ELECTRON_MASS *
-            AVOGADRO_NUMBER * ZoA / beta2 * (
+            AVOGADRO_NUMBER * ZoA / (beta2 * 1E-03) * (
             log(2. * ELECTRON_MASS * beta2 * gamma * gamma * Qmax / (I * I)) -
             2 * beta2 - delta + 0.25 * Qmax * Qmax / (E * E) + Delta);
 }

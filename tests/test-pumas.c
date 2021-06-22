@@ -1756,15 +1756,15 @@ START_TEST(test_api_electronic)
                 double v;
                 v = pumas_electronic_energy_loss(
                     1, &Z, &A, NULL, I, density, m, 1E-02);
-                ck_assert_double_eq_tol(6.62E-07, v, 1E-09);
+                ck_assert_double_eq_tol(6.62E-04, v, 1E-06);
 
                 v = pumas_electronic_energy_loss(
                     1, &Z, &A, NULL, I, density, m, 1E+00);
-                ck_assert_double_eq_tol(1.82E-07, v, 1E-09);
+                ck_assert_double_eq_tol(1.82E-04, v, 1E-06);
 
                 v = pumas_electronic_energy_loss(
                     1, &Z, &A, NULL, I, density, m, 1E+02);
-                ck_assert_double_eq_tol(2.45E-07, v, 1E-09);
+                ck_assert_double_eq_tol(2.45E-04, v, 1E-06);
         }
 }
 END_TEST
