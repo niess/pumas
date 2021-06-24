@@ -11613,6 +11613,65 @@ void atomic_shell_normalise(int n_shells, struct atomic_shell * shells,
         }
 }
 
+static int atomic_shell_getn1(double Z, int * i0)
+{
+        int iZ = (int)Z - 1;
+        if (iZ >= 100) iZ = 99;
+        const int i = atomic_shell_index[iZ];
+        if (i0 != NULL) *i0 = i;
+        return atomic_shell_index[iZ + 1] - i;
+}
+
+static int atomic_shell_getn(double Z, double A)
+{
+        int n;
+
+        if ((Z == 11.) && (A == 22.)) {
+                /* Use CaCO3 electronic structure for Standard Rock */
+                n = atomic_shell_getn1(6, NULL);
+                n += atomic_shell_getn1(8, NULL);
+                n += atomic_shell_getn1(20, NULL);
+
+        } else {
+                n = atomic_shell_getn1(Z, NULL);
+        }
+
+        return n;
+}
+
+static int atomic_shell_copyweight1(
+    double Z, struct atomic_shell * shells, double w)
+{
+        int i0;
+        const int n = atomic_shell_getn1(Z, &i0);
+
+        int i;
+        for (i = 0; i < n; i++) {
+                const int is = i + i0;
+                shells[i].f = w * atomic_shell_occupancy[is];
+                shells[i].E = atomic_shell_energy[is];
+        }
+
+        return n;
+}
+
+static int atomic_shell_copyweight(
+    double Z, double A, struct atomic_shell * shells, double w)
+{
+        int n;
+        if ((Z == 11.) && (A == 22.)) {
+                /* Use CaCO3 electronic structure for Standard Rock */
+                w *= 11. / (6. + 3 * 8. + 20.);
+                n = atomic_shell_copyweight1(6, shells, w);
+                n += atomic_shell_copyweight1(8, shells + n, 3 * w);
+                n += atomic_shell_copyweight1(20, shells + n, w);
+        } else {
+                n = atomic_shell_copyweight1(Z, shells, w);
+        }
+
+        return n;
+}
+
 /* Unpack atomic shells for a collection of elements */
 static struct atomic_shell * atomic_shell_unpack(int n_elements,
     const double * Z, const double * A, const double * w, double I,
@@ -11620,32 +11679,19 @@ static struct atomic_shell * atomic_shell_unpack(int n_elements,
 {
         int i, n_shells = 0;
         for (i = 0; i < n_elements; i++) {
-                int iZ = (int)Z[i] - 1;
-                if (iZ >= 100) iZ = 99;
-                const int j0 = atomic_shell_index[iZ];
-                const int j1 = atomic_shell_index[iZ + 1];
-                n_shells += j1 - j0;
+                n_shells += atomic_shell_getn(Z[i], A[i]);
         }
 
         struct atomic_shell * shells = allocate(n_shells * sizeof(*shells));
         if (shells == NULL) return NULL;
 
         double Ztot = 0., Atot = 0.;
-        int is;
-        for (i = 0, is = 0; i < n_elements; i++) {
-                int iZ = (int)Z[i] - 1;
-                if (iZ >= 100) iZ = 99;
-                const int j0 = atomic_shell_index[iZ];
-                const int j1 = atomic_shell_index[iZ + 1] - 1;
-
+        int is = 0;
+        for (i = 0; i < n_elements; i++) {
                 const double wi = w[i] / A[i];
                 Ztot += Z[i] * wi;
                 Atot += w[i];
-                int j;
-                for (j = j0; j <= j1; j++, is++) {
-                        shells[is].f = wi * atomic_shell_occupancy[j];
-                        shells[is].E = atomic_shell_energy[j];
-                }
+                is += atomic_shell_copyweight(Z[i], A[i], shells + is, wi);
         }
 
         *n_shells_ptr = n_shells;
@@ -11676,10 +11722,7 @@ static struct atomic_shell * atomic_shell_create(
                     physics->composition[material] + i;
                 const struct atomic_element * const e =
                     physics->element[c->element];
-                int iZ = (int)e->Z - 1;
-                if (iZ >= 100) iZ = 99;
-                n_shells +=
-                    atomic_shell_index[iZ + 1] - atomic_shell_index[iZ];
+                n_shells += atomic_shell_getn(e->Z, e->A);
         }
         *n_shells_ptr = n_shells;
 
@@ -11691,18 +11734,9 @@ static struct atomic_shell * atomic_shell_create(
                     physics->composition[material] + i;
                 const struct atomic_element * const e =
                     physics->element[c->element];
-                int iZ = (int)e->Z - 1;
-                if (iZ >= 100) iZ = 99;
-                const int j0 = atomic_shell_index[iZ];
-                const int j1 = atomic_shell_index[iZ + 1] - 1;
 
-                int j;
-                for (j = j0; j <= j1; j++, is++) {
-                        const double f = c->fraction / e->A *
-                            atomic_shell_occupancy[j];
-                        shells[is].f = f;
-                        shells[is].E = atomic_shell_energy[j];
-                }
+                const double wi = c->fraction / e->A;
+                is += atomic_shell_copyweight(e->Z, e->A, shells + is, wi);
         }
 
         atomic_shell_normalise(n_shells, shells,

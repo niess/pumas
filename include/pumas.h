@@ -2013,7 +2013,7 @@ PUMAS_API double pumas_elastic_length(
  *      Salvat (2013), NIM B 316, 144-159
  */
 PUMAS_API double pumas_electronic_dcs(
-    double Z, double I, double m, double K, double theta);
+    double Z, double I, double m, double K, double q);
 
 /**
  * The electronic density effect for a material.
