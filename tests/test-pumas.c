@@ -881,7 +881,7 @@ START_TEST(test_api_property)
         pumas_physics_property_energy_loss(
             physics, PUMAS_MODE_CSDA, 0, 1E+00, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq_tol(value, 1.823E-04, 1E-07);
+        ck_assert_double_eq_tol(value, 1.823E-04, 1E-06);
 
         pumas_physics_property_energy_loss(
             physics, PUMAS_MODE_CSDA, 0, 1E+03, &value);

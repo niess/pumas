@@ -7308,7 +7308,7 @@ void record_state(struct pumas_context * context, struct pumas_medium * medium,
         struct frame_stack * stack = rec->stack;
         struct pumas_frame * frame = NULL;
 
-        if ((stack == NULL) || (stack->size < sizeof(*frame))) {
+        if ((stack == NULL) || (stack->size < (int)sizeof(*frame))) {
                 /* Allocate a new memory segment. */
                 const int size = 4096;
                 stack = allocate(size);
@@ -11591,7 +11591,7 @@ struct atomic_shell {
  * Oscillators strength and level are scaled in order to match the Mean
  * Excitation Energy, I.
  */
-void atomic_shell_normalise(int n_shells, struct atomic_shell * shells,
+static void atomic_shell_normalise(int n_shells, struct atomic_shell * shells,
     double ZoA, double I, double density)
 {
         double ftot = 0., lnI = 0.;
