@@ -896,7 +896,7 @@ START_TEST(test_api_property)
         pumas_physics_property_grammage(
             physics, PUMAS_MODE_CSDA, 0, 1E+00, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq_tol(value, 5.475E+03, 1.);
+        ck_assert_double_eq_tol(value, 5.518E+03, 1.);
 
         pumas_physics_property_grammage(
             physics, PUMAS_MODE_CSDA, 0, 1E+03, &value);
@@ -909,7 +909,7 @@ START_TEST(test_api_property)
         ck_assert_double_gt(value, 2.449E+06);
 
         pumas_physics_property_kinetic_energy(
-            physics, PUMAS_MODE_CSDA, 0, 5.475E+03, &value);
+            physics, PUMAS_MODE_CSDA, 0, 5.518E+03, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq_tol(value, 1E+00, 1E-03);
 
@@ -1097,7 +1097,7 @@ START_TEST(test_api_table)
         ck_assert_int_eq(index, 0);
 
         pumas_physics_table_index(physics, PUMAS_PROPERTY_GRAMMAGE,
-            PUMAS_MODE_CSDA, 0, 5.476E+03, &index);
+            PUMAS_MODE_CSDA, 0, 5.518E+03, &index);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(index, 49);
 
@@ -1109,7 +1109,7 @@ START_TEST(test_api_table)
         pumas_physics_table_value(
             physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_MODE_CSDA, 0, 49, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq_tol(value, 5.476E+03, 1.);
+        ck_assert_double_eq_tol(value, 5.518E+03, 1.);
 
         pumas_physics_table_value(
             physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_MODE_CSDA, 0, -49, &value);
@@ -1119,7 +1119,7 @@ START_TEST(test_api_table)
         pumas_physics_table_value(physics, PUMAS_PROPERTY_GRAMMAGE,
             PUMAS_MODE_HYBRID, 0, 49, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_gt(value, 5.476E+03);
+        ck_assert_double_gt(value, 5.518E+03);
 
         pumas_physics_table_value(physics, PUMAS_PROPERTY_ENERGY_LOSS,
             PUMAS_MODE_CSDA, 0, 0, &value);
@@ -1135,7 +1135,7 @@ START_TEST(test_api_table)
             physics, PUMAS_PROPERTY_MAGNETIC_ROTATION, 0, 0, 49, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_gt(value, 0.);
-        ck_assert_double_gt(value, 5.476E+03 / 3.3374);
+        ck_assert_double_gt(value, 5.518E+03 / 3.3374);
 
         pumas_physics_table_index(
             physics, PUMAS_PROPERTY_MAGNETIC_ROTATION, 0, 0, value, &index);
@@ -1145,7 +1145,7 @@ START_TEST(test_api_table)
         pumas_physics_table_value(physics, PUMAS_PROPERTY_PROPER_TIME,
             PUMAS_MODE_CSDA, 0, 49, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_lt(value, 5.476E+03);
+        ck_assert_double_lt(value, 5.518E+03);
 
         pumas_physics_table_index(physics, PUMAS_PROPERTY_PROPER_TIME,
             PUMAS_MODE_CSDA, 0, value, &index);
@@ -2628,18 +2628,18 @@ START_TEST(test_csda_straight)
                     physics, PUMAS_MODE_CSDA, 0, k1, &X1);
                 d1 = X1 / TEST_ROCK_DENSITY;
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-                ck_assert_double_eq_tol(state->distance, d - d1, FLT_EPSILON);
-                ck_assert_double_eq_tol(state->grammage, X - X1, FLT_EPSILON);
-                ck_assert_double_eq_tol(state->time, t0 - t1, FLT_EPSILON);
+                const double epsilon = 10 * FLT_EPSILON;
+                ck_assert_double_eq_tol(state->distance, d - d1, epsilon);
+                ck_assert_double_eq_tol(state->grammage, X - X1, epsilon);
+                ck_assert_double_eq_tol(state->time, t0 - t1, epsilon);
                 ck_assert_double_eq_tol(
-                    state->weight, exp(-(t0 - t1) / ctau), FLT_EPSILON);
-                ck_assert_double_eq_tol(state->position[0], 0., FLT_EPSILON);
-                ck_assert_double_eq_tol(state->position[1], 0., FLT_EPSILON);
-                ck_assert_double_eq_tol(
-                    state->position[2], d - d1, FLT_EPSILON);
-                ck_assert_double_eq_tol(state->direction[0], 0., FLT_EPSILON);
-                ck_assert_double_eq_tol(state->direction[1], 0., FLT_EPSILON);
-                ck_assert_double_eq_tol(state->direction[2], 1., FLT_EPSILON);
+                    state->weight, exp(-(t0 - t1) / ctau), epsilon);
+                ck_assert_double_eq_tol(state->position[0], 0., epsilon);
+                ck_assert_double_eq_tol(state->position[1], 0., epsilon);
+                ck_assert_double_eq_tol(state->position[2], d - d1, epsilon);
+                ck_assert_double_eq_tol(state->direction[0], 0., epsilon);
+                ck_assert_double_eq_tol(state->direction[1], 0., epsilon);
+                ck_assert_double_eq_tol(state->direction[2], 1., epsilon);
                 ck_assert_int_eq(state->decayed, 0);
 
                 if (i == 0) {
@@ -3204,12 +3204,13 @@ START_TEST(test_csda_magnet)
         pumas_context_transport(context, state, NULL, NULL);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
 
-        ck_assert_double_eq(u[0], sin(phi));
-        ck_assert_double_eq(u[1], 0.);
-        ck_assert_double_eq(u[2], cos(phi));
+        const double epsilon = 10 * FLT_EPSILON;
+        ck_assert_double_eq_tol(u[0], sin(phi), epsilon);
+        ck_assert_double_eq_tol(u[1], 0., epsilon);
+        ck_assert_double_eq_tol(u[2], cos(phi), epsilon);
 
         double norm2 = u[0] * u[0] + u[1] * u[1] + u[2] * u[2];
-        ck_assert_double_eq_tol(norm2, 1., FLT_EPSILON);
+        ck_assert_double_eq_tol(norm2, 1., epsilon);
 
         geometry.magnet[1] = 0.;
 }
@@ -4141,10 +4142,10 @@ START_TEST(test_hybrid_scattering)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq(state->charge, -1.);
         ck_assert_double_ge(state->energy, context->limit.energy);
-        ck_assert_double_le(state->distance, d - d1 + FLT_EPSILON);
-        ck_assert_double_le(state->grammage, X - X1 + FLT_EPSILON);
-        ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
-        ck_assert_double_ge(state->position[2], -(d - d1) - FLT_EPSILON);
+        ck_assert_double_le(state->distance, (d - d1) * 1.001);
+        ck_assert_double_le(state->grammage, (X - X1) * 1.001);
+        ck_assert_double_le(state->time, (t0 - t1) * 1.001);
+        ck_assert_double_ge(state->position[2], -(d - d1) * 1.001);
         ck_assert_int_eq(state->decayed, 0);
 
         norm2 = u[0] * u[0] + u[1] * u[1] + u[2] * u[2];
@@ -4566,7 +4567,7 @@ START_TEST(test_detailed_straight)
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_le(state->distance, d - d1);
                 ck_assert_double_le(state->grammage, X - X1);
-                ck_assert_double_eq_tol(state->time / (t0 - t1), 1, 0.25);
+                ck_assert_double_eq_tol(state->time / (t0 - t1), 1, 0.3);
                 ck_assert_double_eq_tol(
                     state->weight, exp(-state->time / ctau), FLT_EPSILON);
                 ck_assert_double_eq(state->position[0], 0.);
@@ -5088,9 +5089,9 @@ START_TEST(test_detailed_scattering)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq(state->charge, -1.);
         ck_assert_double_ge(state->energy, context->limit.energy);
-        ck_assert_double_eq_tol(state->distance / (d - d1), 1., 0.5);
-        ck_assert_double_eq_tol(state->grammage / (X - X1), 1., 0.5);
-        ck_assert_double_eq_tol(state->time / (t0 - t1), 1., 0.5);
+        ck_assert_double_eq_tol(state->distance / (d - d1), 1., 0.75);
+        ck_assert_double_eq_tol(state->grammage / (X - X1), 1., 0.75);
+        ck_assert_double_eq_tol(state->time / (t0 - t1), 1., 0.75);
         ck_assert_int_eq(state->decayed, 0);
 
         norm2 = u[0] * u[0] + u[1] * u[1] + u[2] * u[2];

@@ -558,7 +558,7 @@ struct pumas_context_limit {
  * initialised and released with the `pumas_context` functions.
  *
  * + The `medium` field must be set after any initialisation with
- * `pumas_context_create` and prior to any call to `pumas_transport`.
+ * `pumas_context_create` and prior to any call to `pumas_context_transport`.
  *
  * + The newly created context is configured with a default pseudo random engine
  * using the Mersenne Twister algorithm. The engine can be explictly seeded with

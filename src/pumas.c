@@ -1037,6 +1037,32 @@ static int table_index(const struct pumas_physics * physics,
 static double table_interpolate(const struct pumas_physics * physics,
     struct pumas_context * context, const double * table_X,
     const double * table_Y, double x);
+static double table_interpolate_range(const struct pumas_physics * physics,
+    struct pumas_context * context, const double * table_K,
+    const double * table_X, const double * table_dE, double K);
+static double table_interpolate_kinetic(const struct pumas_physics * physics,
+    struct pumas_context * context, const double * table_X,
+    const double * table_K, const double * table_dE, double X);
+static double table_interpolate_proper_time(
+    const struct pumas_physics * physics, struct pumas_context * context,
+    const double * table_K, const double * table_T, const double * table_dE,
+    double X);
+double table_interpolate_NI(const struct pumas_physics * physics,
+    struct pumas_context * context, const double * table_K,
+    const double * table_NI, const double * table_dE, const double * table_CS,
+    double K);
+double table_interpolate_K_as_NI(const struct pumas_physics * physics,
+    struct pumas_context * context, const double * table_NI,
+    const double * table_K, const double * table_dE, const double * table_CS,
+    double NI);
+double table_interpolate_NI_el(const struct pumas_physics * physics,
+    struct pumas_context * context, const double * table_K,
+    const double * table_NI_el, const double * table_dE,
+    const double * table_Lb, double K);
+double table_interpolate_K_as_NI_el(const struct pumas_physics * physics,
+    struct pumas_context * context, const double * table_NI_el,
+    const double * table_K, const double * table_dE, const double * table_Lb,
+    double NI);
 static void table_get_msc(const struct pumas_physics * physics,
     struct pumas_context * context, int material, double kinetic, double * mu0,
     double * invlb1);
@@ -3379,8 +3405,9 @@ double cel_grammage(const struct pumas_physics * physics,
         }
 
         /* Interpolation. */
-        return table_interpolate(physics, context, table_get_K(physics, 0),
-            table_get_X(physics, scheme, material, 0), kinetic);
+        return table_interpolate_range(physics, context,
+            table_get_K(physics, 0), table_get_X(physics, scheme, material, 0),
+            table_get_dE(physics, scheme, material, 0), kinetic);
 }
 
 /**
@@ -3451,8 +3478,9 @@ double cel_proper_time(const struct pumas_physics * physics,
         }
 
         /* Interpolation. */
-        return table_interpolate(physics, context, table_get_K(physics, 0),
-            table_get_T(physics, scheme, material, 0), kinetic);
+        return table_interpolate_proper_time(physics, context,
+            table_get_K(physics, 0), table_get_T(physics, scheme, material, 0),
+            table_get_dE(physics, scheme, material, 0), kinetic);
 }
 
 /**
@@ -3487,9 +3515,9 @@ double cel_kinetic_energy(const struct pumas_physics * physics,
         }
 
         /* Interpolation. */
-        return table_interpolate(physics, context,
+        return table_interpolate_kinetic(physics, context,
             table_get_X(physics, scheme, material, 0), table_get_K(physics, 0),
-            grammage);
+            table_get_dE(physics, scheme, material, 0), grammage);
 }
 
 /**
@@ -3551,8 +3579,9 @@ double cel_magnetic_rotation(const struct pumas_physics * physics,
         }
 
         /* Interpolation. */
-        return (T[imax] - table_interpolate(physics, context,
-                              table_get_K(physics, 0), T, kinetic)) *
+        return (T[imax] - table_interpolate_proper_time(physics, context,
+            table_get_K(physics, 0), T,
+            table_get_dE(physics, PUMAS_MODE_CSDA, material, 0), kinetic)) *
             factor;
 }
 
@@ -3610,8 +3639,10 @@ double del_interaction_length(const struct pumas_physics * physics,
         }
 
         /* Interpolation. */
-        return table_interpolate(physics, context, table_get_K(physics, 0),
-            table_get_NI_in(physics, material, 0), kinetic);
+        return table_interpolate_NI(physics, context, table_get_K(physics, 0),
+            table_get_NI_in(physics, material, 0),
+            table_get_dE(physics, PUMAS_MODE_HYBRID, material, 0),
+            table_get_CS(physics, material, 0), kinetic);
 }
 
 /**
@@ -3645,8 +3676,10 @@ double del_kinetic_from_interaction_length(const struct pumas_physics * physics,
         }
 
         /* Interpolation. */
-        return table_interpolate(physics, context,
-            table_get_NI_in(physics, material, 0), table_get_K(physics, 0), nI);
+        return table_interpolate_K_as_NI(physics, context,
+            table_get_NI_in(physics, material, 0), table_get_K(physics, 0),
+            table_get_dE(physics, PUMAS_MODE_HYBRID, material, 0),
+            table_get_CS(physics, material, 0), nI);
 }
 
 /**
@@ -3678,8 +3711,11 @@ double ehs_interaction_length(const struct pumas_physics * physics,
         }
 
         /* Interpolation. */
-        return table_interpolate(physics, context, table_get_K(physics, 0),
-            table_get_NI_el(physics, scheme, material, 0), kinetic);
+        return table_interpolate_NI_el(physics, context,
+            table_get_K(physics, 0),
+            table_get_NI_el(physics, scheme, material, 0),
+            table_get_dE(physics, scheme, material, 0),
+            table_get_Lb(physics, material, 0), kinetic);
 }
 
 /**
@@ -3711,9 +3747,10 @@ double ehs_kinetic_from_interaction_length(const struct pumas_physics * physics,
         }
 
         /* Interpolation. */
-        return table_interpolate(physics, context,
+        return table_interpolate_K_as_NI_el(physics, context,
             table_get_NI_el(physics, scheme, material, 0),
-            table_get_K(physics, 0), nI);
+            table_get_K(physics, 0), table_get_dE(physics, scheme, material, 0),
+            table_get_Lb(physics, material, 0), nI);
 }
 
 /*
@@ -3794,6 +3831,283 @@ double table_interpolate(const struct pumas_physics * physics,
         const int i2 = i1 + 1;
         double h = (x - table_X[i1]) / (table_X[i2] - table_X[i1]);
         return table_Y[i1] + h * (table_Y[i2] - table_Y[i1]);
+}
+
+/* Hermite polynomials interpolation using the 1st derivative.
+ *
+ * Reference:
+ *   https://fr.wikipedia.org/wiki/Spline_cubique_d%27Hermite
+ */
+static inline double hermite_interpolation(
+    double t, double p0, double p1, double m0, double m1)
+{
+        const double c2 = -3 * (p0 - p1) - 2 * m0 - m1;
+        const double c3 = 2 * (p0 - p1) + m0 + m1;
+
+        return p0 + t * (m0 + t * (c2 + t * c3));
+}
+
+/**
+ * Interpolate the grammage range.
+ *
+ * @param physics     Handle for physics tables.
+ * @param context     The simulation context.
+ * @param table_K     Table of kienteic energy values.
+ * @param table_X     Table of grammage values.
+ * @param table_dE    Table of energy loss values.
+ * @param K           Kinetic energy at which the interpolant is evaluated.
+ * @return The interpolated value.
+ *
+ * Compute a cubic (PCHIP) interpolant of the grammage given table_X values as
+ * table_K values as well as the inverse of the 1st derivative, i.e. table_dE.
+ */
+double table_interpolate_range(const struct pumas_physics * physics,
+    struct pumas_context * context, const double * table_K,
+    const double * table_X, const double * table_dE, double K)
+{
+        const int i0 = table_index(physics, context, table_K, K);
+        if (i0 == 0) return table_interpolate(physics, context, table_K,
+            table_X, K);
+        const int i1 = i0 + 1;
+
+        const double dK = table_K[i1] - table_K[i0];
+        const double t = (K - table_K[i0]) / dK;
+        const double p0 = table_X[i0];
+        const double p1 = table_X[i1];
+        const double m0 = dK / table_dE[i0];
+        const double m1 = dK / table_dE[i1];
+
+        return hermite_interpolation(t, p0, p1, m0, m1);
+}
+
+/**
+ * Interpolate the kinetic energy for a given grammage range.
+ *
+ * @param physics     Handle for physics tables.
+ * @param context     The simulation context.
+ * @param table_X     Table of grammage values.
+ * @param table_K     Table of kienteic energy values.
+ * @param table_dE    Table of energy loss values.
+ * @param X           Grammage range at which the interpolant is evaluated.
+ * @return The interpolated value.
+ *
+ * Compute a cubic (PCHIP) interpolant of the energy given table_K values as
+ * table_X values as well as the 1st derivative, i.e. table_dE.
+ */
+double table_interpolate_kinetic(const struct pumas_physics * physics,
+    struct pumas_context * context, const double * table_X,
+    const double * table_K, const double * table_dE, double X)
+{
+        const int i0 = table_index(physics, context, table_X, X);
+        if (i0 == 0) return table_interpolate(physics, context, table_X,
+            table_K, X);
+        const int i1 = i0 + 1;
+
+        const double dX = table_X[i1] - table_X[i0];
+        const double t = (X - table_X[i0]) / dX;
+        const double p0 = table_K[i0];
+        const double p1 = table_K[i1];
+        const double m0 = dX * table_dE[i0];
+        const double m1 = dX * table_dE[i1];
+
+        return hermite_interpolation(t, p0, p1, m0, m1);
+}
+
+/**
+ * Interpolate the total proper time range as function of kinetic energy.
+ *
+ * @param physics     Handle for physics tables.
+ * @param context     The simulation context.
+ * @param table_K     Table of kienteic energy values.
+ * @param table_T     Table of time values.
+ * @param table_dE    Table of energy loss values.
+ * @param K           Kinetic energy at which the interpolant is evaluated.
+ * @return The interpolated value.
+ *
+ * Compute a cubic (PCHIP) interpolant of the grammage given table_T values as
+ * table_K values as well as the 1st derivative using table_dE.
+ */
+double table_interpolate_proper_time(const struct pumas_physics * physics,
+    struct pumas_context * context, const double * table_K,
+    const double * table_T, const double * table_dE, double K)
+{
+        const int i0 = table_index(physics, context, table_K, K);
+        if (i0 == 0) return table_interpolate(physics, context, table_K,
+            table_T, K);
+        const int i1 = i0 + 1;
+
+        const double k0 = table_K[i0];
+        const double k1 = table_K[i1];
+
+        const double dK = k1 - k0;
+        const double t = (K - k0) / dK;
+        const double p0 = table_T[i0];
+        const double p1 = table_T[i1];
+        const double mass = physics->mass;
+        const double d = mass * dK;
+        const double m0 = d / (table_dE[i0] * sqrt(k0 * (k0 + 2 * mass)));
+        const double m1 = d / (table_dE[i1] * sqrt(k1 * (k1 + 2 * mass)));
+
+        return hermite_interpolation(t, p0, p1, m0, m1);
+}
+
+/**
+ * Interpolate the average number of interactions as function of kinetic energy.
+ *
+ * @param physics     Handle for physics tables.
+ * @param context     The simulation context.
+ * @param table_K     Table of kienteic energy values.
+ * @param table_NI    Table of interaction length values.
+ * @param table_dE    Table of energy loss values.
+ * @param table_CS    Table of cross-section values.
+ * @param K           Kinetic energy at which the interpolant is evaluated.
+ * @return The interpolated value.
+ *
+ * Compute a cubic (PCHIP) interpolant of the number of interactions given
+ * table_NI values as table_K values as well as the 1st derivative using
+ * table_dE and table_CS.
+ */
+double table_interpolate_NI(const struct pumas_physics * physics,
+    struct pumas_context * context, const double * table_K,
+    const double * table_NI, const double * table_dE, const double * table_CS,
+    double K)
+{
+        const int i0 = table_index(physics, context, table_K, K);
+        if (i0 == 0) return table_interpolate(physics, context, table_K,
+            table_NI, K);
+        const int i1 = i0 + 1;
+
+        const double k0 = table_K[i0];
+        const double k1 = table_K[i1];
+        const double dK = k1 - k0;
+        const double t = (K - k0) / dK;
+        const double p0 = table_NI[i0];
+        const double p1 = table_NI[i1];
+        const double m0 = dK * table_CS[i0] / table_dE[i0];
+        const double m1 = dK * table_CS[i1] / table_dE[i1];
+
+        return hermite_interpolation(t, p0, p1, m0, m1);
+}
+
+/**
+ * Interpolate the kinetic energy from the average number of interactions.
+ *
+ * @param physics     Handle for physics tables.
+ * @param context     The simulation context.
+ * @param table_NI    Table of interaction length values.
+ * @param table_K     Table of kienteic energy values.
+ * @param table_dE    Table of energy loss values.
+ * @param table_CS    Table of cross-section values.
+ * @param K           Kinetic energy at which the interpolant is evaluated.
+ * @return The interpolated value.
+ *
+ * Compute a cubic (PCHIP) interpolant of the energy given table_K values as
+ * table_NI values as well as the 1st derivative using table_dE and table_CS.
+ */
+double table_interpolate_K_as_NI(const struct pumas_physics * physics,
+    struct pumas_context * context, const double * table_NI,
+    const double * table_K, const double * table_dE, const double * table_CS,
+    double NI)
+{
+        const int i0 = table_index(physics, context, table_NI, NI);
+        if (i0 == 0) return table_interpolate(physics, context, table_NI,
+            table_K, NI);
+        const int i1 = i0 + 1;
+
+        const double n0 = table_NI[i0];
+        const double n1 = table_NI[i1];
+        const double dN = n1 - n0;
+        const double t = (NI - n0) / dN;
+        const double p0 = table_K[i0];
+        const double p1 = table_K[i1];
+        const double m0 = dN * table_dE[i0] / table_CS[i0];
+        const double m1 = dN * table_dE[i1] / table_CS[i1];
+
+        return hermite_interpolation(t, p0, p1, m0, m1);
+}
+
+/**
+ * Interpolate the average number of elastic int. as function of kinetic energy.
+ *
+ * @param physics        Handle for physics tables.
+ * @param context        The simulation context.
+ * @param table_K        Table of kinetic energy values.
+ * @param table_NI_le    Table of elastic interaction length values.
+ * @param table_dE       Table of energy loss values.
+ * @param table_Lb       Table of interaction length values.
+ * @param K              Kinetic energy at which the interpolant is evaluated.
+ * @return The interpolated value.
+ *
+ * Compute a cubic (PCHIP) interpolant of the number of elastic int. given
+ * table_NI_el values as table_K values as well as the 1st derivative using
+ * table_dE and table_Lb.
+ */
+double table_interpolate_NI_el(const struct pumas_physics * physics,
+    struct pumas_context * context, const double * table_K,
+    const double * table_NI_el, const double * table_dE,
+    const double * table_Lb, double K)
+{
+        const int i0 = table_index(physics, context, table_K, K);
+        if (i0 == 0) return table_interpolate(physics, context, table_K,
+            table_NI_el, K);
+        const int i1 = i0 + 1;
+
+        const double k0 = table_K[i0];
+        const double k1 = table_K[i1];
+        const double dK = k1 - k0;
+        const double t = (K - k0) / dK;
+        const double p0 = table_NI_el[i0];
+        const double p1 = table_NI_el[i1];
+        const double mass = physics->mass;
+        const double m0 = dK * k0 * (k0 + 2 * mass) /
+            (table_dE[i0] * table_Lb[i0]);
+        const double m1 = dK * k1 * (k1 + 2 * mass) /
+            (table_dE[i1] * table_Lb[i1]);
+
+        return hermite_interpolation(t, p0, p1, m0, m1);
+}
+
+/**
+ * Interpolate the kinetic energy as function of the number of elastic int. 
+ *
+ * @param physics        Handle for physics tables.
+ * @param context        The simulation context.
+ * @param table_NI_le    Table of elastic interaction length values.
+ * @param table_K        Table of kinetic energy values.
+ * @param table_dE       Table of energy loss values.
+ * @param table_Lb       Table of interaction length values.
+ * @param NI             Int. lengths at which the interpolant is evaluated.
+ * @return The interpolated value.
+ *
+ * Compute a cubic (PCHIP) interpolant of the number of elastic int. given
+ * table_K values as table_NI_el values as well as the 1st derivative using
+ * table_dE and table_Lb.
+ */
+double table_interpolate_K_as_NI_el(const struct pumas_physics * physics,
+    struct pumas_context * context, const double * table_NI_el,
+    const double * table_K, const double * table_dE,
+    const double * table_Lb, double NI)
+{
+        const int i0 = table_index(physics, context, table_NI_el, NI);
+        if (i0 == 0) return table_interpolate(physics, context, table_NI_el,
+            table_K, NI);
+        const int i1 = i0 + 1;
+
+        const double n0 = table_NI_el[i0];
+        const double n1 = table_NI_el[i1];
+        const double dN = n1 - n0;
+        const double t = (NI - n0) / dN;
+        const double p0 = table_K[i0];
+        const double p1 = table_K[i1];
+        const double mass = physics->mass;
+        const double k0 = table_K[i0];
+        const double k1 = table_K[i1];
+        const double m0 = dN * (table_dE[i0] * table_Lb[i0]) /
+            (k0 * (k0 + 2 * mass));
+        const double m1 = dN * (table_dE[i1] * table_Lb[i1]) /
+            (k1 * (k1 + 2 * mass));
+
+        return hermite_interpolation(t, p0, p1, m0, m1);
 }
 
 /**
