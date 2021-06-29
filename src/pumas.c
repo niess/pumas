@@ -6384,8 +6384,10 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
                             physics, context, scheme, material, X);
         } else if (scheme == PUMAS_MODE_DETAILED) {
                 /* Fluctuate the CEL around its average value. */
+                double ratio;
                 step_fluctuate(
-                    physics, context, state, material, Xtot, dX, &k1, &dk);
+                    physics, context, state, material, Xtot, dX, &k1, &ratio);
+                dk = fabs(state->energy - k1);
 
                 /* Check for a kinetic limit. */
                 double kinetic_limit = -1.;
@@ -6427,7 +6429,10 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
                 if (xs_del <= 0.) goto no_del_event;
                 const double X_del = -log(context->random(context)) / xs_del;
                 if (X_del >= Xmax) goto no_del_event;
-                const double k_del = state->energy - sgn * X_del * dk / dX;
+                const double k_h = cel_kinetic_energy(
+                    physics, context, scheme, material, Xtot - sgn * X_del);
+                const double k_del =
+                    state->energy - sgn * ratio * fabs(state->energy - k_h);
                 if (k_del <= 0.) goto no_del_event;
                 const double r =
                     del_cross_section(physics, context, material, k_del) /
@@ -6455,8 +6460,11 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
                         const double X_ehs =
                             -log(context->random(context)) * lb_ehs;
                         if (X_ehs >= Xmax) goto no_ehs_event;
-                        const double k_ehs =
-                            state->energy - sgn * X_ehs * dk / dX;
+                        const double k_h = cel_kinetic_energy(
+                            physics, context, scheme, material,
+                            Xtot - sgn * X_ehs);
+                        const double k_ehs = state->energy -
+                            sgn * ratio * fabs(state->energy - k_h);
                         if (k_ehs <= 0.) goto no_ehs_event;
                         const double r = coulomb_ehs_length(physics, context,
                                              material, k_ehs) /
@@ -6746,7 +6754,7 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
  * @param Xtot     The initial CSDA total grammage.
  * @param dX       The step grammage length.
  * @param kf       The expected final state kinetic energy.
- * @param dE       The total energy loss for path dX.
+ * @param ratio    The ratio of the actual energy loss to the CSDA one.
  *
  * PENELOPE's model is used for the soft energy loss randomisation. Note that
  * `dE` differs from `ki-kf` if the kinetic energy falls to `0` before the
@@ -6754,20 +6762,24 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
  */
 static void step_fluctuate(const struct pumas_physics * physics,
     struct pumas_context * context, struct pumas_state * state, int material,
-    double Xtot, double dX, double * kf, double * dE)
+    double Xtot, double dX, double * kf, double * ratio)
 {
         const enum pumas_mode scheme = context->mode.energy_loss;
         const double sgn =
             (context->mode.direction == PUMAS_MODE_FORWARD) ? 1. : -1.;
-        double k1, dk = 0.;
+        double k1, r = 0.;
         k1 = cel_kinetic_energy(
             physics, context, scheme, material, Xtot - sgn * dX);
-        if (k1 > 0.) {
-                const double dk1 =
-                    sqrt(0.5 * dX *
-                        (step_fluctuations2(physics, material, state->energy) +
-                             step_fluctuations2(physics, material, k1)));
-                const double dk0 = fabs(state->energy - k1);
+        const double dk0 = fabs(state->energy - k1);
+        if ((k1 > 0.) && (dk0 > 0.)) {
+                const double de0 = cel_energy_loss(
+                    physics, context, scheme, material, state->energy);
+                const double de1 = cel_energy_loss(
+                    physics, context, scheme, material, k1);
+                const double dk1 = sqrt(0.5 * dX *
+                    (step_fluctuations2(physics, material, state->energy) +
+                    step_fluctuations2(physics, material, k1))) * (1. +
+                    sgn * dX / dk0 * (de1 - de0));
                 if (dk0 >= 3. * dk1) {
                         double u;
                         do
@@ -6792,16 +6804,15 @@ static void step_fluctuate(const struct pumas_physics * physics,
                                 k1 = state->energy;
                         }
                 }
-                dk = fabs(state->energy - k1);
+                r = fabs(state->energy - k1) / dk0;
         }
-        if (dk == 0.)
-                dk = cel_energy_loss(
-                         physics, context, scheme, material, state->energy) *
-                    dX;
+        if (r == 0.) {
+                r = 1.;
+        }
 
         /* Copy back the result. */
         *kf = k1;
-        *dE = dk;
+        *ratio = r;
 }
 
 /**
