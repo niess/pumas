@@ -1337,6 +1337,26 @@ PUMAS_API enum pumas_return pumas_physics_property_energy_loss(
     int material, double energy, double * dedx);
 
 /**
+ * Get the energy loss straggling per unit weight of material.
+ *
+ * @param physics     Handle for the Physics tables.
+ * @param material    The material index.
+ * @param energy      The kinetic energy, in GeV.
+ * @param straggling  The computed energy loss straggling in GeV^2/(kg/m^(2)).
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INDEX_ERROR             The material index is not valid.
+ *
+ *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
+ */
+PUMAS_API enum pumas_return pumas_physics_property_energy_straggling(
+    const struct pumas_physics * physics, int material, double energy,
+    double * dedx);
+
+/**
  * Get the cutoff angle for hard elastic events.
  *
  * @param physics     Handle for the Physics tables.

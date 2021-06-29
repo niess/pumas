@@ -204,6 +204,7 @@ START_TEST(test_api_error)
         CHECK_STRING(pumas_physics_property_elastic_scattering_length);
         CHECK_STRING(pumas_physics_property_elastic_cutoff_angle);
         CHECK_STRING(pumas_physics_property_energy_loss);
+        CHECK_STRING(pumas_physics_property_energy_straggling);
         CHECK_STRING(pumas_physics_property_grammage);
         CHECK_STRING(pumas_physics_property_kinetic_energy);
         CHECK_STRING(pumas_physics_property_magnetic_rotation);
@@ -765,6 +766,10 @@ START_TEST(test_api_property)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         reset_error();
+        pumas_physics_property_energy_straggling(physics, 0, 0., &value);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
+
+        reset_error();
         pumas_physics_property_grammage(physics, 0, 0, 0., &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
@@ -806,6 +811,10 @@ START_TEST(test_api_property)
         reset_error();
         pumas_physics_property_energy_loss(
             physics, PUMAS_MODE_HYBRID, 4, 0., &value);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
+
+        reset_error();
+        pumas_physics_property_energy_straggling(physics, 4, 0., &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
@@ -892,6 +901,11 @@ START_TEST(test_api_property)
             physics, PUMAS_MODE_HYBRID, 0, 1E+03, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_lt(value, 6.623E-04);
+
+        pumas_physics_property_energy_straggling(
+            physics, 0, 1E+03, &value);
+        ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
+        ck_assert_double_eq_tol(value, 2.355E-03, 1E-06);
 
         pumas_physics_property_grammage(
             physics, PUMAS_MODE_CSDA, 0, 1E+00, &value);

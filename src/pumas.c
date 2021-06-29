@@ -662,7 +662,7 @@ struct pumas_physics {
  * Version tag for the physics data format. Increment whenever the
  * structure changes.
  */
-#define PHYSICS_BINARY_DUMP_TAG 8
+#define PHYSICS_BINARY_DUMP_TAG 9
 
         /** The total byte size of the shared data. */
         int size;
@@ -709,6 +709,8 @@ struct pumas_physics {
         double * table_T;
         /** The tabulated values of the average energy loss. */
         double * table_dE;
+        /** The tabulated values of the energy straggling. */
+        double * table_Omega;
         /** The tabulated values of the EHS number of interaction lengths. */
         double * table_NI_el;
         /**
@@ -878,6 +880,8 @@ static double cel_kinetic_energy(const struct pumas_physics * physics,
 static double cel_energy_loss(const struct pumas_physics * physics,
     struct pumas_context * context, enum pumas_mode scheme, int material,
     double kinetic);
+static double cel_straggling(const struct pumas_physics * physics,
+    struct pumas_context * context, int material, double kinetic);
 static double cel_magnetic_rotation(const struct pumas_physics * physics,
     struct pumas_context * context, int material, double kinetic);
 static double del_cross_section(const struct pumas_physics * physics,
@@ -908,7 +912,8 @@ static inline int dcs_photonuclear_check(double K, double q);
 static double dcs_ionisation(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double q);
 static double dcs_ionisation_integrate(const struct pumas_physics * physics,
-    int mode, const struct atomic_element * element, double K, double xlow);
+    int mode, const struct atomic_element * element, double K, double xlow,
+    double xhigh);
 static double dcs_ionisation_randomise(const struct pumas_physics * physics,
     struct pumas_context * context, const struct atomic_element * element,
     double K, double xlow);
@@ -1074,6 +1079,8 @@ static inline double * table_get_T(
     const struct pumas_physics * physics, int scheme, int material, int row);
 static inline double * table_get_dE(
     const struct pumas_physics * physics, int scheme, int material, int row);
+static inline double * table_get_Omega(
+    const struct pumas_physics * physics, int material, int row);
 static inline double * table_get_NI_el(
     const struct pumas_physics * physics, int scheme, int material, int row);
 static inline double * table_get_NI_in(
@@ -1089,6 +1096,8 @@ static inline double * table_get_Xt(
 static inline double * table_get_Kt(
     const struct pumas_physics * physics, int material);
 static inline double * table_get_cel(const struct pumas_physics * physics,
+    int process, int element, int row, double * table);
+static inline double * table_get_stg(const struct pumas_physics * physics,
     int process, int element, int row, double * table);
 static inline double * table_get_Li(
     const struct pumas_physics * physics, int material, int order, int row);
@@ -1120,8 +1129,6 @@ static enum pumas_return step_transport(const struct pumas_physics * physics,
 static void step_fluctuate(const struct pumas_physics * physics,
     struct pumas_context * context, struct pumas_state * state, int material,
     double Xtot, double dX, double * kf, double * dE);
-static double step_fluctuations2(
-    const struct pumas_physics * physics, int material, double kinetic);
 static double step_randn(struct pumas_context * context);
 static void step_rotate_direction(struct pumas_context * context,
     struct pumas_state * state, double mu);
@@ -1196,7 +1203,7 @@ static void compute_regularise_del(
     struct pumas_physics * physics, int material);
 static double compute_dcs_integral(struct pumas_physics * physics, int mode,
     const struct atomic_element * element, double kinetic, dcs_function_t * dcs,
-    double xlow, int nint);
+    double xlow, double xhigh, int nint);
 static void compute_ZoA(struct pumas_physics * physics, int material);
 static void compute_MEE(struct pumas_physics * physics, int material);
 static enum pumas_return compute_dcs_model(struct pumas_physics * physics,
@@ -1338,7 +1345,7 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         FILE * fid_mdf = NULL;
         struct mdf_buffer * mdf = NULL;
         const int pad_size = sizeof(*((*physics_ptr)->data));
-#define N_DATA_POINTERS 31
+#define N_DATA_POINTERS 32
         int size_data[N_DATA_POINTERS];
 
         /* Check the particle type. */
@@ -1474,6 +1481,9 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         size_data[imem++] = memory_padded_size(sizeof(double) * N_SCHEMES *
                 settings.n_materials * settings.n_energies,
             pad_size);
+        /* table_Omega. */
+        size_data[imem++] = memory_padded_size(sizeof(double) *
+            settings.n_materials * settings.n_energies, pad_size);
         /* table_NI_el. */
         size_data[imem++] = memory_padded_size(
             sizeof(double) * 2 * settings.n_materials * settings.n_energies,
@@ -2056,6 +2066,7 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_physics_property_magnetic_rotation)
         TOSTRING(pumas_physics_property_kinetic_energy)
         TOSTRING(pumas_physics_property_energy_loss)
+        TOSTRING(pumas_physics_property_energy_straggling)
         TOSTRING(pumas_physics_property_elastic_scattering_length)
         TOSTRING(pumas_physics_property_elastic_cutoff_angle)
         TOSTRING(pumas_physics_property_multiple_scattering_length)
@@ -2720,6 +2731,23 @@ enum pumas_return pumas_physics_property_energy_loss(
         }
 
         *dedx = cel_energy_loss(physics, NULL, scheme, material, kinetic);
+        return PUMAS_RETURN_SUCCESS;
+}
+
+enum pumas_return pumas_physics_property_energy_straggling(
+    const struct pumas_physics * physics, int material, double kinetic,
+    double * straggling)
+{
+        ERROR_INITIALISE(pumas_physics_property_energy_straggling);
+        *straggling = 0.;
+
+        if (physics == NULL) {
+                return ERROR_NOT_INITIALISED();
+        } else if ((material < 0) || (material >= physics->n_materials)) {
+                return ERROR_INVALID_MATERIAL(material);
+        }
+
+        *straggling = cel_straggling(physics, NULL, material, kinetic);
         return PUMAS_RETURN_SUCCESS;
 }
 
@@ -3550,6 +3578,34 @@ double cel_energy_loss(const struct pumas_physics * physics,
 }
 
 /**
+ * The energy straggling.
+ *
+ * @param Physics  Handle for physics tables.
+ * @param context  The simulation context.
+ * @param material The index of the propagation material.
+ * @param kinetic  The initial kinetic energy.
+ * @return On success, the straggling in GeV^2/(kg/m^2) otherwise `0`.
+ */
+double cel_straggling(const struct pumas_physics * physics,
+    struct pumas_context * context, int material, double kinetic)
+{
+        const int imax = physics->n_energies - 1;
+        if (kinetic < *table_get_K(physics, 0)) return 0.;
+
+        const double Kmax = *table_get_K(physics, imax);
+        if (kinetic >= Kmax) {
+                /* Extrapolate the straggling as E^2. */
+                const double r = (kinetic + physics->mass) /
+                    (Kmax + physics->mass);
+                return *table_get_Omega(physics, material, imax) * r * r;
+        }
+
+        /* Interpolation. */
+        return table_interpolate(physics, context, table_get_K(physics, 0),
+            table_get_Omega(physics, material, 0), kinetic);
+}
+
+/**
  * The normalised magnetic rotation angle for a deterministic CEL.
  *
  * @param Physics  Handle for physics tables.
@@ -4260,6 +4316,20 @@ double * table_get_dE(
 }
 
 /**
+ * Encapsulation of the energy straggling table.
+ *
+ * @param Physics  Handle for physics tables.
+ * @param material The material index.
+ * @param row      The kinetic energy row index.
+ * @return A pointer to the table element.
+ */
+double * table_get_Omega(
+    const struct pumas_physics * physics, int material, int row)
+{
+        return physics->table_Omega + material * physics->n_energies + row;
+}
+
+/**
  * Encapsulation of the number of EHS interaction lengths.
  *
  * @param Physics  Handle for physics tables.
@@ -4373,16 +4443,11 @@ double * table_get_Kt(const struct pumas_physics * physics, int material)
  * Encapsulation of the temporary average CEL table, element wise.
  *
  * @param Physics  Handle for physics tables.
- * @param property The index of the tabulated property.
  * @param process  The process index.
  * @param element  The element index.
  * @param row      The kinetic energy row index.
  * @param table    The temporary table.
  * @return A pointer to the table element.
- *
- * The `property` index controls the tabulated property as following.
- * `property = 0` is the total CEL and `property = 1` is the restricted
- * CEL, splitted with DELs.
  */
 double * table_get_cel(const struct pumas_physics * physics, int process,
     int element, int row, double * table)
@@ -4390,6 +4455,24 @@ double * table_get_cel(const struct pumas_physics * physics, int process,
         return table +
             (process * physics->n_elements + element) * physics->n_energies +
             row;
+}
+
+/**
+ * Encapsulation of the temporary energy straggling table, element wise.
+ *
+ * @param Physics  Handle for physics tables.
+ * @param process  The process index.
+ * @param element  The element index.
+ * @param row      The kinetic energy row index.
+ * @param table    The temporary table.
+ * @return A pointer to the table element.
+ */
+double * table_get_stg(const struct pumas_physics * physics, int process,
+    int element, int row, double * table)
+{
+        return table +
+            ((N_DEL_PROCESSES + process) * physics->n_elements + element) *
+            physics->n_energies + row;
 }
 
 /**
@@ -6774,12 +6857,14 @@ static void step_fluctuate(const struct pumas_physics * physics,
         if ((k1 > 0.) && (dk0 > 0.)) {
                 const double de0 = cel_energy_loss(
                     physics, context, scheme, material, state->energy);
+                const double Omega0 = cel_straggling(
+                    physics, context, material, state->energy);
                 const double de1 = cel_energy_loss(
                     physics, context, scheme, material, k1);
-                const double dk1 = sqrt(0.5 * dX *
-                    (step_fluctuations2(physics, material, state->energy) +
-                    step_fluctuations2(physics, material, k1))) * (1. +
-                    sgn * dX / dk0 * (de1 - de0));
+                const double Omega1 = cel_straggling(
+                    physics, context, material, k1);
+                const double dk1 = sqrt(0.5 * dX * (Omega0 + Omega1) * (1. +
+                    sgn * dX / dk0 * (de1 - de0)));
                 if (dk0 >= 3. * dk1) {
                         double u;
                         do
@@ -6813,29 +6898,6 @@ static void step_fluctuate(const struct pumas_physics * physics,
         /* Copy back the result. */
         *kf = k1;
         *ratio = r;
-}
-
-/**
- * Squared standard deviation of the stochastic CEL.
- *
- * @param Physics  Handle for physics tables.
- * @param material The target material.
- * @param kinetic  The projectile kinetic energy.
- * @return The squared standard deviation.
- *
- * The Gaussian thick aborber approximation of ICRU Report 49 is assumed.
- */
-static double step_fluctuations2(
-    const struct pumas_physics * physics, int material, double kinetic)
-{
-        const double r = ELECTRON_MASS / physics->mass;
-        const double g = 1. + kinetic / physics->mass;
-        const double b2 = 1. - 1. / (g * g);
-        double qmax = 2. * ELECTRON_MASS * b2 * g * g / (1. + r * (2. * g + r));
-        const double qcut = physics->cutoff * kinetic;
-        if (qmax > qcut) qmax = qcut;
-        return 1.535375E-05 * physics->material_ZoA[material] *
-            (1. / b2 - 0.5) * qmax;
 }
 
 /**
@@ -7878,6 +7940,7 @@ enum pumas_return io_parse_dedx_row(struct pumas_physics * physics,
         struct material_component * component = physics->composition[material];
         double frct_cel[] = { 0., 0., 0., 0. };
         double frct_cs[] = { 0., 0., 0., 0. };
+        double straggling = 0.;
         int ic, ic0 = 0;
         for (ic = 0; ic < material; ic++) ic0 += physics->elements_in[ic];
         for (ic = ic0; ic < ic0 + physics->elements_in[material];
@@ -7893,6 +7956,9 @@ enum pumas_return io_parse_dedx_row(struct pumas_physics * physics,
                         frct_cs[ip] += f;
                         frct_cel[ip] +=
                             *table_get_cel(physics, ip, iel, *row, cel_table) *
+                            w;
+                        straggling +=
+                            *table_get_stg(physics, ip, iel, *row, cel_table) *
                             w;
                 }
         }
@@ -7947,6 +8013,7 @@ enum pumas_return io_parse_dedx_row(struct pumas_physics * physics,
         /* End point statistics */
         *table_get_dE(physics, PUMAS_MODE_CSDA, material, *row) = de;
         *table_get_dE(physics, PUMAS_MODE_HYBRID, material, *row) = de_cel;
+        *table_get_Omega(physics, material, *row) = straggling;
         *table_get_CS(physics, material, *row) = frct_cs_del;
 
         /* Weighted integrands */
@@ -9507,6 +9574,7 @@ void compute_composite_tables(struct pumas_physics * physics, int material)
         for (row = 0; row < physics->n_energies; row++) {
                 *table_get_dE(physics, PUMAS_MODE_CSDA, material, row) = 0.;
                 *table_get_dE(physics, PUMAS_MODE_HYBRID, material, row) = 0.;
+                *table_get_Omega(physics, material, row) = 0.;
                 *table_get_CS(physics, material, row) = 0.;
                 int k, ip;
                 for (k = 0; k < physics->elements_in[material]; k++)
@@ -9532,6 +9600,9 @@ void compute_composite_tables(struct pumas_physics * physics, int material)
                             component->fraction;
                         *table_get_dE(physics, 1, material, row) +=
                             *table_get_dE(physics, 1, imat, row) *
+                            component->fraction;
+                        *table_get_Omega(physics, material, row) +=
+                            *table_get_Omega(physics, imat, row) *
                             component->fraction;
                         const double k = *table_get_K(physics, row);
                         const double cs =
@@ -10130,7 +10201,7 @@ double * compute_cel_and_del(struct pumas_physics * physics, int row)
 
         /* Allocate the temporary table. */
         if (cel_table == NULL) {
-                cel_table = allocate(N_DEL_PROCESSES * physics->n_elements *
+                cel_table = allocate(2 * N_DEL_PROCESSES * physics->n_elements *
                     physics->n_energies * sizeof(double));
                 if (cel_table == NULL) return NULL;
         }
@@ -10146,10 +10217,13 @@ double * compute_cel_and_del(struct pumas_physics * physics, int row)
                 for (ip = 0; ip < N_DEL_PROCESSES; ip++) {
                         *table_get_CSn(physics, ip, iel, row) =
                             compute_dcs_integral(physics, 0, element, kinetic,
-                                dcs_get(ip), physics->cutoff, 180);
+                                dcs_get(ip), physics->cutoff, 1, 180);
                         *table_get_cel(physics, ip, iel, row, cel_table) =
                             compute_dcs_integral(physics, 1, element, kinetic,
-                                dcs_get(ip), physics->cutoff, 180);
+                                dcs_get(ip), physics->cutoff, 1, 180);
+                        *table_get_stg(physics, ip, iel, row, cel_table) =
+                            compute_dcs_integral(physics, 2, element, kinetic,
+                                dcs_get(ip), 0, physics->cutoff, 180);
                 }
         }
 
@@ -10239,35 +10313,43 @@ once. */
  * @param kinetic The initial or final kinetic energy.
  * @param dcs     Handle to the dcs function.
  * @param xlow    The lower bound of the fractional energy transfer.
+ * @param xlow    The upper bound of the fractional energy transfer.
  * @param nint    The requested number of point for the integral.
  * @return The integrated dcs, in m^2/kg or the energy loss in GeV m^2/kg.
  *
- * The parameter *mode* controls the integration mode as following. If *mode*
- * is `0` the restricted cross section is computed, for energy losses larger
- * than *xlow*. Else, the restricted energy loss is computed, for losses
- * larger than *xlow*
+ * The parameter *mode* controls the integration mode as following. If *mode* is
+ * `0` the restricted cross section is computed, Else, if mode is `1` the
+ * restricted energy loss is computed, else the restricted energy straggling is
+ * computed.
  */
 double compute_dcs_integral(struct pumas_physics * physics, int mode,
     const struct atomic_element * element, double kinetic, dcs_function_t * dcs,
-    double xlow, int nint)
+    double xlow, double xhigh, int nint)
 {
 
         /* Let us use the analytical form for ionisation */
         if (dcs == &dcs_ionisation) {
                 return dcs_ionisation_integrate(
-                    physics, mode, element, kinetic, xlow);
+                    physics, mode, element, kinetic, xlow, xhigh);
+        }
+
+        /* Set the integration boundaries XXX Improve this */
+        if (xlow <= 0) {
+                xlow = 1E-06 / kinetic;
+                if (xlow < 1E-05) xlow = 1E-05;
         }
 
         /* We integrate over the recoil energy using a logarithmic sampling. */
         double dcsint = 0.;
-        double x0 = log(kinetic * xlow), x1 = log(kinetic);
+        double x0 = log(xlow * kinetic), x1 = log(xhigh * kinetic);
         math_gauss_quad(nint, &x0, &x1); /* Initialisation. */
 
         double xi, wi;
         while (math_gauss_quad(0, &xi, &wi) == 0) { /* Iterations. */
                 const double qi = exp(xi);
                 double y = dcs(physics, element, kinetic, qi) * qi;
-                if (mode != 0) y *= qi;
+                if (mode > 0) y *= qi;
+                if (mode > 1) y *= qi;
                 dcsint += y * wi;
         }
         dcsint /= kinetic + physics->mass;
@@ -10588,26 +10670,29 @@ double dcs_ionisation(const struct pumas_physics * physics,
  * @param element The target atomic element.
  * @param K       The projectile initial kinetic energy.
  * @param xlow    The lower bound of the fractional energy transfer.
+ * @param xlow    The upper bound of the fractional energy transfer.
  * @return The integrated dcs, in m^2/kg or the energy loss in GeV m^2/kg.
  *
  * The parameter *mode* controls the integration mode as following. If *mode*
- * is `0` the restricted cross section is computed, for energy losses larger
- * than *xlow*. Else, the restricted energy loss is computed, for losses
- * larger than *xlow*
+ * is `0` the restricted cross section is computed.  Else, if mode is `1` then
+ * the restricted energy loss is computed, else the restricted energy straggling
+ * is computed.
  */
 double dcs_ionisation_integrate(const struct pumas_physics * physics, int mode,
-    const struct atomic_element * element, double K, double xlow)
+    const struct atomic_element * element, double K, double xlow, double xhigh)
 {
         const double Z = element->Z;
         const double A = element->A;
         const double P2 = K * (K + 2. * physics->mass);
         const double E = K + physics->mass;
-        const double Wmax = 2. * ELECTRON_MASS * P2 /
+        double Wmax = 2. * ELECTRON_MASS * P2 /
             (physics->mass * physics->mass +
                                 ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
-        if (Wmax < physics->cutoff * K) return 0.;
-        double Wmin = (13.6 / 19.2) * element->I;
         const double qlow = K * xlow;
+        const double qhigh = K * xhigh;
+        if (Wmax < qlow) return 0.;
+        if (Wmax > qhigh) Wmax = qhigh;
+        double Wmin = (13.6 / 19.2) * element->I;
         if (qlow >= Wmin) Wmin = qlow;
 
         /* Check the bounds. */
@@ -10623,9 +10708,14 @@ double dcs_ionisation_integrate(const struct pumas_physics * physics, int mode,
         if (mode == 0) {
                 I = a0 * (Wmax - Wmin) - a1 * log(Wmax / Wmin) +
                     1. / Wmin - 1. / Wmax;
-        } else {
+        } else if (mode == 1) {
                 I = 0.5 * a0 * (Wmax * Wmax - Wmin * Wmin) -
                     a1 * (Wmax - Wmin) + log(Wmax / Wmin);
+        } else {
+                const double Wmax2 = Wmax * Wmax;
+                const double Wmin2 = Wmin * Wmin;
+                I = a0 * (Wmax2 * Wmax - Wmin2 * Wmin) / 3. -
+                    0.5 * a1 * (Wmax2 - Wmin2) + Wmax - Wmin;
         }
 
         return 2 * M_PI * ELECTRON_MASS * ELECTRON_RADIUS * ELECTRON_RADIUS *
@@ -12215,7 +12305,7 @@ static void tabulate_element(struct pumas_physics * physics,
                     (int)(-1E+02 * log10(x)); /* 100 pts per decade. */
                 for (ip = 0; ip < N_DEL_PROCESSES - 1; ip++, v++)
                         *v = compute_dcs_integral(
-                            physics, 1, element, k, dcs_get(ip), x, n);
+                            physics, 1, element, k, dcs_get(ip), x, 1, n);
         }
 }
 
