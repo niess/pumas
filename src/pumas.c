@@ -10689,11 +10689,12 @@ double dcs_ionisation_integrate(const struct pumas_physics * physics, int mode,
         const double A = element->A;
         const double P2 = K * (K + 2. * physics->mass);
         const double E = K + physics->mass;
-        double Wmax = 2. * ELECTRON_MASS * P2 /
+        const double Wr = 2. * ELECTRON_MASS * P2 /
             (physics->mass * physics->mass +
                                 ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
         const double qlow = K * xlow;
         const double qhigh = K * xhigh;
+        double Wmax = Wr;
         if (Wmax < qlow) return 0.;
         if (Wmax > qhigh) Wmax = qhigh;
         double Wmin = (13.6 / 19.2) * element->I;
@@ -10706,7 +10707,7 @@ double dcs_ionisation_integrate(const struct pumas_physics * physics, int mode,
         const double E2 = E * E;
         const double beta2 = P2 / E2;
         const double a0 = 0.5 / E2;
-        const double a1 = beta2 / Wmax;
+        const double a1 = beta2 / Wr;
 
         double I;
         if (mode == 0) {
