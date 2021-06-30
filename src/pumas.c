@@ -6855,16 +6855,19 @@ static void step_fluctuate(const struct pumas_physics * physics,
             physics, context, scheme, material, Xtot - sgn * dX);
         const double dk0 = fabs(state->energy - k1);
         if ((k1 > 0.) && (dk0 > 0.)) {
-                const double de0 = cel_energy_loss(
-                    physics, context, scheme, material, state->energy);
                 const double Omega0 = cel_straggling(
                     physics, context, material, state->energy);
-                const double de1 = cel_energy_loss(
-                    physics, context, scheme, material, k1);
                 const double Omega1 = cel_straggling(
                     physics, context, material, k1);
-                const double dk1 = sqrt(0.5 * dX * (Omega0 + Omega1) * (1. +
-                    sgn * dX / dk0 * (de1 - de0)));
+                double dk12 = 0.5 * dX * (Omega0 + Omega1);
+                if (dX / Xtot > 5E-02) {
+                        const double de1 = cel_energy_loss(
+                            physics, context, scheme, material, k1);
+                        const double de0 = cel_energy_loss(
+                            physics, context, scheme, material, state->energy);
+                        dk12 *= 1. + sgn * dX / dk0 * (de1 - de0);
+                }
+                const double dk1 = sqrt(dk12);
                 if (dk0 >= 3. * dk1) {
                         double u;
                         do
@@ -6877,7 +6880,7 @@ static void step_fluctuate(const struct pumas_physics * physics,
                             1.7320508 * (1. - 2. * context->random(context));
                         k1 += u * dk1;
                 } else {
-                        const double dk32 = 3. * dk1 * dk1;
+                        const double dk32 = 3. * dk12;
                         const double dk02 = dk0 * dk0;
                         const double a =
                             1. - (dk32 - dk02) / (dk32 + 3. * dk02);
@@ -6885,6 +6888,7 @@ static void step_fluctuate(const struct pumas_physics * physics,
                                 const double b = 0.5 * (dk32 + 3. * dk02) / dk0;
                                 const double u = context->random(context);
                                 k1 = state->energy - sgn * b * u;
+                                if (k1 < 0.) k1 = 0.;
                         } else {
                                 k1 = state->energy;
                         }
