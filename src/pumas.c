@@ -13229,25 +13229,27 @@ static inline double dcs_pair_production_d2_SSR(
 
         double Le1, Le2;
         if (De / Be > 0.) {
-                const long double Xe = expl(-De / Be);
-                Le1 = logl(rad_log * Z13 * sqrt(1. + xi) /
+                const double tmp = De / Be;
+                const double Xe = (tmp < 100) ? exp(-tmp) : 0.;
+                Le1 = log(rad_log * Z13 * sqrt(1. + xi) /
                     (Xe + 2. * ME * exp(0.5) * rad_log * Z13 * (1. + xi) /
-                    (energy * v * (1. - rho2)))) - De / Be -
+                    (energy * v * (1. - rho2)))) - tmp -
                     0.5 * log(Xe + pow(ME / m * d_n, 2.) * (1. + xi));
 
-                Le2 = logl(rad_log * Z13 * exp(-1. / 6.) * sqrt(1 + xi) /
+                Le2 = log(rad_log * Z13 * exp(-1. / 6.) * sqrt(1 + xi) /
                     (Xe + 2. * ME * exp(1. / 3.) * rad_log * Z13 * (1. + xi) /
-                    (energy * v * (1. - rho2)))) - De / Be -
+                    (energy * v * (1. - rho2)))) - tmp -
                     0.5 * log(Xe + pow(ME / m * d_n, 2.) *
                     exp(-1. / 3.) * (1. + xi));
         } else {
-                const long double Xe_inv = expl(De / Be);
-                Le1 = logl(rad_log * Z13 * sqrt(1. + xi) /
+                const double tmp = De / Be;
+                const double Xe_inv = (tmp > -100) ? exp(De / Be) : 0;
+                Le1 = log(rad_log * Z13 * sqrt(1. + xi) /
                     (1. + Xe_inv * 2. * ME * exp(0.5) * rad_log * Z13 *
                     (1. + xi) / (energy * v * (1. - rho2)))) - 0.5 * De / Be -
                     0.5 * log(1. + Xe_inv * pow(ME / m * d_n, 2.) * (1. + xi));
 
-                Le2 = logl(rad_log * Z13 * exp(-1. / 6.) * sqrt(1 + xi) /
+                Le2 = log(rad_log * Z13 * exp(-1. / 6.) * sqrt(1 + xi) /
                     (1. + Xe_inv * 2. * ME * exp(1. / 3.) * rad_log * Z13 *
                     (1. + xi) / (energy * v * (1. - rho2)))) - 0.5 * De / Be -
                     0.5 * log(1. + Xe_inv * pow(ME / m * d_n, 2.) *
@@ -13278,19 +13280,21 @@ static inline double dcs_pair_production_d2_SSR(
 
         double Lm1, Lm2;
         if (Dm / Bm > 0.) {
-                const long double Xm = expl(-Dm / Bm);
-                Lm1 = logl(Xm * m / ME * rad_log * Z13 / d_n /
+                const double tmp = Dm / Bm;
+                const double Xm = (tmp < 100) ? exp(-tmp) : 0.;
+                Lm1 = log(m / ME * rad_log * Z13 / d_n /
                     (Xm + 2. * ME * exp(0.5) * rad_log * Z13 * (1. + xi) /
-                    (energy * v * (1. - rho2))));
-                Lm2 = logl(Xm * m / ME * rad_log * Z13 / d_n /
+                    (energy * v * (1. - rho2)))) - tmp;
+                Lm2 = log(m / ME * rad_log * Z13 / d_n /
                     (Xm + 2. * ME * exp(1. / 3.) * rad_log * Z13 * (1. + xi) /
-                    (energy * v * (1. - rho2))));
+                    (energy * v * (1. - rho2)))) - tmp;
         } else {
-                const long double Xmv = expl(Dm / Bm);
-                Lm1 = logl(m / ME * rad_log * Z13 / d_n /
+                const double tmp = Dm / Bm;
+                const double Xmv = (tmp > -100) ? exp(tmp) : 0.;
+                Lm1 = log(m / ME * rad_log * Z13 / d_n /
                     (1. + 2. * ME * exp(0.5) * rad_log * Z13 * (1. + xi) /
                     (energy * v * (1. - rho2)) * Xmv));
-                Lm2 = logl(m / ME * rad_log * Z13 / d_n /
+                Lm2 = log(m / ME * rad_log * Z13 / d_n /
                     (1. + 2. * ME * exp(1. / 3.) * rad_log * Z13 * (1. + xi) /
                     (energy * v * (1. - rho2)) * Xmv));
         }
@@ -13421,15 +13425,14 @@ static inline double dcs_photonuclear_f2p_ALLM97(double x, double Q2)
         const double t = log(log((Q2 + Q02) / Lambda2) / log(Q02 / Lambda2));
         const double xP = (Q2 + mP2) / (Q2 + mP2 + W2 - M2);
         const double xR = (Q2 + mR2) / (Q2 + mR2 + W2 - M2);
-        const double lnt = log(t);
         const double cP =
-            cP1 + (cP1 - cP2) * (1.0 / (1.0 + exp(cP3 * lnt)) - 1.0);
+            cP1 + (cP1 - cP2) * (1.0 / (1.0 + pow(t, cP3)) - 1.0);
         const double aP =
-            aP1 + (aP1 - aP2) * (1.0 / (1.0 + exp(aP3 * lnt)) - 1.0);
-        const double bP = bP1 + bP2 * exp(bP3 * lnt);
-        const double cR = cR1 + cR2 * exp(cR3 * lnt);
-        const double aR = aR1 + aR2 * exp(aR3 * lnt);
-        const double bR = bR1 + bR2 * exp(bR3 * lnt);
+            aP1 + (aP1 - aP2) * (1.0 / (1.0 + pow(t, aP3)) - 1.0);
+        const double bP = bP1 + bP2 * pow(t, bP3);
+        const double cR = cR1 + cR2 * pow(t, cR3);
+        const double aR = aR1 + aR2 * pow(t, aR3);
+        const double bR = bR1 + bR2 * pow(t, bR3);
 
         const double F2P = cP * exp(aP * log(xP) + bP * log(1 - x));
         const double F2R = cR * exp(aR * log(xR) + bR * log(1 - x));
