@@ -908,7 +908,7 @@ static double dcs_pair_production(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double q);
 static double dcs_photonuclear(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double q);
-static inline int dcs_photonuclear_check(double K, double q);
+static inline int dcs_photonuclear_check(double m, double K, double q);
 static double dcs_ionisation(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double q);
 static double dcs_ionisation_integrate(const struct pumas_physics * physics,
@@ -10330,6 +10330,9 @@ double compute_dcs_integral(struct pumas_physics * physics, int mode,
     const struct atomic_element * element, double kinetic, dcs_function_t * dcs,
     double xlow, double xhigh, int nint)
 {
+        if (xlow <= 0) xlow = 1E-06; /* Values below do not impact the
+                                      * integral values.
+                                      */
 
         /* Let us use the analytical form for ionisation */
         if (dcs == &dcs_ionisation) {
@@ -10337,15 +10340,33 @@ double compute_dcs_integral(struct pumas_physics * physics, int mode,
                     physics, mode, element, kinetic, xlow, xhigh);
         }
 
-        /* Set the integration boundaries XXX Improve this */
-        if (xlow <= 0) {
-                xlow = 1E-06 / kinetic;
-                if (xlow < 1E-05) xlow = 1E-05;
+        /* Set the integration boundaries */
+        double qmin = 0, qmax;
+        if (dcs == &dcs_photonuclear) {
+                const double M = 0.5 * (NEUTRON_MASS + PROTON_MASS);
+                const double mpi = 0.13957018;
+                qmin = mpi + 0.5 * mpi * mpi / M;
+                qmax = kinetic + physics->mass -
+                    0.5 * (M + physics->mass * physics->mass / M);
+        } else {
+                const double Z13 = pow(element->Z, 1. / 3.);
+                const double sqrte = 1.648721271;
+                qmax = kinetic + physics->mass * (1. - 0.75 * sqrte * Z13);
+
+                if (dcs == &dcs_pair_production) {
+                        qmin = 4 * ELECTRON_MASS;
+                }
         }
+
+        double qlow = xlow * kinetic;
+        if (qlow < qmin) qlow = qmin;
+        double qhigh = xhigh * kinetic;
+        if (qhigh > qmax) qhigh = qmax;
+        if (qlow >= qhigh) return 0.;
 
         /* We integrate over the recoil energy using a logarithmic sampling. */
         double dcsint = 0.;
-        double x0 = log(xlow * kinetic), x1 = log(xhigh * kinetic);
+        double x0 = log(qlow), x1 = log(qhigh);
         math_gauss_quad(nint, &x0, &x1); /* Initialisation. */
 
         double xi, wi;
@@ -10596,7 +10617,8 @@ double dcs_pair_production(const struct pumas_physics * physics,
 double dcs_photonuclear(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double q)
 {
-        if (dcs_photonuclear_check(K, q)) { /* Check the kinematic range. */
+        if (dcs_photonuclear_check(physics->mass, K, q)) {
+                /* Check the kinematic range. */
                 return 0.;
         } else {
                 return physics->dcs_photonuclear(element->Z, element->A,
@@ -10606,21 +10628,20 @@ double dcs_photonuclear(const struct pumas_physics * physics,
 }
 
 /**
- * Utility function for checking the consistency of the Photonuclear model.
+ * Utility function for checking the kinematic range of the Photonuclear model.
  *
- * @param K The kinetic energy.
+ * @param m The projectile rest mass.
+ * @param K The projectile kinetic energy.
  * @param q The kinetic energy lost to the photon.
- * @return `0` if the model is valid.
- *
- * Check for the limit of the PDG model. Below this kinetic transfer a
- * tabulation is used, which we don't do. Therefore we set the cross-section to
- * zero below 1 GeV where it deviates from the model. In addition, for x < 2E-03
- * the model is unstable and can lead to osccilations and negative cross-section
- * values.
+ * @return `0` if the model is within kinematic range.
  */
-int dcs_photonuclear_check(double K, double q)
+int dcs_photonuclear_check(double m, double K, double q)
 {
-        return (q < 1.) || (q < 2E-03 * K);
+        const double M = 0.5 * (NEUTRON_MASS + PROTON_MASS);
+        const double mpi = 0.13957018;
+        const double qmin = mpi + 0.5 * mpi * mpi / M;
+        const double qmax = K + m - 0.5 * (M + m * m / M);
+        return (q < qmin) || (q > qmax);
 }
 
 /* API function for the effective electronic DCS */
@@ -10795,7 +10816,8 @@ double dcs_evaluate(const struct pumas_physics * physics,
         /* Check if the process has a valid tabulated model. */
         if (dcs_func == dcs_ionisation)
                 return dcs_func(physics, element, K, q) * wj;
-        else if ((dcs_func == dcs_photonuclear) && dcs_photonuclear_check(K, q))
+        else if ((dcs_func == dcs_photonuclear) &&
+                  dcs_photonuclear_check(physics->mass, K, q))
                 return 0.;
 
         /* Check if the exact computation should be used. */
@@ -12304,8 +12326,7 @@ static void tabulate_element(struct pumas_physics * physics,
         int ik, ip;
         for (ik = 0, v = data->data; ik < n_energies; ik++) {
                 const double k = kinetic[ik];
-                double x = 1E-06 / k;
-                if (x < 1E-05) x = 1E-05;
+                const double x = 1E-06;
                 const int n =
                     (int)(-1E+02 * log10(x)); /* 100 pts per decade. */
                 for (ip = 0; ip < N_DEL_PROCESSES - 1; ip++, v++)
