@@ -13017,11 +13017,17 @@ static double dcs_pair_production_KKP(
  * Coefficients for the Gaussian quadrature from:
  * https://pomax.github.io/bezierinfo/legendre-gauss.html.
  */
-#define N_GQ 8
-        const double xGQ[N_GQ] = { 0.01985507, 0.10166676, 0.2372338,
-                0.40828268, 0.59171732, 0.7627662, 0.89833324, 0.98014493 };
-        const double wGQ[N_GQ] = { 0.05061427, 0.11119052, 0.15685332,
-                0.18134189, 0.18134189, 0.15685332, 0.11119052, 0.05061427 };
+#define N_GQ 12
+        const double xGQ[N_GQ] = {
+            0.0092196828766404, 0.0479413718147625, 0.1150486629028477,
+            0.2063410228566913, 0.3160842505009099, 0.4373832957442655,
+            0.5626167042557344, 0.6839157494990901, 0.7936589771433087,
+            0.8849513370971523, 0.9520586281852375, 0.9907803171233596};
+        const double wGQ[N_GQ] = {
+            0.0235876681932559, 0.0534696629976592, 0.0800391642716731,
+            0.1015837133615330, 0.1167462682691774, 0.1245735229067014,
+            0.1245735229067014, 0.1167462682691774, 0.1015837133615330,
+            0.0800391642716731, 0.0534696629976592, 0.0235876681932559};
 
         /*  Check the bounds of the energy transfer. */
         if (q <= 4. * ELECTRON_MASS) return 0.;
@@ -13034,7 +13040,7 @@ static double dcs_pair_production_KKP(
         const double r = mass / ELECTRON_MASS;
         const double beta = 0.5 * nu * nu / (1. - nu);
         const double xi_factor = 0.5 * r * r * beta;
-        const double A = (Z == 1.) ? 202.4 : 183.;
+        const double A = radiation_logarithm(Z);
         const double AZ13 = A / Z13;
         const double cL = 2. * sqrte * ELECTRON_MASS * AZ13;
         const double cLe = 2.25 * Z13 * Z13 / (r * r);
@@ -13324,11 +13330,17 @@ static double dcs_pair_production_SSR(
  * Coefficients for the Gaussian quadrature from:
  * https://pomax.github.io/bezierinfo/legendre-gauss.html.
  */
-#define N_GQ 8
-        const double xGQ[N_GQ] = { 0.01985507, 0.10166676, 0.2372338,
-                0.40828268, 0.59171732, 0.7627662, 0.89833324, 0.98014493 };
-        const double wGQ[N_GQ] = { 0.05061427, 0.11119052, 0.15685332,
-                0.18134189, 0.18134189, 0.15685332, 0.11119052, 0.05061427 };
+#define N_GQ 12
+        const double xGQ[N_GQ] = {
+            0.0092196828766404, 0.0479413718147625, 0.1150486629028477,
+            0.2063410228566913, 0.3160842505009099, 0.4373832957442655,
+            0.5626167042557344, 0.6839157494990901, 0.7936589771433087,
+            0.8849513370971523, 0.9520586281852375, 0.9907803171233596};
+        const double wGQ[N_GQ] = {
+            0.0235876681932559, 0.0534696629976592, 0.0800391642716731,
+            0.1015837133615330, 0.1167462682691774, 0.1245735229067014,
+            0.1245735229067014, 0.1167462682691774, 0.1015837133615330,
+            0.0800391642716731, 0.0534696629976592, 0.0235876681932559};
 
         /*  Check the bounds of the energy transfer. */
         if (q <= 4. * ELECTRON_MASS) return 0.;
