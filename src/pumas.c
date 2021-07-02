@@ -186,11 +186,11 @@
 /**
  * Default Bremsstrahlung model
  */
-#define DEFAULT_BREMSSTRAHLUNG "KKP"
+#define DEFAULT_BREMSSTRAHLUNG "SSR"
 /**
  * Default pair production model
  */
-#define DEFAULT_PAIR_PRODUCTION "KKP"
+#define DEFAULT_PAIR_PRODUCTION "SSR"
 /**
  * Default photonuclear model
  */
