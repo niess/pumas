@@ -662,7 +662,7 @@ struct pumas_physics {
  * Version tag for the physics data format. Increment whenever the
  * structure changes.
  */
-#define PHYSICS_BINARY_DUMP_TAG 9
+#define PHYSICS_BINARY_DUMP_TAG 10
 
         /** The total byte size of the shared data. */
         int size;
@@ -709,6 +709,8 @@ struct pumas_physics {
         double * table_T;
         /** The tabulated values of the average energy loss. */
         double * table_dE;
+        /** The tabulated values of the energy loss finite difference. */
+        double * table_dE_M;
         /** The tabulated values of the energy straggling. */
         double * table_Omega;
         /** The tabulated values of the EHS number of interaction lengths. */
@@ -1042,6 +1044,9 @@ static int table_index(const struct pumas_physics * physics,
 static double table_interpolate(const struct pumas_physics * physics,
     struct pumas_context * context, const double * table_X,
     const double * table_Y, double x);
+static double table_interpolate_M(const struct pumas_physics * physics,
+    struct pumas_context * context, const double * table_X,
+    const double * table_Y, const double * table_M, double x);
 static double table_interpolate_range(const struct pumas_physics * physics,
     struct pumas_context * context, const double * table_K,
     const double * table_X, const double * table_dE, double K);
@@ -1078,6 +1083,8 @@ static inline double * table_get_X(
 static inline double * table_get_T(
     const struct pumas_physics * physics, int scheme, int material, int row);
 static inline double * table_get_dE(
+    const struct pumas_physics * physics, int scheme, int material, int row);
+static inline double * table_get_dE_M(
     const struct pumas_physics * physics, int scheme, int material, int row);
 static inline double * table_get_Omega(
     const struct pumas_physics * physics, int material, int row);
@@ -1189,6 +1196,8 @@ static void compute_time_integrals(
     struct pumas_physics * physics, int material);
 static void compute_cel_grammage_integral(
     struct pumas_physics * physics, int scheme, int material);
+static void compute_pchip_dE(
+    struct pumas_physics * physics, int scheme, int material);
 static void compute_csda_magnetic_transport(
     struct pumas_physics * physics, int imed);
 static enum pumas_return compute_coulomb_parameters(
@@ -1241,6 +1250,10 @@ static int math_svd(
 static void math_svdsol(int m, int n, double * b, double * u, double * w,
     double * v, double * work, double * x);
 static double math_rms(double a, double b);
+static double math_diff3(
+    double x0, double x1, double x2, double y1, double y2, double y3);
+static void math_pchip_initialise(
+    int n, const double * x, const double * y, double * m);
 
 /* Below is the implementation of the public API functions. See pumas.h for a
  * detailed description of each function.
@@ -1345,7 +1358,7 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         FILE * fid_mdf = NULL;
         struct mdf_buffer * mdf = NULL;
         const int pad_size = sizeof(*((*physics_ptr)->data));
-#define N_DATA_POINTERS 32
+#define N_DATA_POINTERS 33
         int size_data[N_DATA_POINTERS];
 
         /* Check the particle type. */
@@ -1478,6 +1491,10 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
                 settings.n_materials * settings.n_energies,
             pad_size);
         /* table_dE. */
+        size_data[imem++] = memory_padded_size(sizeof(double) * N_SCHEMES *
+                settings.n_materials * settings.n_energies,
+            pad_size);
+        /* table_dE_M. */
         size_data[imem++] = memory_padded_size(sizeof(double) * N_SCHEMES *
                 settings.n_materials * settings.n_energies,
             pad_size);
@@ -3573,8 +3590,9 @@ double cel_energy_loss(const struct pumas_physics * physics,
         }
 
         /* Interpolation. */
-        return table_interpolate(physics, context, table_get_K(physics, 0),
-            table_get_dE(physics, scheme, material, 0), kinetic);
+        return table_interpolate_M(physics, context, table_get_K(physics, 0),
+            table_get_dE(physics, scheme, material, 0),
+            table_get_dE_M(physics, scheme, material, 0), kinetic);
 }
 
 /**
@@ -3885,7 +3903,7 @@ double table_interpolate(const struct pumas_physics * physics,
 {
         const int i1 = table_index(physics, context, table_X, x);
         const int i2 = i1 + 1;
-        double h = (x - table_X[i1]) / (table_X[i2] - table_X[i1]);
+        const double h = (x - table_X[i1]) / (table_X[i2] - table_X[i1]);
         return table_Y[i1] + h * (table_Y[i2] - table_Y[i1]);
 }
 
@@ -3901,6 +3919,38 @@ static inline double hermite_interpolation(
         const double c3 = 2 * (p0 - p1) + m0 + m1;
 
         return p0 + t * (m0 + t * (c2 + t * c3));
+}
+
+/**
+ * Piecewise Hermite polynomial difference using a finite difference.
+ *
+ * @param Physics Handle for physics tables.
+ * @param context The simulation context.
+ * @param table_X Table of x values.
+ * @param table_Y Table of y values.
+ * @param table_M Table of dy/dx values.
+ * @param x       Point at which the interpolant is evaluated.
+ * @return The interpolated value.
+ *
+ * Compute a cubic interpolant of property Y at x given table_Y values as
+ * table_X values and the finite difference table_M. Note that table_X must be
+ * strictly monotone but not necessarily with a constant stepping. The
+ * `context` parameter is used for mapping the index of x in table_X from a
+ * memory. It can be `NULL`, though providing a `context` leads to a speed up
+ * on average for Monte-Carlo stepping.
+ * **Warning** : there is no bound check. x must be in the range of table_X.
+ */
+double table_interpolate_M(const struct pumas_physics * physics,
+    struct pumas_context * context, const double * table_X,
+    const double * table_Y, const double * table_M, double x)
+{
+        const int i1 = table_index(physics, context, table_X, x);
+        const int i2 = i1 + 1;
+        const double dX = table_X[i2] - table_X[i1];
+        const double t = (x - table_X[i1]) / dX;
+        const double m1 = table_M[i1] * dX;
+        const double m2 = (i2 > 1) ? table_M[i2] * dX : m1;
+        return hermite_interpolation(t, table_Y[i1], table_Y[i2], m1, m2);
 }
 
 /**
@@ -4311,6 +4361,24 @@ double * table_get_dE(
 {
         scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
         return physics->table_dE +
+            (scheme * physics->n_materials + material) * physics->n_energies +
+            row;
+}
+
+/**
+ * Encapsulation of the dE/dX finite difference table.
+ *
+ * @param Physics  Handle for physics tables.
+ * @param scheme   The energy loss scheme.
+ * @param material The material index.
+ * @param row      The kinetic energy row index.
+ * @return A pointer to the table element.
+ */
+double * table_get_dE_M(
+    const struct pumas_physics * physics, int scheme, int material, int row)
+{
+        scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
+        return physics->table_dE_M +
             (scheme * physics->n_materials + material) * physics->n_energies +
             row;
 }
@@ -9470,6 +9538,8 @@ void compute_cel_integrals(struct pumas_physics * physics, int material)
 {
         compute_cel_grammage_integral(physics, 0, material);
         compute_cel_grammage_integral(physics, 1, material);
+        compute_pchip_dE(physics, 0, material);
+        compute_pchip_dE(physics, 1, material);
         compute_time_integrals(physics, material);
         compute_kinetic_integral(
             physics, table_get_NI_el(physics, PUMAS_MODE_CSDA, material, 0));
@@ -9800,6 +9870,85 @@ void compute_cel_grammage_integral(
                     0.5 * (kinetic[i] - kinetic[i - 1]) * (y0 + y1);
                 y0 = y1;
         }
+}
+
+/* Evaluate the derivative at x0 using 3 neighbouring values */
+double math_diff3(
+    double x0, double x1, double x2, double y0, double y1, double y2)
+{
+        const double h1 = x1 - x0;
+        const double h2 = x2 - x0;
+        const double delta = h1 * h2 * (h2 - h1);
+        const double c1 = h2 * h2 / delta;
+        const double c2 = -h1 * h1 / delta;
+        const double c0 = -(c1 + c2);
+        return c0 * y0 + c1 * y1 + c2 * y2;
+}
+
+/** Compute the derivative coefficients for the PCHIP interpolation
+ *
+ * @param n    The number of nodes.
+ * @param x    The x values of the interpolation nodes.
+ * @param y    The y values of the interpolation nodes.
+ * @param m    The derivative coefficients.
+ *
+ * The derivative cooefficients are computed using the method of Fritsch and
+ * Butland. For boundary conditions a 3 points finite difference is used.
+ *
+ * References:
+ *  F. N. Fristch and J. Butland, SIAM J. Sci. Stat. Comput. (1984)
+ */
+void math_pchip_initialise(
+    int n, const double * x, const double * y, double * m)
+{
+        if (n == 1) {
+                m[0] = 0;
+        } else if (n == 2) {
+                const double d = (y[1] - y[0]) / (x[1] - x[0]);
+                m[0] = m[1] = d;
+        } else {
+                int i;
+                for (i = 1; i < n - 1; i++) {
+                        const double h1 = x[i] - x[i - 1];
+                        const double h2 = x[i + 1] - x[i];
+                        const double S1 = (y[i] - y[i - 1]) / h1;
+                        const double S2 = (y[i + 1] - y[i]) / h2;
+
+                        const double tmp = S1 * S2;
+                        if (tmp > 0) {
+                                const double a =
+                                    (h1 + 2 * h2) / (3 * (h1 + h2));
+                                m[i] = tmp / ((1 - a) * S1 + a * S2);
+                        } else {
+                                m[i] = 0.;
+                        }
+                }
+
+                m[0] = math_diff3(x[0], x[1], x[2], y[0], y[1], y[2]);
+                m[n - 1] = math_diff3(x[n - 1], x[n - 2], x[n - 3],
+                    y[n - 1], y[n - 2], y[n - 3]);
+        }
+}
+
+/**
+ * Compute the derivative PCHIP coefficients for the energy loss.
+ *
+ * @param Physics   Handle for physics tables.
+ *  @param scheme   The index of the simulation scheme.
+ *  @param material The index of the material to process.
+ *
+ * Between the first and second entry a linear interpolation is used instead
+ * because the function is no more monotone.
+ */
+void compute_pchip_dE(
+    struct pumas_physics * physics, int scheme, int material)
+{
+        const double * const x = table_get_K(physics, 0);
+        const double * const y = table_get_dE(physics, scheme, material, 0);
+        double * const m = table_get_dE_M(physics, scheme, material, 0);
+
+        math_pchip_initialise(physics->n_energies - 1, x + 1, y + 1, m + 1);
+        m[0] = (y[1] - y[0]) / (x[1] - x[0]);
 }
 
 /**
