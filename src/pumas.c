@@ -703,29 +703,40 @@ struct pumas_physics {
         char ** dedx_filename;
         /** The tabulated values of the kinetic energy. */
         double * table_K;
+        double * table_K_dX;
+        double * table_K_dNI_in;
+        double * table_K_dNI_el;
         /** The tabulated values of the total grammage (CSDA range). */
         double * table_X;
+        double * table_X_dK;
+        double * table_X_dT;
         /** The tabulated values of the total proper time. */
         double * table_T;
+        double * table_T_dK;
         /** The tabulated values of the average energy loss. */
         double * table_dE;
-        /** The tabulated values of the energy loss finite difference. */
-        double * table_dE_M;
+        double * table_dE_dK;
         /** The tabulated values of the energy straggling. */
         double * table_Omega;
+        double * table_Omega_dK;
         /** The tabulated values of the EHS number of interaction lengths. */
         double * table_NI_el;
+        double * table_NI_el_dK;
         /**
          * The tabulated values of the number of interaction lengths for
          * inelastic DELs.
          */
         double * table_NI_in;
+        double * table_NI_in_dK;
         /** The tabulated cross section values. */
         double * table_CS;
+        double * table_CS_dK;
         /** The tabulated cross section fractions. */
         double * table_CSf;
+        double * table_CSf_dK;
         /** The tabulated cross section normalisation. */
         double * table_CSn;
+        double * table_CSn_dK;
         /** The element wise fractional threshold for DELs. */
         double * table_Xt;
         /** The total kinetic threshold for DELs. */
@@ -735,6 +746,7 @@ struct pumas_physics {
          * the CSDA.
          */
         double * table_Li;
+        double * table_Li_dK;
         /** The last tabulated value of the ionisation energy loss. */
         double * table_a_max;
         /** The last tabulated value of the radiative energy loss. */
@@ -744,10 +756,13 @@ struct pumas_physics {
          * scattering.
          */
         double * table_Mu0;
+        double * table_Mu0_dK;
         /** The tabulated interaction lengths for DEL Coulomb events. */
         double * table_Lb;
+        double * table_Lb_dK;
         /** The tabulated multiple scattering 1st moment. */
         double * table_Ms1;
+        double * table_Ms1_dK;
         /** The number of elements in a material. */
         int * elements_in;
         /** The reference density of a material. */
@@ -1041,62 +1056,57 @@ static void table_bracket(
     const double * table, double value, int * p1, int * p2);
 static int table_index(const struct pumas_physics * physics,
     struct pumas_context * context, const double * table, double value);
-static double table_interpolate(const struct pumas_physics * physics,
-    struct pumas_context * context, const double * table_X,
-    const double * table_Y, double x);
-static double table_interpolate_M(const struct pumas_physics * physics,
+static double table_interpolate_pchip(const struct pumas_physics * physics,
     struct pumas_context * context, const double * table_X,
     const double * table_Y, const double * table_M, double x);
-static double table_interpolate_range(const struct pumas_physics * physics,
-    struct pumas_context * context, const double * table_K,
-    const double * table_X, const double * table_dE, double K);
-static double table_interpolate_kinetic(const struct pumas_physics * physics,
-    struct pumas_context * context, const double * table_X,
-    const double * table_K, const double * table_dE, double X);
-static double table_interpolate_proper_time(
-    const struct pumas_physics * physics, struct pumas_context * context,
-    const double * table_K, const double * table_T, const double * table_dE,
-    double X);
-double table_interpolate_NI(const struct pumas_physics * physics,
-    struct pumas_context * context, const double * table_K,
-    const double * table_NI, const double * table_dE, const double * table_CS,
-    double K);
-double table_interpolate_K_as_NI(const struct pumas_physics * physics,
-    struct pumas_context * context, const double * table_NI,
-    const double * table_K, const double * table_dE, const double * table_CS,
-    double NI);
-double table_interpolate_NI_el(const struct pumas_physics * physics,
-    struct pumas_context * context, const double * table_K,
-    const double * table_NI_el, const double * table_dE,
-    const double * table_Lb, double K);
-double table_interpolate_K_as_NI_el(const struct pumas_physics * physics,
-    struct pumas_context * context, const double * table_NI_el,
-    const double * table_K, const double * table_dE, const double * table_Lb,
-    double NI);
 static void table_get_msc(const struct pumas_physics * physics,
     struct pumas_context * context, int material, double kinetic, double * mu0,
     double * invlb1);
 static inline double * table_get_K(
     const struct pumas_physics * physics, int row);
+static inline double * table_get_K_dX(
+    const struct pumas_physics * physics, int scheme, int material, int row);
+static inline double * table_get_K_dNI_el(
+    const struct pumas_physics * physics, int scheme, int material, int row);
+static inline double * table_get_K_dNI_in(
+    const struct pumas_physics * physics, int material, int row);
 static inline double * table_get_X(
+    const struct pumas_physics * physics, int scheme, int material, int row);
+static inline double * table_get_X_dK(
+    const struct pumas_physics * physics, int scheme, int material, int row);
+static inline double * table_get_X_dT(
     const struct pumas_physics * physics, int scheme, int material, int row);
 static inline double * table_get_T(
     const struct pumas_physics * physics, int scheme, int material, int row);
+static inline double * table_get_T_dK(
+    const struct pumas_physics * physics, int scheme, int material, int row);
 static inline double * table_get_dE(
     const struct pumas_physics * physics, int scheme, int material, int row);
-static inline double * table_get_dE_M(
+static inline double * table_get_dE_dK(
     const struct pumas_physics * physics, int scheme, int material, int row);
 static inline double * table_get_Omega(
     const struct pumas_physics * physics, int material, int row);
+static inline double * table_get_Omega_dK(
+    const struct pumas_physics * physics, int material, int row);
 static inline double * table_get_NI_el(
+    const struct pumas_physics * physics, int scheme, int material, int row);
+static inline double * table_get_NI_el_dK(
     const struct pumas_physics * physics, int scheme, int material, int row);
 static inline double * table_get_NI_in(
     const struct pumas_physics * physics, int material, int row);
+static inline double * table_get_NI_in_dK(
+    const struct pumas_physics * physics, int material, int row);
 static inline double * table_get_CS(
+    const struct pumas_physics * physics, int material, int row);
+static inline double * table_get_CS_dK(
     const struct pumas_physics * physics, int material, int row);
 static inline double * table_get_CSf(
     const struct pumas_physics * physics, int process, int component, int row);
+static inline double * table_get_CSf_dK(
+    const struct pumas_physics * physics, int process, int component, int row);
 static inline double * table_get_CSn(
+    const struct pumas_physics * physics, int process, int element, int row);
+static inline double * table_get_CSn_dK(
     const struct pumas_physics * physics, int process, int element, int row);
 static inline double * table_get_Xt(
     const struct pumas_physics * physics, int process, int element, int row);
@@ -1108,15 +1118,23 @@ static inline double * table_get_stg(const struct pumas_physics * physics,
     int process, int element, int row, double * table);
 static inline double * table_get_Li(
     const struct pumas_physics * physics, int material, int order, int row);
+static inline double * table_get_Li_dK(
+    const struct pumas_physics * physics, int material, int order, int row);
 static inline double * table_get_a_max(
     const struct pumas_physics * physics, int material);
 static inline double * table_get_b_max(
     const struct pumas_physics * physics, int scheme, int material);
 static inline double * table_get_Mu0(
     const struct pumas_physics * physics, int material, int row);
+static inline double * table_get_Mu0_dK(
+    const struct pumas_physics * physics, int material, int row);
 static inline double * table_get_Lb(
     const struct pumas_physics * physics, int material, int row);
+static inline double * table_get_Lb_dK(
+    const struct pumas_physics * physics, int material, int row);
 static inline double * table_get_Ms1(
+    const struct pumas_physics * physics, int scheme, int material, int row);
+static inline double * table_get_Ms1_dK(
     const struct pumas_physics * physics, int scheme, int material, int row);
 static inline double * table_get_ms1(const struct pumas_physics * physics,
     int scheme, int element, int row, double * table);
@@ -1196,8 +1214,9 @@ static void compute_time_integrals(
     struct pumas_physics * physics, int material);
 static void compute_cel_grammage_integral(
     struct pumas_physics * physics, int scheme, int material);
-static void compute_pchip_dE(
-    struct pumas_physics * physics, int scheme, int material);
+static void compute_pchip_coeffs(struct pumas_physics * physics, int material);
+static void compute_pchip_integral_coeffs(
+    struct pumas_physics * physics, int material);
 static void compute_csda_magnetic_transport(
     struct pumas_physics * physics, int imed);
 static enum pumas_return compute_coulomb_parameters(
@@ -1253,7 +1272,7 @@ static double math_rms(double a, double b);
 static double math_diff3(
     double x0, double x1, double x2, double y1, double y2, double y3);
 static void math_pchip_initialise(
-    int n, const double * x, const double * y, double * m);
+    int der, int n, const double * x, const double * y, double * m);
 
 /* Below is the implementation of the public API functions. See pumas.h for a
  * detailed description of each function.
@@ -1358,7 +1377,7 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         FILE * fid_mdf = NULL;
         struct mdf_buffer * mdf = NULL;
         const int pad_size = sizeof(*((*physics_ptr)->data));
-#define N_DATA_POINTERS 33
+#define N_DATA_POINTERS 49
         int size_data[N_DATA_POINTERS];
 
         /* Check the particle type. */
@@ -1482,7 +1501,26 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         /* table_K. */
         size_data[imem++] =
             memory_padded_size(sizeof(double) * settings.n_energies, pad_size);
+        /* table_K_dX. */
+        size_data[imem++] = memory_padded_size(sizeof(double) * N_SCHEMES *
+                settings.n_materials * settings.n_energies,
+            pad_size);
+        /* table_K_dNI_in. */
+        size_data[imem++] = memory_padded_size(
+            sizeof(double) * settings.n_materials * settings.n_energies,
+            pad_size);
+        /* table_K_dNI_el. */
+        size_data[imem++] = memory_padded_size(sizeof(double) * N_SCHEMES *
+            settings.n_materials * settings.n_energies, pad_size);
         /* table_X. */
+        size_data[imem++] = memory_padded_size(sizeof(double) * N_SCHEMES *
+                settings.n_materials * settings.n_energies,
+            pad_size);
+        /* table_X_dK. */
+        size_data[imem++] = memory_padded_size(sizeof(double) * N_SCHEMES *
+                settings.n_materials * settings.n_energies,
+            pad_size);
+        /* table_X_dT. */
         size_data[imem++] = memory_padded_size(sizeof(double) * N_SCHEMES *
                 settings.n_materials * settings.n_energies,
             pad_size);
@@ -1490,22 +1528,35 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         size_data[imem++] = memory_padded_size(sizeof(double) * N_SCHEMES *
                 settings.n_materials * settings.n_energies,
             pad_size);
+        /* table_T_dK. */
+        size_data[imem++] = memory_padded_size(sizeof(double) * N_SCHEMES *
+                settings.n_materials * settings.n_energies,
+            pad_size);
         /* table_dE. */
         size_data[imem++] = memory_padded_size(sizeof(double) * N_SCHEMES *
                 settings.n_materials * settings.n_energies,
             pad_size);
-        /* table_dE_M. */
+        /* table_dE_dK. */
         size_data[imem++] = memory_padded_size(sizeof(double) * N_SCHEMES *
                 settings.n_materials * settings.n_energies,
             pad_size);
         /* table_Omega. */
         size_data[imem++] = memory_padded_size(sizeof(double) *
             settings.n_materials * settings.n_energies, pad_size);
+        /* table_Omega_dK. */
+        size_data[imem++] = memory_padded_size(sizeof(double) *
+            settings.n_materials * settings.n_energies, pad_size);
         /* table_NI_el. */
-        size_data[imem++] = memory_padded_size(
-            sizeof(double) * 2 * settings.n_materials * settings.n_energies,
-            pad_size);
+        size_data[imem++] = memory_padded_size(sizeof(double) * N_SCHEMES *
+            settings.n_materials * settings.n_energies, pad_size);
+        /* table_NI_el_dK. */
+        size_data[imem++] = memory_padded_size(sizeof(double) * N_SCHEMES *
+            settings.n_materials * settings.n_energies, pad_size);
         /* table_NI_in. */
+        size_data[imem++] = memory_padded_size(
+            sizeof(double) * settings.n_materials * settings.n_energies,
+            pad_size);
+        /* table_NI_in_dK. */
         size_data[imem++] = memory_padded_size(
             sizeof(double) * settings.n_materials * settings.n_energies,
             pad_size);
@@ -1513,11 +1564,23 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         size_data[imem++] = memory_padded_size(
             sizeof(double) * settings.n_materials * settings.n_energies,
             pad_size);
+        /* table_CS_dK. */
+        size_data[imem++] = memory_padded_size(
+            sizeof(double) * settings.n_materials * settings.n_energies,
+            pad_size);
         /* table_CSf. */
         size_data[imem++] = memory_padded_size(sizeof(double) *
                 N_DEL_PROCESSES * settings.n_components * settings.n_energies,
             pad_size);
+        /* table_CSf_dK. */
+        size_data[imem++] = memory_padded_size(sizeof(double) *
+                N_DEL_PROCESSES * settings.n_components * settings.n_energies,
+            pad_size);
         /* table_CSn. */
+        size_data[imem++] = memory_padded_size(sizeof(double) *
+                N_DEL_PROCESSES * settings.n_elements * settings.n_energies,
+            pad_size);
+        /* table_CSn_dK. */
         size_data[imem++] = memory_padded_size(sizeof(double) *
                 N_DEL_PROCESSES * settings.n_elements * settings.n_energies,
             pad_size);
@@ -1533,6 +1596,11 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
             memory_padded_size(sizeof(double) * settings.n_materials *
                     (N_LARMOR_ORDERS + 1) * settings.n_energies,
                 pad_size);
+        /* table_Li_dK. */
+        size_data[imem++] =
+            memory_padded_size(sizeof(double) * settings.n_materials *
+                    (N_LARMOR_ORDERS + 1) * settings.n_energies,
+                pad_size);
         /* table_a_max. */
         size_data[imem++] =
             memory_padded_size(sizeof(double) * settings.n_materials, pad_size);
@@ -1543,11 +1611,23 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         size_data[imem++] = memory_padded_size(
             sizeof(double) * settings.n_materials * settings.n_energies,
             pad_size);
+        /* table_Mu0_dK. */
+        size_data[imem++] = memory_padded_size(
+            sizeof(double) * settings.n_materials * settings.n_energies,
+            pad_size);
         /* table_Lb. */
         size_data[imem++] = memory_padded_size(
             sizeof(double) * settings.n_materials * settings.n_energies,
             pad_size);
+        /* table_Lb_dK. */
+        size_data[imem++] = memory_padded_size(
+            sizeof(double) * settings.n_materials * settings.n_energies,
+            pad_size);
         /* table_Ms1. */
+        size_data[imem++] = memory_padded_size(
+            sizeof(double) * (N_SCHEMES + 1) * settings.n_materials *
+            settings.n_energies, pad_size);
+        /* table_Ms1_dK. */
         size_data[imem++] = memory_padded_size(
             sizeof(double) * (N_SCHEMES + 1) * settings.n_materials *
             settings.n_energies, pad_size);
@@ -3450,9 +3530,11 @@ double cel_grammage(const struct pumas_physics * physics,
         }
 
         /* Interpolation. */
-        return table_interpolate_range(physics, context,
-            table_get_K(physics, 0), table_get_X(physics, scheme, material, 0),
-            table_get_dE(physics, scheme, material, 0), kinetic);
+        return table_interpolate_pchip(physics, context,
+            table_get_K(physics, 0),
+            table_get_X(physics, scheme, material, 0),
+            table_get_X_dK(physics, scheme, material, 0),
+            kinetic);
 }
 
 /**
@@ -3488,9 +3570,11 @@ double cel_grammage_as_time(const struct pumas_physics * physics,
         }
 
         /* Interpolation. */
-        return table_interpolate(physics, context,
+        return table_interpolate_pchip(physics, context,
             table_get_T(physics, scheme, material, 0),
-            table_get_X(physics, scheme, material, 0), time);
+            table_get_X(physics, scheme, material, 0),
+            table_get_X_dT(physics, scheme, material, 0),
+            time);
 }
 
 /**
@@ -3523,9 +3607,11 @@ double cel_proper_time(const struct pumas_physics * physics,
         }
 
         /* Interpolation. */
-        return table_interpolate_proper_time(physics, context,
-            table_get_K(physics, 0), table_get_T(physics, scheme, material, 0),
-            table_get_dE(physics, scheme, material, 0), kinetic);
+        return table_interpolate_pchip(physics, context,
+            table_get_K(physics, 0),
+            table_get_T(physics, scheme, material, 0),
+            table_get_T_dK(physics, scheme, material, 0),
+            kinetic);
 }
 
 /**
@@ -3560,9 +3646,11 @@ double cel_kinetic_energy(const struct pumas_physics * physics,
         }
 
         /* Interpolation. */
-        return table_interpolate_kinetic(physics, context,
-            table_get_X(physics, scheme, material, 0), table_get_K(physics, 0),
-            table_get_dE(physics, scheme, material, 0), grammage);
+        return table_interpolate_pchip(physics, context,
+            table_get_X(physics, scheme, material, 0),
+            table_get_K(physics, 0),
+            table_get_K_dX(physics, scheme, material, 0),
+            grammage);
 }
 
 /**
@@ -3590,9 +3678,10 @@ double cel_energy_loss(const struct pumas_physics * physics,
         }
 
         /* Interpolation. */
-        return table_interpolate_M(physics, context, table_get_K(physics, 0),
+        return table_interpolate_pchip(physics, context,
+            table_get_K(physics, 0),
             table_get_dE(physics, scheme, material, 0),
-            table_get_dE_M(physics, scheme, material, 0), kinetic);
+            table_get_dE_dK(physics, scheme, material, 0), kinetic);
 }
 
 /**
@@ -3619,8 +3708,11 @@ double cel_straggling(const struct pumas_physics * physics,
         }
 
         /* Interpolation. */
-        return table_interpolate(physics, context, table_get_K(physics, 0),
-            table_get_Omega(physics, material, 0), kinetic);
+        return table_interpolate_pchip(physics, context,
+            table_get_K(physics, 0),
+            table_get_Omega(physics, material, 0),
+            table_get_Omega_dK(physics, material, 0),
+            kinetic);
 }
 
 /**
@@ -3653,10 +3745,12 @@ double cel_magnetic_rotation(const struct pumas_physics * physics,
         }
 
         /* Interpolation. */
-        return (T[imax] - table_interpolate_proper_time(physics, context,
+        const double t = table_interpolate_pchip(physics, context,
             table_get_K(physics, 0), T,
-            table_get_dE(physics, PUMAS_MODE_CSDA, material, 0), kinetic)) *
-            factor;
+            table_get_T_dK(physics, PUMAS_MODE_CSDA, material, 0),
+            kinetic);
+
+        return (T[imax] - t) * factor;
 }
 
 /**
@@ -3680,8 +3774,11 @@ double del_cross_section(const struct pumas_physics * physics,
         }
 
         /* Interpolation. */
-        return table_interpolate(physics, context, table_get_K(physics, 0),
-            table_get_CS(physics, material, 0), kinetic);
+        return table_interpolate_pchip(physics, context,
+            table_get_K(physics, 0),
+            table_get_CS(physics, material, 0),
+            table_get_CS_dK(physics, material, 0),
+            kinetic);
 }
 
 /**
@@ -3713,10 +3810,11 @@ double del_interaction_length(const struct pumas_physics * physics,
         }
 
         /* Interpolation. */
-        return table_interpolate_NI(physics, context, table_get_K(physics, 0),
+        return table_interpolate_pchip(physics, context,
+            table_get_K(physics, 0),
             table_get_NI_in(physics, material, 0),
-            table_get_dE(physics, PUMAS_MODE_HYBRID, material, 0),
-            table_get_CS(physics, material, 0), kinetic);
+            table_get_NI_in_dK(physics, material, 0),
+            kinetic);
 }
 
 /**
@@ -3750,10 +3848,11 @@ double del_kinetic_from_interaction_length(const struct pumas_physics * physics,
         }
 
         /* Interpolation. */
-        return table_interpolate_K_as_NI(physics, context,
-            table_get_NI_in(physics, material, 0), table_get_K(physics, 0),
-            table_get_dE(physics, PUMAS_MODE_HYBRID, material, 0),
-            table_get_CS(physics, material, 0), nI);
+        return table_interpolate_pchip(physics, context,
+            table_get_NI_in(physics, material, 0),
+            table_get_K(physics, 0),
+            table_get_K_dNI_in(physics, material, 0),
+            nI);
 }
 
 /**
@@ -3785,11 +3884,11 @@ double ehs_interaction_length(const struct pumas_physics * physics,
         }
 
         /* Interpolation. */
-        return table_interpolate_NI_el(physics, context,
+        return table_interpolate_pchip(physics, context,
             table_get_K(physics, 0),
             table_get_NI_el(physics, scheme, material, 0),
-            table_get_dE(physics, scheme, material, 0),
-            table_get_Lb(physics, material, 0), kinetic);
+            table_get_NI_el_dK(physics, scheme, material, 0),
+            kinetic);
 }
 
 /**
@@ -3821,10 +3920,11 @@ double ehs_kinetic_from_interaction_length(const struct pumas_physics * physics,
         }
 
         /* Interpolation. */
-        return table_interpolate_K_as_NI_el(physics, context,
+        return table_interpolate_pchip(physics, context,
             table_get_NI_el(physics, scheme, material, 0),
-            table_get_K(physics, 0), table_get_dE(physics, scheme, material, 0),
-            table_get_Lb(physics, material, 0), nI);
+            table_get_K(physics, 0),
+            table_get_K_dNI_el(physics, scheme, material, 0),
+            nI);
 }
 
 /*
@@ -3862,6 +3962,7 @@ void table_get_msc(const struct pumas_physics * physics,
                     physics, context->mode.energy_loss, material, imax) *
                     (*table_get_K(physics, imax)) / kinetic;
         } else {
+                /* XXX Use PCHIP here */
                 const int i1 = table_index(
                     physics, context, table_get_K(physics, 0), kinetic);
                 const int i2 = i1 + 1;
@@ -3877,34 +3978,6 @@ void table_get_msc(const struct pumas_physics * physics,
                             *table_get_Ms1(physics, context->mode.energy_loss,
                                 material, i1));
         }
-}
-
-/**
- * Interpolate an arbitrary tabulated property.
- *
- * @param Physics Handle for physics tables.
- * @param context The simulation context.
- * @param table_X Table of x values.
- * @param table_Y Table of y values.
- * @param x       Point at which the interpolant is evaluated.
- * @return The interpolated value.
- *
- * Compute a linear interpolant of property Y at x given table_Y values as
- * table_X values. Note that table_X must be strictly monotone but not
- * necessarily with a constant stepping. The `context` parameter is used for
- * mapping the index of x in table_X from a memory. It can be `NULL`, though
- * providing a `context` leads to a speed up on average for Monte-Carlo
- * stepping.
- * **Warning** : there is no bound check. x must be in the range of table_X.
- */
-double table_interpolate(const struct pumas_physics * physics,
-    struct pumas_context * context, const double * table_X,
-    const double * table_Y, double x)
-{
-        const int i1 = table_index(physics, context, table_X, x);
-        const int i2 = i1 + 1;
-        const double h = (x - table_X[i1]) / (table_X[i2] - table_X[i1]);
-        return table_Y[i1] + h * (table_Y[i2] - table_Y[i1]);
 }
 
 /* Hermite polynomials interpolation using the 1st derivative.
@@ -3940,7 +4013,7 @@ static inline double hermite_interpolation(
  * on average for Monte-Carlo stepping.
  * **Warning** : there is no bound check. x must be in the range of table_X.
  */
-double table_interpolate_M(const struct pumas_physics * physics,
+double table_interpolate_pchip(const struct pumas_physics * physics,
     struct pumas_context * context, const double * table_X,
     const double * table_Y, const double * table_M, double x)
 {
@@ -3951,269 +4024,6 @@ double table_interpolate_M(const struct pumas_physics * physics,
         const double m1 = table_M[i1] * dX;
         const double m2 = (i2 > 1) ? table_M[i2] * dX : m1;
         return hermite_interpolation(t, table_Y[i1], table_Y[i2], m1, m2);
-}
-
-/**
- * Interpolate the grammage range.
- *
- * @param physics     Handle for physics tables.
- * @param context     The simulation context.
- * @param table_K     Table of kienteic energy values.
- * @param table_X     Table of grammage values.
- * @param table_dE    Table of energy loss values.
- * @param K           Kinetic energy at which the interpolant is evaluated.
- * @return The interpolated value.
- *
- * Compute a cubic (PCHIP) interpolant of the grammage given table_X values as
- * table_K values as well as the inverse of the 1st derivative, i.e. table_dE.
- */
-double table_interpolate_range(const struct pumas_physics * physics,
-    struct pumas_context * context, const double * table_K,
-    const double * table_X, const double * table_dE, double K)
-{
-        const int i0 = table_index(physics, context, table_K, K);
-        if (i0 == 0) return table_interpolate(physics, context, table_K,
-            table_X, K);
-        const int i1 = i0 + 1;
-
-        const double dK = table_K[i1] - table_K[i0];
-        const double t = (K - table_K[i0]) / dK;
-        const double p0 = table_X[i0];
-        const double p1 = table_X[i1];
-        const double m0 = dK / table_dE[i0];
-        const double m1 = dK / table_dE[i1];
-
-        return hermite_interpolation(t, p0, p1, m0, m1);
-}
-
-/**
- * Interpolate the kinetic energy for a given grammage range.
- *
- * @param physics     Handle for physics tables.
- * @param context     The simulation context.
- * @param table_X     Table of grammage values.
- * @param table_K     Table of kienteic energy values.
- * @param table_dE    Table of energy loss values.
- * @param X           Grammage range at which the interpolant is evaluated.
- * @return The interpolated value.
- *
- * Compute a cubic (PCHIP) interpolant of the energy given table_K values as
- * table_X values as well as the 1st derivative, i.e. table_dE.
- */
-double table_interpolate_kinetic(const struct pumas_physics * physics,
-    struct pumas_context * context, const double * table_X,
-    const double * table_K, const double * table_dE, double X)
-{
-        const int i0 = table_index(physics, context, table_X, X);
-        if (i0 == 0) return table_interpolate(physics, context, table_X,
-            table_K, X);
-        const int i1 = i0 + 1;
-
-        const double dX = table_X[i1] - table_X[i0];
-        const double t = (X - table_X[i0]) / dX;
-        const double p0 = table_K[i0];
-        const double p1 = table_K[i1];
-        const double m0 = dX * table_dE[i0];
-        const double m1 = dX * table_dE[i1];
-
-        return hermite_interpolation(t, p0, p1, m0, m1);
-}
-
-/**
- * Interpolate the total proper time range as function of kinetic energy.
- *
- * @param physics     Handle for physics tables.
- * @param context     The simulation context.
- * @param table_K     Table of kienteic energy values.
- * @param table_T     Table of time values.
- * @param table_dE    Table of energy loss values.
- * @param K           Kinetic energy at which the interpolant is evaluated.
- * @return The interpolated value.
- *
- * Compute a cubic (PCHIP) interpolant of the grammage given table_T values as
- * table_K values as well as the 1st derivative using table_dE.
- */
-double table_interpolate_proper_time(const struct pumas_physics * physics,
-    struct pumas_context * context, const double * table_K,
-    const double * table_T, const double * table_dE, double K)
-{
-        const int i0 = table_index(physics, context, table_K, K);
-        if (i0 == 0) return table_interpolate(physics, context, table_K,
-            table_T, K);
-        const int i1 = i0 + 1;
-
-        const double k0 = table_K[i0];
-        const double k1 = table_K[i1];
-
-        const double dK = k1 - k0;
-        const double t = (K - k0) / dK;
-        const double p0 = table_T[i0];
-        const double p1 = table_T[i1];
-        const double mass = physics->mass;
-        const double d = mass * dK;
-        const double m0 = d / (table_dE[i0] * sqrt(k0 * (k0 + 2 * mass)));
-        const double m1 = d / (table_dE[i1] * sqrt(k1 * (k1 + 2 * mass)));
-
-        return hermite_interpolation(t, p0, p1, m0, m1);
-}
-
-/**
- * Interpolate the average number of interactions as function of kinetic energy.
- *
- * @param physics     Handle for physics tables.
- * @param context     The simulation context.
- * @param table_K     Table of kienteic energy values.
- * @param table_NI    Table of interaction length values.
- * @param table_dE    Table of energy loss values.
- * @param table_CS    Table of cross-section values.
- * @param K           Kinetic energy at which the interpolant is evaluated.
- * @return The interpolated value.
- *
- * Compute a cubic (PCHIP) interpolant of the number of interactions given
- * table_NI values as table_K values as well as the 1st derivative using
- * table_dE and table_CS.
- */
-double table_interpolate_NI(const struct pumas_physics * physics,
-    struct pumas_context * context, const double * table_K,
-    const double * table_NI, const double * table_dE, const double * table_CS,
-    double K)
-{
-        const int i0 = table_index(physics, context, table_K, K);
-        if (i0 == 0) return table_interpolate(physics, context, table_K,
-            table_NI, K);
-        const int i1 = i0 + 1;
-
-        const double k0 = table_K[i0];
-        const double k1 = table_K[i1];
-        const double dK = k1 - k0;
-        const double t = (K - k0) / dK;
-        const double p0 = table_NI[i0];
-        const double p1 = table_NI[i1];
-        const double m0 = dK * table_CS[i0] / table_dE[i0];
-        const double m1 = dK * table_CS[i1] / table_dE[i1];
-
-        return hermite_interpolation(t, p0, p1, m0, m1);
-}
-
-/**
- * Interpolate the kinetic energy from the average number of interactions.
- *
- * @param physics     Handle for physics tables.
- * @param context     The simulation context.
- * @param table_NI    Table of interaction length values.
- * @param table_K     Table of kienteic energy values.
- * @param table_dE    Table of energy loss values.
- * @param table_CS    Table of cross-section values.
- * @param K           Kinetic energy at which the interpolant is evaluated.
- * @return The interpolated value.
- *
- * Compute a cubic (PCHIP) interpolant of the energy given table_K values as
- * table_NI values as well as the 1st derivative using table_dE and table_CS.
- */
-double table_interpolate_K_as_NI(const struct pumas_physics * physics,
-    struct pumas_context * context, const double * table_NI,
-    const double * table_K, const double * table_dE, const double * table_CS,
-    double NI)
-{
-        const int i0 = table_index(physics, context, table_NI, NI);
-        if (i0 == 0) return table_interpolate(physics, context, table_NI,
-            table_K, NI);
-        const int i1 = i0 + 1;
-
-        const double n0 = table_NI[i0];
-        const double n1 = table_NI[i1];
-        const double dN = n1 - n0;
-        const double t = (NI - n0) / dN;
-        const double p0 = table_K[i0];
-        const double p1 = table_K[i1];
-        const double m0 = dN * table_dE[i0] / table_CS[i0];
-        const double m1 = dN * table_dE[i1] / table_CS[i1];
-
-        return hermite_interpolation(t, p0, p1, m0, m1);
-}
-
-/**
- * Interpolate the average number of elastic int. as function of kinetic energy.
- *
- * @param physics        Handle for physics tables.
- * @param context        The simulation context.
- * @param table_K        Table of kinetic energy values.
- * @param table_NI_le    Table of elastic interaction length values.
- * @param table_dE       Table of energy loss values.
- * @param table_Lb       Table of interaction length values.
- * @param K              Kinetic energy at which the interpolant is evaluated.
- * @return The interpolated value.
- *
- * Compute a cubic (PCHIP) interpolant of the number of elastic int. given
- * table_NI_el values as table_K values as well as the 1st derivative using
- * table_dE and table_Lb.
- */
-double table_interpolate_NI_el(const struct pumas_physics * physics,
-    struct pumas_context * context, const double * table_K,
-    const double * table_NI_el, const double * table_dE,
-    const double * table_Lb, double K)
-{
-        const int i0 = table_index(physics, context, table_K, K);
-        if (i0 == 0) return table_interpolate(physics, context, table_K,
-            table_NI_el, K);
-        const int i1 = i0 + 1;
-
-        const double k0 = table_K[i0];
-        const double k1 = table_K[i1];
-        const double dK = k1 - k0;
-        const double t = (K - k0) / dK;
-        const double p0 = table_NI_el[i0];
-        const double p1 = table_NI_el[i1];
-        const double mass = physics->mass;
-        const double m0 = dK * k0 * (k0 + 2 * mass) /
-            (table_dE[i0] * table_Lb[i0]);
-        const double m1 = dK * k1 * (k1 + 2 * mass) /
-            (table_dE[i1] * table_Lb[i1]);
-
-        return hermite_interpolation(t, p0, p1, m0, m1);
-}
-
-/**
- * Interpolate the kinetic energy as function of the number of elastic int. 
- *
- * @param physics        Handle for physics tables.
- * @param context        The simulation context.
- * @param table_NI_le    Table of elastic interaction length values.
- * @param table_K        Table of kinetic energy values.
- * @param table_dE       Table of energy loss values.
- * @param table_Lb       Table of interaction length values.
- * @param NI             Int. lengths at which the interpolant is evaluated.
- * @return The interpolated value.
- *
- * Compute a cubic (PCHIP) interpolant of the number of elastic int. given
- * table_K values as table_NI_el values as well as the 1st derivative using
- * table_dE and table_Lb.
- */
-double table_interpolate_K_as_NI_el(const struct pumas_physics * physics,
-    struct pumas_context * context, const double * table_NI_el,
-    const double * table_K, const double * table_dE,
-    const double * table_Lb, double NI)
-{
-        const int i0 = table_index(physics, context, table_NI_el, NI);
-        if (i0 == 0) return table_interpolate(physics, context, table_NI_el,
-            table_K, NI);
-        const int i1 = i0 + 1;
-
-        const double n0 = table_NI_el[i0];
-        const double n1 = table_NI_el[i1];
-        const double dN = n1 - n0;
-        const double t = (NI - n0) / dN;
-        const double p0 = table_K[i0];
-        const double p1 = table_K[i1];
-        const double mass = physics->mass;
-        const double k0 = table_K[i0];
-        const double k1 = table_K[i1];
-        const double m0 = dN * (table_dE[i0] * table_Lb[i0]) /
-            (k0 * (k0 + 2 * mass));
-        const double m1 = dN * (table_dE[i1] * table_Lb[i1]) /
-            (k1 * (k1 + 2 * mass));
-
-        return hermite_interpolation(t, p0, p1, m0, m1);
 }
 
 /**
@@ -4311,6 +4121,30 @@ double * table_get_K(const struct pumas_physics * physics, int row)
         return physics->table_K + row;
 }
 
+double * table_get_K_dX(
+    const struct pumas_physics * physics, int scheme, int material, int row)
+{
+        scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
+        return physics->table_K_dX +
+            (scheme * physics->n_materials + material) * physics->n_energies +
+            row;
+}
+
+double * table_get_K_dNI_el(
+    const struct pumas_physics * physics, int scheme, int material, int row)
+{
+        scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
+        return physics->table_K_dNI_el +
+            (scheme * physics->n_materials + material) * physics->n_energies +
+            row;
+}
+
+double * table_get_K_dNI_in(
+    const struct pumas_physics * physics, int material, int row)
+{
+        return physics->table_K_dNI_in + material * physics->n_energies + row;
+}
+
 /**
  * Encapsulation of the total grammage table.
  *
@@ -4325,6 +4159,24 @@ double * table_get_X(
 {
         scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
         return physics->table_X +
+            (scheme * physics->n_materials + material) * physics->n_energies +
+            row;
+}
+
+double * table_get_X_dK(
+    const struct pumas_physics * physics, int scheme, int material, int row)
+{
+        scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
+        return physics->table_X_dK +
+            (scheme * physics->n_materials + material) * physics->n_energies +
+            row;
+}
+
+double * table_get_X_dT(
+    const struct pumas_physics * physics, int scheme, int material, int row)
+{
+        scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
+        return physics->table_X_dT +
             (scheme * physics->n_materials + material) * physics->n_energies +
             row;
 }
@@ -4347,6 +4199,15 @@ double * table_get_T(
             row;
 }
 
+double * table_get_T_dK(
+    const struct pumas_physics * physics, int scheme, int material, int row)
+{
+        scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
+        return physics->table_T_dK +
+            (scheme * physics->n_materials + material) * physics->n_energies +
+            row;
+}
+
 /**
  * Encapsulation of the dE/dX table.
  *
@@ -4365,20 +4226,11 @@ double * table_get_dE(
             row;
 }
 
-/**
- * Encapsulation of the dE/dX finite difference table.
- *
- * @param Physics  Handle for physics tables.
- * @param scheme   The energy loss scheme.
- * @param material The material index.
- * @param row      The kinetic energy row index.
- * @return A pointer to the table element.
- */
-double * table_get_dE_M(
+double * table_get_dE_dK(
     const struct pumas_physics * physics, int scheme, int material, int row)
 {
         scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
-        return physics->table_dE_M +
+        return physics->table_dE_dK +
             (scheme * physics->n_materials + material) * physics->n_energies +
             row;
 }
@@ -4395,6 +4247,12 @@ double * table_get_Omega(
     const struct pumas_physics * physics, int material, int row)
 {
         return physics->table_Omega + material * physics->n_energies + row;
+}
+
+double * table_get_Omega_dK(
+    const struct pumas_physics * physics, int material, int row)
+{
+        return physics->table_Omega_dK + material * physics->n_energies + row;
 }
 
 /**
@@ -4415,6 +4273,16 @@ double * table_get_NI_el(
             row;
 }
 
+double * table_get_NI_el_dK(
+    const struct pumas_physics * physics, int scheme, int material, int row)
+{
+        scheme = (scheme >= PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID :
+                                                   PUMAS_MODE_CSDA;
+        return physics->table_NI_el_dK +
+            (scheme * physics->n_materials + material) * physics->n_energies +
+            row;
+}
+
 /**
  * Encapsulation of the number of interaction lengths for inelastic DELs.
  *
@@ -4429,6 +4297,12 @@ double * table_get_NI_in(
         return physics->table_NI_in + material * physics->n_energies + row;
 }
 
+double * table_get_NI_in_dK(
+    const struct pumas_physics * physics, int material, int row)
+{
+        return physics->table_NI_in_dK + material * physics->n_energies + row;
+}
+
 /**
  * Encapsulation of the cross section table, for inelastic DELs.
  *
@@ -4441,6 +4315,12 @@ double * table_get_CS(
     const struct pumas_physics * physics, int material, int row)
 {
         return physics->table_CS + material * physics->n_energies + row;
+}
+
+double * table_get_CS_dK(
+    const struct pumas_physics * physics, int material, int row)
+{
+        return physics->table_CS_dK + material * physics->n_energies + row;
 }
 
 /**
@@ -4461,6 +4341,15 @@ double * table_get_CSf(
             row;
 }
 
+double * table_get_CSf_dK(
+    const struct pumas_physics * physics, int process, int component, int row)
+{
+        return physics->table_CSf_dK +
+            (process * physics->n_components + component) *
+            physics->n_energies +
+            row;
+}
+
 /**
  * Encapsulation of the cross-sections normalisation table.
  *
@@ -4474,6 +4363,14 @@ double * table_get_CSn(
     const struct pumas_physics * physics, int process, int element, int row)
 {
         return physics->table_CSn +
+            (process * physics->n_elements + element) * physics->n_energies +
+            row;
+}
+
+double * table_get_CSn_dK(
+    const struct pumas_physics * physics, int process, int element, int row)
+{
+        return physics->table_CSn_dK +
             (process * physics->n_elements + element) * physics->n_energies +
             row;
 }
@@ -4560,6 +4457,13 @@ double * table_get_Li(
             (material * N_LARMOR_ORDERS + order) * physics->n_energies + row;
 }
 
+double * table_get_Li_dK(
+    const struct pumas_physics * physics, int material, int order, int row)
+{
+        return physics->table_Li_dK +
+            (material * N_LARMOR_ORDERS + order) * physics->n_energies + row;
+}
+
 /**
  * Encapsulation of the last tabulated ionisation dE/dX.
  *
@@ -4601,6 +4505,12 @@ double * table_get_Mu0(
         return physics->table_Mu0 + material * physics->n_energies + row;
 }
 
+double * table_get_Mu0_dK(
+    const struct pumas_physics * physics, int material, int row)
+{
+        return physics->table_Mu0_dK + material * physics->n_energies + row;
+}
+
 /**
  * Encapsulation of the interaction length for EHS events.
  *
@@ -4613,6 +4523,12 @@ double * table_get_Lb(
     const struct pumas_physics * physics, int material, int row)
 {
         return physics->table_Lb + material * physics->n_energies + row;
+}
+
+double * table_get_Lb_dK(
+    const struct pumas_physics * physics, int material, int row)
+{
+        return physics->table_Lb_dK + material * physics->n_energies + row;
 }
 
 /*!
@@ -4629,6 +4545,15 @@ double * table_get_Ms1(
 {
         scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
         return physics->table_Ms1 +
+            ((scheme + 1) * physics->n_materials + material) *
+            physics->n_energies + row;
+}
+
+double * table_get_Ms1_dK(
+    const struct pumas_physics * physics, int scheme, int material, int row)
+{
+        scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
+        return physics->table_Ms1_dK +
             ((scheme + 1) * physics->n_materials + material) *
             physics->n_energies + row;
 }
@@ -9536,10 +9461,9 @@ enum pumas_return compute_composite(
  */
 void compute_cel_integrals(struct pumas_physics * physics, int material)
 {
+        compute_pchip_coeffs(physics, material);
         compute_cel_grammage_integral(physics, 0, material);
         compute_cel_grammage_integral(physics, 1, material);
-        compute_pchip_dE(physics, 0, material);
-        compute_pchip_dE(physics, 1, material);
         compute_time_integrals(physics, material);
         compute_kinetic_integral(
             physics, table_get_NI_el(physics, PUMAS_MODE_CSDA, material, 0));
@@ -9547,6 +9471,7 @@ void compute_cel_integrals(struct pumas_physics * physics, int material)
             table_get_NI_el(physics, PUMAS_MODE_HYBRID, material, 0));
         compute_kinetic_integral(
             physics, table_get_NI_in(physics, material, 0));
+        compute_pchip_integral_coeffs(physics, material);
 }
 
 /**
@@ -9887,6 +9812,7 @@ double math_diff3(
 
 /** Compute the derivative coefficients for the PCHIP interpolation
  *
+ * @param der  Flag indicating if the true derivative is known.
  * @param n    The number of nodes.
  * @param x    The x values of the interpolation nodes.
  * @param y    The y values of the interpolation nodes.
@@ -9895,21 +9821,42 @@ double math_diff3(
  * The derivative cooefficients are computed using the method of Fritsch and
  * Butland. For boundary conditions a 3 points finite difference is used.
  *
+ * Between the first and second entry a linear interpolation is used instead
+ * because the function is extrapolated.
+ *
  * References:
  *  F. N. Fristch and J. Butland, SIAM J. Sci. Stat. Comput. (1984)
  */
 void math_pchip_initialise(
-    int n, const double * x, const double * y, double * m)
+    int der, int n, const double * x, const double * y, double * m)
 {
+        if (n >= 3) {
+                /* Linear interpolation for the extrapolated bin */
+                m[0] = (y[1] - y[0]) / (x[1] - x[0]);
+                n--;
+                x++;
+                y++;
+                m++;
+        }
+
         if (n == 1) {
-                m[0] = 0;
+                if (!der) m[0] = 0;
         } else if (n == 2) {
-                const double d = (y[1] - y[0]) / (x[1] - x[0]);
-                m[0] = m[1] = d;
+                if (!der) {
+                        const double d = (y[1] - y[0]) / (x[1] - x[0]);
+                        m[0] = m[1] = d;
+                }
         } else {
                 int i;
                 for (i = 1; i < n - 1; i++) {
                         const double h1 = x[i] - x[i - 1];
+                        if (der) {
+                                const double a = m[i] / h1;
+                                const double b = m[i + 1] / h1;
+                                const double c = 2 * a + b - 3.;
+                                if (3 * a * (a + b - 2.) >= c * c) continue;
+                        }
+
                         const double h2 = x[i + 1] - x[i];
                         const double S1 = (y[i] - y[i - 1]) / h1;
                         const double S2 = (y[i + 1] - y[i]) / h2;
@@ -9924,14 +9871,16 @@ void math_pchip_initialise(
                         }
                 }
 
-                m[0] = math_diff3(x[0], x[1], x[2], y[0], y[1], y[2]);
-                m[n - 1] = math_diff3(x[n - 1], x[n - 2], x[n - 3],
-                    y[n - 1], y[n - 2], y[n - 3]);
+                if (!der) {
+                        m[0] = math_diff3(x[0], x[1], x[2], y[0], y[1], y[2]);
+                        m[n - 1] = math_diff3(x[n - 1], x[n - 2], x[n - 3],
+                            y[n - 1], y[n - 2], y[n - 3]);
+                }
         }
 }
 
 /**
- * Compute the derivative PCHIP coefficients for the energy loss.
+ * Compute the derivative PCHIP coefficients for base quantities.
  *
  * @param Physics   Handle for physics tables.
  *  @param scheme   The index of the simulation scheme.
@@ -9940,15 +9889,134 @@ void math_pchip_initialise(
  * Between the first and second entry a linear interpolation is used instead
  * because the function is no more monotone.
  */
-void compute_pchip_dE(
-    struct pumas_physics * physics, int scheme, int material)
+void compute_pchip_coeffs(
+    struct pumas_physics * physics, int material)
 {
-        const double * const x = table_get_K(physics, 0);
-        const double * const y = table_get_dE(physics, scheme, material, 0);
-        double * const m = table_get_dE_M(physics, scheme, material, 0);
+        const int n = physics->n_energies;
+        const double * const K = table_get_K(physics, 0);
 
-        math_pchip_initialise(physics->n_energies - 1, x + 1, y + 1, m + 1);
-        m[0] = (y[1] - y[0]) / (x[1] - x[0]);
+        math_pchip_initialise(0, n, K,
+            table_get_Omega(physics, material, 0),
+            table_get_Omega_dK(physics, material, 0));
+
+        math_pchip_initialise(0, n, K,
+            table_get_CS(physics, material, 0),
+            table_get_CS_dK(physics, material, 0));
+
+        math_pchip_initialise(0, n, K,
+            table_get_Mu0(physics, material, 0),
+            table_get_Mu0_dK(physics, material, 0));
+
+        math_pchip_initialise(0, n, K,
+            table_get_Lb(physics, material, 0),
+            table_get_Lb_dK(physics, material, 0));
+
+        int scheme;
+        for (scheme = PUMAS_MODE_CSDA; scheme <= PUMAS_MODE_HYBRID; scheme++) {
+                math_pchip_initialise(0, n, K,
+                    table_get_dE(physics, scheme, material, 0),
+                    table_get_dE_dK(physics, scheme, material, 0));
+
+                math_pchip_initialise(0, n, K,
+                    table_get_Ms1(physics, scheme, material, 0),
+                    table_get_Ms1_dK(physics, scheme, material, 0));
+        }
+
+        int i;
+        for (i = 0; i < N_DEL_PROCESSES; i++) {
+                math_pchip_initialise(0, n, K,
+                    table_get_CSf(physics, i, material, 0),
+                    table_get_CSf_dK(physics, i, material, 0));
+
+                math_pchip_initialise(0, n, K,
+                    table_get_CSn(physics, i, material, 0),
+                    table_get_CSn_dK(physics, i, material, 0));
+
+        }
+
+        for (i = 0; i < N_LARMOR_ORDERS + 1; i++) {
+                math_pchip_initialise(0, n, K,
+                    table_get_Li(physics, i, material, 0),
+                    table_get_Li_dK(physics, i, material, 0));
+        }
+}
+
+/**
+ * Compute the derivative PCHIP coefficients for integral quantities.
+ *
+ * @param Physics   Handle for physics tables.
+ *  @param scheme   The index of the simulation scheme.
+ *  @param material The index of the material to process.
+ *
+ * Between the first and second entry a linear interpolation is used instead
+ * because the function is no more monotone.
+ */
+void compute_pchip_integral_coeffs(
+    struct pumas_physics * physics, int material)
+{
+        const int n = physics->n_energies;
+        const double * const K = table_get_K(physics, 0);
+        const int dif = 1;
+
+        {
+                int i;
+                const double * dE =
+                    table_get_dE(physics, PUMAS_MODE_HYBRID, material, 0);
+                const double * CS =
+                    table_get_CS(physics, material, 0);
+                double * m;
+
+                m = table_get_K_dNI_in(physics, material, 0);
+                for (i = 0; i < n; i++) m[i] = dE[i] / CS[i];
+                math_pchip_initialise(
+                    dif, n, table_get_NI_in(physics, material, 0), K, m);
+
+                m = table_get_NI_in_dK(physics, material, 0);
+                m[0] = 0.;
+                for (i = 1; i < n; i++) m[i] = CS[i] / dE[i];
+                math_pchip_initialise(
+                    dif, n, K, table_get_NI_in(physics, material, 0), m);
+        }
+
+        int scheme;
+        for (scheme = PUMAS_MODE_CSDA; scheme <= PUMAS_MODE_HYBRID; scheme++) {
+                int i;
+                const double mass = physics->mass;
+                const double * dE =
+                    table_get_dE(physics, scheme, material, 0);
+                const double * Lb = table_get_Lb(physics, material, 0);
+                double * m;
+
+                m = table_get_K_dX(physics, scheme, material, 0);
+                for (i = 0; i < n; i++) m[i] = dE[i];
+                math_pchip_initialise(
+                    dif, n, table_get_X(physics, scheme, material, 0), K, m);
+
+                m = table_get_X_dK(physics, scheme, material, 0);
+                m[0] = 0.;
+                for (i = 1; i < n; i++) m[i] = 1. / dE[i];
+                math_pchip_initialise(
+                    dif, n, K, table_get_X(physics, scheme, material, 0), m);
+
+                math_pchip_initialise(0, n,
+                    table_get_T(physics, scheme, material, 0),
+                    table_get_X(physics, scheme, material, 0),
+                    table_get_X_dT(physics, scheme, material, 0));
+
+                m = table_get_T_dK(physics, scheme, material, 0);
+                m[0] = 0.;
+                for (i = 1; i < n; i++) m[i] = mass /
+                    (dE[i] * sqrt(K[i] * (K[i] + 2 * mass)));
+                math_pchip_initialise(
+                    dif, n, K, table_get_T(physics, scheme, material, 0), m);
+
+                m = table_get_NI_el_dK(physics, scheme, material, 0);
+                m[0] = 0.;
+                for (i = 1; i < n; i++) m[i] = K[i] * (K[i] + 2 * mass) /
+                    (dE[i] * Lb[i]);
+                math_pchip_initialise(dif, n, K,
+                    table_get_NI_el(physics, scheme, material, 0), m);
+        }
 }
 
 /**
