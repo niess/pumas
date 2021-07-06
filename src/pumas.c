@@ -1215,6 +1215,7 @@ static void compute_time_integrals(
 static void compute_cel_grammage_integral(
     struct pumas_physics * physics, int scheme, int material);
 static void compute_pchip_coeffs(struct pumas_physics * physics, int material);
+static void compute_pchip_elements_coeffs(struct pumas_physics * physics);
 static void compute_pchip_integral_coeffs(
     struct pumas_physics * physics, int material);
 static void compute_csda_magnetic_transport(
@@ -1812,6 +1813,11 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
                                 goto clean_and_exit;
                 }
         }
+
+        /* Compute the cubic interp. coefficients for atomic elements
+         * cross-sections
+         */
+        compute_pchip_elements_coeffs(physics);
 
 clean_and_exit:
         if (fid_mdf != NULL) fclose(fid_mdf);
@@ -6052,19 +6058,20 @@ void del_randomise_target(const struct pumas_physics * physics,
 {
         /* Interpolate the kinetic table. */
         int i1, i2;
-        double h;
+        double h, dk;
         i1 = table_index(
             physics, context, table_get_K(physics, 0), state->energy);
         if (i1 < 0) {
                 i1 = i2 = 0;
-                h = 0.;
+                h = dk = 0.;
         } else if (i1 >= physics->n_energies - 1) {
                 i1 = i2 = physics->n_energies - 1;
-                h = 0.;
+                h = dk = 0.;
         } else {
                 i2 = i1 + 1;
                 const double K1 = *table_get_K(physics, i1);
-                h = (state->energy - K1) / (*table_get_K(physics, i2) - K1);
+                dk = *table_get_K(physics, i2) - K1;
+                h = (state->energy - K1) / dk;
         }
 
         /* Randomise the target element and the DEL process. */
@@ -6078,31 +6085,24 @@ void del_randomise_target(const struct pumas_physics * physics,
                 for (ic = ic0; ic < ic0 + physics->elements_in[material];
                      ic++, component++)
                         for (ip = 0; ip < N_DEL_PROCESSES; ip++) {
-                                const double f1 =
-                                    *table_get_CSf(physics, ip, ic, i1);
-                                const double f2 =
-                                    *table_get_CSf(physics, ip, ic, i2);
-                                const double csf = (f2 - f1) * h + f1;
+                                const double * f =
+                                    table_get_CSf(physics, ip, ic, i1);
+                                const double * df =
+                                    table_get_CSf_dK(physics, ip, ic, i1);
+                                const double csf = math_pchip_interpolate(
+                                    h, f[0], f[1], df[0] * dk, df[1] * dk);
                                 if (!(zeta > csf)) {
-                                        double csn;
-                                        double csn1 = *table_get_CSn(physics,
-                                            ip, component->element, i1);
-                                        if (csn1 == 0.) {
-                                                /* Linear interpolation. */
-                                                const double csn2 =
-                                                    *table_get_CSn(physics, ip,
-                                                        component->element, i2);
-                                                csn = (csn2 - csn1) * h + csn1;
-                                        } else {
-                                                /* Log interpolation. */
-                                                csn1 = log(csn1);
-                                                const double csn2 =
-                                                    log(*table_get_CSn(physics,
-                                                        ip, component->element,
-                                                        i2));
-                                                csn = exp(
-                                                    (csn2 - csn1) * h + csn1);
-                                        }
+                                        const double * n =
+                                            table_get_CSn(physics, ip,
+                                                component->element, i1);
+                                        const double * dn =
+                                            table_get_CSn_dK(
+                                                physics, ip,
+                                                component->element, i1);
+                                        const double csn =
+                                            math_pchip_interpolate(
+                                                h, n[0], n[1], dn[0] * dk,
+                                                dn[1] * dk);
                                         info->reverse.weight = 1. / csn;
                                         goto target_found;
                                 }
@@ -6145,30 +6145,22 @@ void del_randomise_target(const struct pumas_physics * physics,
                                         info->reverse.Q) *
                                     component->fraction;
                                 s += si;
-                                const double csf1 =
-                                    *table_get_CSf(physics, ip, ic, i1);
-                                const double csf2 =
-                                    *table_get_CSf(physics, ip, ic, i2);
-                                const double csf = (csf2 - csf1) * h + csf1;
+                                const double * f =
+                                    table_get_CSf(physics, ip, ic, i1);
+                                const double * df =
+                                    table_get_CSf_dK(physics, ip, ic, i1);
+                                const double csf = math_pchip_interpolate(
+                                    h, f[0], f[1], df[0] * dk, df[1] * dk);
                                 if (!(zeta > s)) {
-                                        double csn;
-                                        double csn1 = *table_get_CSn(
-                                            physics, ip, iel, i1);
-                                        if (csn1 == 0.) {
-                                                /* Linear interpolation. */
-                                                const double csn2 =
-                                                    *table_get_CSn(
-                                                        physics, ip, iel, i2);
-                                                csn = (csn2 - csn1) * h + csn1;
-                                        } else {
-                                                /* Log interpolation. */
-                                                csn1 = log(csn1);
-                                                const double csn2 =
-                                                    log(*table_get_CSn(
-                                                        physics, ip, iel, i2));
-                                                csn = exp(
-                                                    (csn2 - csn1) * h + csn1);
-                                        }
+                                        const double * n =
+                                            table_get_CSn(physics, ip, iel, i1);
+                                        const double * dn =
+                                            table_get_CSn_dK(
+                                                physics, ip, iel, i1);
+                                        const double csn =
+                                            math_pchip_interpolate(
+                                                h, n[0], n[1], dn[0] * dk,
+                                                dn[1] * dk);
                                         info->reverse.weight =
                                             (csf - csf_last) * stot /
                                             (si * csn);
@@ -9885,7 +9877,7 @@ void math_pchip_initialise(
 }
 
 /**
- * Compute the derivative PCHIP coefficients for base quantities.
+ * Compute the derivative PCHIP coefficients for base material quantities.
  *
  * @param Physics   Handle for physics tables.
  *  @param scheme   The index of the simulation scheme.
@@ -9931,21 +9923,41 @@ void compute_pchip_coeffs(
         }
 
         int i;
-        for (i = 0; i < N_DEL_PROCESSES; i++) {
-                math_pchip_initialise(0, n, K,
-                    table_get_CSf(physics, i, material, 0),
-                    table_get_CSf_dK(physics, i, material, 0));
-
-                math_pchip_initialise(0, n, K,
-                    table_get_CSn(physics, i, material, 0),
-                    table_get_CSn_dK(physics, i, material, 0));
-
-        }
-
         for (i = 0; i < N_LARMOR_ORDERS + 1; i++) {
                 math_pchip_initialise(0, n, K,
                     table_get_Li(physics, i, material, 0),
                     table_get_Li_dK(physics, i, material, 0));
+        }
+}
+
+/**
+ * Compute the derivative PCHIP coefficients for atomic elements quantities.
+ *
+ * @param Physics   Handle for physics tables.
+ *  @param scheme   The index of the simulation scheme.
+ *
+ * Between the first and second entry a linear interpolation is used instead
+ * because the function is no more monotone.
+ */
+void compute_pchip_elements_coeffs(struct pumas_physics * physics)
+{
+        const int n = physics->n_energies;
+        const double * const K = table_get_K(physics, 0);
+
+        int i;
+        for (i = 0; i < N_DEL_PROCESSES; i++) {
+                int j;
+                for (j = 0; j < physics->n_components; j++) {
+                        math_pchip_initialise(0, n, K,
+                            table_get_CSf(physics, i, j, 0),
+                            table_get_CSf_dK(physics, i, j, 0));
+                }
+
+                for (j = 0; j < physics->n_elements; j++) {
+                        math_pchip_initialise(0, n, K,
+                            table_get_CSn(physics, i, j, 0),
+                            table_get_CSn_dK(physics, i, j, 0));
+                }
         }
 }
 
