@@ -1273,6 +1273,8 @@ static double math_diff3(
     double x0, double x1, double x2, double y1, double y2, double y3);
 static void math_pchip_initialise(
     int der, int n, const double * x, const double * y, double * m);
+static inline double math_pchip_interpolate(
+    double t, double y0, double y1, double m0, double m1);
 
 /* Below is the implementation of the public API functions. See pumas.h for a
  * detailed description of each function.
@@ -2870,14 +2872,15 @@ enum pumas_return pumas_physics_property_elastic_cutoff_angle(
         } else if (kinetic >= *table_get_K(physics, imax)) {
                 mu0 = *table_get_Mu0(physics, material, imax);
         } else {
-                const int i1 = table_index(
-                    physics, NULL, table_get_K(physics, 0), kinetic);
-                const int i2 = i1 + 1;
-                double h = (kinetic - *table_get_K(physics, i1)) /
-                    (*table_get_K(physics, i2) - *table_get_K(physics, i1));
-                mu0 = *table_get_Mu0(physics, material, i1) +
-                    h * (*table_get_Mu0(physics, material, i2) -
-                            *table_get_Mu0(physics, material, i1));
+                const double * x = table_get_K(physics, 0);
+                const int i1 = table_index(physics, NULL, x, kinetic);
+                x += i1;
+                const double * y = table_get_Mu0(physics, material, i1);
+                const double * m = table_get_Mu0_dK(physics, material, i1);
+                const double dx = x[1] - x[0];
+                const double t = (kinetic - x[0]) / dx;
+                mu0 = math_pchip_interpolate(
+                    t, y[0], y[1], m[0] * dx, m[1] * dx);
         }
 
         if (mu0 < 1E-08) {
@@ -2955,14 +2958,16 @@ enum pumas_return pumas_physics_property_multiple_scattering_length(
                 invlb1 = *table_get_Ms1(physics, scheme, material, imax) *
                     (*table_get_K(physics, imax)) / kinetic;
         } else {
-                const int i1 = table_index(
-                    physics, NULL, table_get_K(physics, 0), kinetic);
-                const int i2 = i1 + 1;
-                double h = (kinetic - *table_get_K(physics, i1)) /
-                    (*table_get_K(physics, i2) - *table_get_K(physics, i1));
-                invlb1 = *table_get_Ms1(physics, scheme, material, i1) +
-                    h * (*table_get_Ms1(physics, scheme, material, i2) -
-                            *table_get_Ms1(physics, scheme, material, i1));
+                const double * x = table_get_K(physics, 0);
+                const int i1 = table_index(physics, NULL, x, kinetic);
+                x += i1;
+                const double * y = table_get_Ms1(physics, scheme, material, i1);
+                const double * m = table_get_Ms1_dK(
+                    physics, scheme, material, i1);
+                const double dx = x[1] - x[0];
+                const double t = (kinetic - x[0]) / dx;
+                invlb1 = math_pchip_interpolate(
+                    t, y[0], y[1], m[0] * dx, m[1] * dx);
         }
         *length = (invlb1 > 0.) ? 1. / invlb1 : DBL_MAX;
 
@@ -3962,21 +3967,21 @@ void table_get_msc(const struct pumas_physics * physics,
                     physics, context->mode.energy_loss, material, imax) *
                     (*table_get_K(physics, imax)) / kinetic;
         } else {
-                /* XXX Use PCHIP here */
-                const int i1 = table_index(
-                    physics, context, table_get_K(physics, 0), kinetic);
-                const int i2 = i1 + 1;
-                double h = (kinetic - *table_get_K(physics, i1)) /
-                    (*table_get_K(physics, i2) - *table_get_K(physics, i1));
-                *mu0 = *table_get_Mu0(physics, material, i1) +
-                    h * (*table_get_Mu0(physics, material, i2) -
-                            *table_get_Mu0(physics, material, i1));
-                *invlb1 = *table_get_Ms1(
-                    physics, context->mode.energy_loss, material, i1) +
-                    h * (*table_get_Ms1(
-                        physics, context->mode.energy_loss, material, i2) -
-                            *table_get_Ms1(physics, context->mode.energy_loss,
-                                material, i1));
+                const double * x = table_get_K(physics, 0);
+                const int i1 = table_index(physics, NULL, x, kinetic);
+                x += i1;
+                const double * y0 = table_get_Mu0(physics, material, i1);
+                const double * m0 = table_get_Mu0_dK(physics, material, i1);
+                const double * y1 = table_get_Ms1(
+                    physics, context->mode.energy_loss, material, i1);
+                const double * m1 = table_get_Ms1_dK(
+                    physics, context->mode.energy_loss, material, i1);
+                const double dx = x[1] - x[0];
+                const double t = (kinetic - x[0]) / dx;
+                *mu0 = math_pchip_interpolate(
+                    t, y0[0], y0[1], m0[0] * dx, m0[1] * dx);
+                *invlb1 = math_pchip_interpolate(
+                    t, y1[0], y1[1], m1[0] * dx, m1[1] * dx);
         }
 }
 
@@ -3985,7 +3990,7 @@ void table_get_msc(const struct pumas_physics * physics,
  * Reference:
  *   https://fr.wikipedia.org/wiki/Spline_cubique_d%27Hermite
  */
-static inline double hermite_interpolation(
+double math_pchip_interpolate(
     double t, double p0, double p1, double m0, double m1)
 {
         const double c2 = -3 * (p0 - p1) - 2 * m0 - m1;
@@ -4023,7 +4028,7 @@ double table_interpolate_pchip(const struct pumas_physics * physics,
         const double t = (x - table_X[i1]) / dX;
         const double m1 = table_M[i1] * dX;
         const double m2 = (i2 > 1) ? table_M[i2] * dX : m1;
-        return hermite_interpolation(t, table_Y[i1], table_Y[i2], m1, m2);
+        return math_pchip_interpolate(t, table_Y[i1], table_Y[i2], m1, m2);
 }
 
 /**
@@ -9916,7 +9921,10 @@ void compute_pchip_coeffs(
                 math_pchip_initialise(0, n, K,
                     table_get_dE(physics, scheme, material, 0),
                     table_get_dE_dK(physics, scheme, material, 0));
+        }
 
+        for (scheme = PUMAS_MODE_VIRTUAL; scheme <= PUMAS_MODE_HYBRID;
+            scheme++) {
                 math_pchip_initialise(0, n, K,
                     table_get_Ms1(physics, scheme, material, 0),
                     table_get_Ms1_dK(physics, scheme, material, 0));
