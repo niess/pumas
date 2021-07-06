@@ -853,6 +853,8 @@ struct physics_tabulation_data {
         char * path;
         /** List of atomic elements contained in the tabulated material(s). */
         struct physics_element * elements;
+        /** Temporary work data */
+        double * work;
 };
 
 /**
@@ -1209,7 +1211,7 @@ static void compute_composite_tables(
     struct pumas_physics * physics, int material);
 static void compute_cel_integrals(struct pumas_physics * physics, int imed);
 static void compute_kinetic_integral(
-    struct pumas_physics * physics, double * table);
+    struct pumas_physics * physics, double * table, double * work);
 static void compute_time_integrals(
     struct pumas_physics * physics, int material);
 static void compute_cel_grammage_integral(
@@ -1274,6 +1276,8 @@ static double math_diff3(
     double x0, double x1, double x2, double y1, double y2, double y3);
 static void math_pchip_initialise(
     int der, int n, const double * x, const double * y, double * m);
+static void math_pchip_integrate(
+    int n, const double * x, double * y, double * d);
 static inline double math_pchip_interpolate(
     double t, double y0, double y1, double m0, double m1);
 
@@ -1856,7 +1860,8 @@ enum pumas_return pumas_physics_create(struct pumas_physics ** physics,
                 .energy = ((settings == NULL) || (settings->n_energies <= 0)) ?
                     NULL : settings->energy,
                 .overwrite = (settings == NULL) ? 0 : settings->update,
-                .outdir = p->dedx_path
+                .outdir = p->dedx_path,
+                .work = NULL
         };
         double * energy = NULL;
 
@@ -3432,7 +3437,7 @@ enum pumas_return pumas_physics_table_value(
                 }
                 const double invlb1 = *table_get_Ms1(
                     physics, scheme, material, row);
-                *value = (invlb1 > 0.) ? 1. / invlb1 : DBL_MAX;
+                *value = (invlb1 > 0.) ? 1. / invlb1 : 0.;
                 return PUMAS_RETURN_SUCCESS;
         } else {
                 return ERROR_FORMAT(PUMAS_RETURN_INDEX_ERROR,
@@ -5503,9 +5508,14 @@ void transport_limit(const struct pumas_physics * physics,
         enum pumas_event foreseen = PUMAS_EVENT_NONE;
         double kinetic_limit = 0.;
         if (scheme == PUMAS_MODE_HYBRID) {
-                const double nI = del_interaction_length(physics, context,
-                                      material, state->energy) +
-                    sgn * log(context->random(context));
+                double zeta = 0;
+                while (zeta <= 0) {
+                        zeta = context->random(context);
+                }
+
+                const double nI = del_interaction_length(
+                    physics, context, material, state->energy) +
+                    sgn * log(zeta);
                 if (nI > 0.) {
                         const double k = del_kinetic_from_interaction_length(
                             physics, context, material, nI);
@@ -9462,12 +9472,15 @@ void compute_cel_integrals(struct pumas_physics * physics, int material)
         compute_cel_grammage_integral(physics, 0, material);
         compute_cel_grammage_integral(physics, 1, material);
         compute_time_integrals(physics, material);
-        compute_kinetic_integral(
-            physics, table_get_NI_el(physics, PUMAS_MODE_CSDA, material, 0));
         compute_kinetic_integral(physics,
-            table_get_NI_el(physics, PUMAS_MODE_HYBRID, material, 0));
-        compute_kinetic_integral(
-            physics, table_get_NI_in(physics, material, 0));
+            table_get_NI_el(physics, PUMAS_MODE_CSDA, material, 0),
+            table_get_NI_el_dK(physics, PUMAS_MODE_CSDA, material, 0));
+        compute_kinetic_integral(physics,
+            table_get_NI_el(physics, PUMAS_MODE_HYBRID, material, 0),
+            table_get_NI_el_dK(physics, PUMAS_MODE_HYBRID, material, 0));
+        compute_kinetic_integral(physics,
+            table_get_NI_in(physics, material, 0),
+            table_get_NI_in_dK(physics, material, 0));
         compute_pchip_integral_coeffs(physics, material);
 }
 
@@ -9692,20 +9705,14 @@ void compute_composite_tables(struct pumas_physics * physics, int material)
  * @param table     The table column to process.
  *
  * Compute a cumulative integral of the column by integrating over the kinetic
- * energy with a linear interpolation and a trapezoidal rule.
+ * energy with a cubic interpolation.
  */
-void compute_kinetic_integral(struct pumas_physics * physics, double * table)
+void compute_kinetic_integral(
+    struct pumas_physics * physics, double * table, double * work)
 {
-        double value = 0., dv;
-        int i;
-        for (i = 1; i < physics->n_energies; i++) {
-                const double x0 = *table_get_K(physics, i - 1);
-                const double x1 = *table_get_K(physics, i);
-                dv = 0.5 * (x1 - x0) * (table[i - 1] + table[i]);
-                table[i - 1] = value;
-                value += dv;
-        }
-        table[physics->n_energies - 1] = value;
+        const int n = physics->n_energies;
+        const double * x = table_get_K(physics, 0);
+        math_pchip_integrate(n, x, table, work);
 }
 
 /**
@@ -9773,25 +9780,23 @@ void compute_time_integrals(struct pumas_physics * physics, int material)
  *  @param material The index of the material to process.
  *
  * Compute the cumulative CSDA grammage integral from the energy loss
- * using a trapezoidal rule.
+ * using a cubic interpolation.
  */
 void compute_cel_grammage_integral(
     struct pumas_physics * physics, int scheme, int material)
 {
-        const double * const kinetic = table_get_K(physics, 0);
+        double * y = table_get_X(physics, scheme, material, 0);
         const double * const dEdX = table_get_dE(physics, scheme, material, 0);
-        double * const table = table_get_X(physics, scheme, material, 0);
-
-        /* Compute the cumulative integral. */
+        const int n = physics->n_energies;
         int i;
-        table[0] = 0.;
-        double y0 = 1. / dEdX[1];
-        for (i = 1; i < physics->n_energies; i++) {
-                const double y1 = 1. / dEdX[i];
-                table[i] = table[i - 1] +
-                    0.5 * (kinetic[i] - kinetic[i - 1]) * (y0 + y1);
-                y0 = y1;
+        for (i = 1; i < n; i++) {
+                y[i] = 1 / dEdX[i];
         }
+        y[0] = 0;
+
+        const double * x = table_get_K(physics, 0);
+        double * d = table_get_X_dK(physics, scheme, material, 0);
+        math_pchip_integrate(n, x, y, d);
 }
 
 /* Evaluate the derivative at x0 using 3 neighbouring values */
@@ -9876,6 +9881,47 @@ void math_pchip_initialise(
         }
 }
 
+/** Compute a cumulative integral using PCHIP
+ *
+ * @param n    The number of nodes.
+ * @param x    The x values of the interpolation nodes.
+ * @param y    The y values of the interpolation nodes.
+ * @param d    The derivative coefficients.
+ *
+ * The derivative cooefficients are computed using `math_pchip_initialise`.
+ * The integral is updated in-place.
+ */
+void math_pchip_integrate(
+    int n, const double * x, double * y, double * d)
+{
+        math_pchip_initialise(0, n, x, y, d);
+
+        /* Linear interpolation for the first bin */
+        double I = 0.5 * (x[1] - x[0]) * (y[1] + y[0]);
+        y[0] = 0.;
+
+        /* Cubic interpolation for other bins */
+        int i;
+        for (i = 1; i < n - 1; i++) {
+                const double x0 = x[i];
+                const double x1 = x[i + 1];
+                const double dx = x1 - x0;
+                const double p0 = y[i];
+                const double p1 = y[i + 1];
+                const double m0 = d[i] * dx;
+                const double m1 = d[i + 1] * dx;
+
+                const double a0 = p0;
+                const double a1 = 0.5 * m0;
+                const double a2 = -(3 * (p0 - p1) + 2 * m0 + m1) / 3.;
+                const double a3 = 0.25 * (2 * (p0 - p1) + m0 + m1);
+
+                y[i] = I;
+                I += dx * (a0 + a1 + a2 + a3);
+        }
+        y[n - 1] = I;
+}
+
 /**
  * Compute the derivative PCHIP coefficients for base material quantities.
  *
@@ -9925,8 +9971,8 @@ void compute_pchip_coeffs(
         int i;
         for (i = 0; i < N_LARMOR_ORDERS + 1; i++) {
                 math_pchip_initialise(0, n, K,
-                    table_get_Li(physics, i, material, 0),
-                    table_get_Li_dK(physics, i, material, 0));
+                    table_get_Li(physics, material, i, 0),
+                    table_get_Li_dK(physics, material, i, 0));
         }
 }
 
@@ -9987,13 +10033,13 @@ void compute_pchip_integral_coeffs(
                 double * m;
 
                 m = table_get_K_dNI_in(physics, material, 0);
-                for (i = 0; i < n; i++) m[i] = dE[i] / CS[i];
+                for (i = 0; i < n; i++) m[i] = (CS[i] > 0) ? dE[i] / CS[i] : 0.;
                 math_pchip_initialise(
                     dif, n, table_get_NI_in(physics, material, 0), K, m);
 
                 m = table_get_NI_in_dK(physics, material, 0);
                 m[0] = 0.;
-                for (i = 1; i < n; i++) m[i] = CS[i] / dE[i];
+                for (i = 1; i < n; i++) m[i] = (dE[i] > 0) ? CS[i] / dE[i] : 0.;
                 math_pchip_initialise(
                     dif, n, K, table_get_NI_in(physics, material, 0), m);
         }
@@ -10036,6 +10082,13 @@ void compute_pchip_integral_coeffs(
                     (dE[i] * Lb[i]);
                 math_pchip_initialise(dif, n, K,
                     table_get_NI_el(physics, scheme, material, 0), m);
+
+                m = table_get_K_dNI_el(physics, scheme, material, 0);
+                m[0] = 0.;
+                for (i = 1; i < n; i++) m[i] = (dE[i] * Lb[i]) /
+                    (K[i] * (K[i] + 2 * mass));
+                math_pchip_initialise(dif, n,
+                    table_get_NI_el(physics, scheme, material, 0), K, m);
         }
 }
 
@@ -12807,18 +12860,34 @@ enum pumas_return physics_tabulate(struct pumas_physics * physics,
             physics, material, &n_shells);
 
         /* Loop on the kinetic energy values and print the table. */
-        double X = 0., dedx_last = 0.;
+        const int n = data->n_energies + 1;
+        if (data->work == NULL) {
+                data->work = allocate(
+                    n * (N_DEL_PROCESSES + 5) * sizeof(double));
+        }
+        double * elec = data->work;
+        double * delta = elec + n;
+        double * rads = delta + n;
+        double * dedx = rads + (N_DEL_PROCESSES -1) * n;
+        double * K = dedx + n;
+        double * X = K + n;
+        double * X_dK = X + n;
+
+        K[0] = 0.;
+        X[0] = 0.;
+
         int i;
         for (i = 0; i < data->n_energies; i++) {
                 /* Compute the electronic energy loss. */
-                double delta = 0.;
-                double elec = electronic_energy_loss(
+                delta[i] = 0.;
+                elec[i] = electronic_energy_loss(
                     physics->material_ZoA[material],
                     physics->material_I[material], n_shells, shells,
-                    physics->mass, data->energy[i], &delta);
+                    physics->mass, data->energy[i], delta + i);
 
-                double brad[N_DEL_PROCESSES - 1];
-                memset(brad, 0x0, sizeof(brad));
+                /* Compute radiative losses */
+                double * brad = rads + i * (N_DEL_PROCESSES - 1);
+                memset(brad, 0x0, sizeof(double) * (N_DEL_PROCESSES - 1));
                 struct tabulation_element * e;
                 int iel;
                 for (iel = 0, e = (struct tabulation_element *)data->elements;
@@ -12830,26 +12899,31 @@ enum pumas_return physics_tabulate(struct pumas_physics * physics,
                                     e->data[(N_DEL_PROCESSES - 1) * i + j];
                 }
 
-                /* Update the CDSA range. */
+                /* Update the table. */
                 const double radloss = brad[0] + brad[1] + brad[2];
-                const double dedx = radloss + elec;
-                if (i == 0)
-                        X = 0.5 * data->energy[i] / dedx;
-                else
-                        X += 0.5 * (data->energy[i] - data->energy[i - 1]) *
-                            (1. / dedx + 1. / dedx_last);
-                dedx_last = dedx;
+                dedx[i] = radloss + elec[i];
+                K[i + 1] = data->energy[i];
+                X[i + 1] = 1. / dedx[i];
+        }
 
+        /* Integrate the grammage range */
+        math_pchip_integrate(n, K, X, X_dK);
+
+        /* Dump the energy loss table */
+        for (i = 0; i < data->n_energies; i++) {
                 const double p = sqrt(
                     data->energy[i] * (data->energy[i] + 2. * physics->mass));
+                double * brad = rads + i * (N_DEL_PROCESSES - 1);
+                const double radloss = brad[0] + brad[1] + brad[2];
                 const double beta = p / (data->energy[i] + physics->mass);
                 const double MeV = 1E+03;
                 const double cmgs = 1E+04;
                 fprintf(stream, "  %.3lE %.3lE %.3lE %.3lE %.3lE %.3lE "
                                 "%.3lE %.3lE %.3lE %7.4lf %7.5lf\n",
-                    data->energy[i] * MeV, p * MeV, elec * cmgs,
+                    data->energy[i] * MeV, p * MeV, elec[i] * cmgs,
                     brad[0] * cmgs, brad[1] * cmgs, brad[2] * cmgs,
-                    radloss * cmgs, dedx * cmgs, X * MeV / cmgs, delta, beta);
+                    radloss * cmgs, dedx[i] * cmgs, X[i + 1] * MeV / cmgs,
+                    delta[i], beta);
         }
 
         /* Free, close and return. */
@@ -12875,6 +12949,9 @@ void physics_tabulation_clear(const struct pumas_physics * physics,
 {
         deallocate(data->path);
         data->path = NULL;
+
+        deallocate(data->work);
+        data->work = NULL;
 
         struct physics_element * e;
         for (e = data->elements; e != NULL;) {

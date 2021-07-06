@@ -895,17 +895,17 @@ START_TEST(test_api_property)
         pumas_physics_property_energy_loss(
             physics, PUMAS_MODE_CSDA, 0, 1E+03, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq_tol(value, 6.623E-04, 1E-07);
+        ck_assert_double_eq_tol(value, 6.610E-04, 1E-07);
 
         pumas_physics_property_energy_loss(
             physics, PUMAS_MODE_HYBRID, 0, 1E+03, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_lt(value, 6.623E-04);
+        ck_assert_double_lt(value, 6.610E-04);
 
         pumas_physics_property_energy_straggling(
             physics, 0, 1E+03, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq_tol(value, 2.355E-03, 1E-06);
+        ck_assert_double_eq_tol(value, 2.507E-03, 1E-06);
 
         pumas_physics_property_grammage(
             physics, PUMAS_MODE_CSDA, 0, 1E+00, &value);
@@ -1488,11 +1488,11 @@ START_TEST(test_api_dcs)
         /* Test the default name getter */
         const char * model;
         model = pumas_dcs_default(PUMAS_PROCESS_BREMSSTRAHLUNG);
-        ck_assert_str_eq("KKP", model);
+        ck_assert_str_eq("SSR", model);
         model = pumas_dcs_default(PUMAS_PROCESS_PHOTONUCLEAR);
         ck_assert_str_eq("DRSS", model);
         model = pumas_dcs_default(PUMAS_PROCESS_PAIR_PRODUCTION);
-        ck_assert_str_eq("KKP", model);
+        ck_assert_str_eq("SSR", model);
         model = pumas_dcs_default(-1);
         ck_assert_ptr_null(model);
 
@@ -1519,7 +1519,8 @@ START_TEST(test_api_dcs)
         /* Test the getter */
         pumas_dcs_get(PUMAS_PROCESS_BREMSSTRAHLUNG, "KKP", &dcs);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_ptr_eq(dcs_br, dcs);
+        ck_assert_ptr_nonnull(dcs);
+        ck_assert_ptr_ne(dcs_br, dcs);
 
         pumas_dcs_get(PUMAS_PROCESS_BREMSSTRAHLUNG, "ABB", &dcs);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
@@ -1528,17 +1529,16 @@ START_TEST(test_api_dcs)
 
         pumas_dcs_get(PUMAS_PROCESS_BREMSSTRAHLUNG, "SSR", &dcs);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_ptr_nonnull(dcs);
-        ck_assert_ptr_ne(dcs_br, dcs);
+        ck_assert_ptr_eq(dcs_br, dcs);
 
         pumas_dcs_get(PUMAS_PROCESS_PAIR_PRODUCTION, "KKP", &dcs);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_ptr_eq(dcs_pp, dcs);
+        ck_assert_ptr_nonnull(dcs);
+        ck_assert_ptr_ne(dcs_pp, dcs);
 
         pumas_dcs_get(PUMAS_PROCESS_PAIR_PRODUCTION, "SSR", &dcs);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_ptr_nonnull(dcs);
-        ck_assert_ptr_ne(dcs_pp, dcs);
+        ck_assert_ptr_eq(dcs_pp, dcs);
 
         pumas_dcs_get(PUMAS_PROCESS_PHOTONUCLEAR, "DRSS", &dcs);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
@@ -1584,7 +1584,7 @@ START_TEST(test_api_dcs)
             physics, PUMAS_PROCESS_BREMSSTRAHLUNG, &model, &dcs);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_ptr_eq(dcs_br, dcs);
-        ck_assert_str_eq("KKP", model);
+        ck_assert_str_eq("SSR", model);
 
         pumas_physics_dcs(
             physics, PUMAS_PROCESS_PHOTONUCLEAR, &model, &dcs);
@@ -1596,7 +1596,7 @@ START_TEST(test_api_dcs)
             physics, PUMAS_PROCESS_PAIR_PRODUCTION, &model, &dcs);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_ptr_eq(dcs_pp, dcs);
-        ck_assert_str_eq("KKP", model);
+        ck_assert_str_eq("SSR", model);
 
         pumas_physics_dcs(
             physics, PUMAS_PROCESS_BREMSSTRAHLUNG, NULL, &dcs);
@@ -2642,7 +2642,7 @@ START_TEST(test_csda_straight)
                     physics, PUMAS_MODE_CSDA, 0, k1, &X1);
                 d1 = X1 / TEST_ROCK_DENSITY;
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-                const double epsilon = 10 * FLT_EPSILON;
+                const double epsilon = 1E+03 * FLT_EPSILON;
                 ck_assert_double_eq_tol(state->distance, d - d1, epsilon);
                 ck_assert_double_eq_tol(state->grammage, X - X1, epsilon);
                 ck_assert_double_eq_tol(state->time, t0 - t1, epsilon);
@@ -4581,7 +4581,7 @@ START_TEST(test_detailed_straight)
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_le(state->distance, d - d1);
                 ck_assert_double_le(state->grammage, X - X1);
-                ck_assert_double_eq_tol(state->time / (t0 - t1), 1, 0.3);
+                ck_assert_double_gt(state->time, t0 - t1);
                 ck_assert_double_eq_tol(
                     state->weight, exp(-state->time / ctau), FLT_EPSILON);
                 ck_assert_double_eq(state->position[0], 0.);
