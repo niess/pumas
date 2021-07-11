@@ -662,7 +662,7 @@ struct pumas_physics {
  * Version tag for the physics data format. Increment whenever the
  * structure changes.
  */
-#define PHYSICS_BINARY_DUMP_TAG 10
+#define PHYSICS_BINARY_DUMP_TAG 11
 
         /** The total byte size of the shared data. */
         int size;
@@ -771,6 +771,8 @@ struct pumas_physics {
         double * material_ZoA;
         /** The mean excitation energy of a base material. */
         double * material_I;
+        /** The Sternheimer scaling ratio of a material. */
+        double * material_aS;
         /** The properties of an atomic element . */
         struct atomic_element ** element;
         /** The composition of a base material. */
@@ -1045,9 +1047,8 @@ static double coulomb_restricted_cs(double mu0, double fspin,
 static void coulomb_transport_coefficients(double mu, double fspin,
     int n_parameters, const double * screening, const long double * a,
     const long double * b, const long double * c, double * coefficient);
-static double transverse_transport_ionisation(
-    const struct pumas_physics * physics, const struct atomic_element * element,
-    double kinetic);
+static double transverse_transport_electronic(
+    double ZoA, double I, double aS, double mass, double kinetic, double nu);
 static double transverse_transport_photonuclear(
     const struct pumas_physics * physics, const struct atomic_element * element,
     double kinetic, double cutoff);
@@ -1222,11 +1223,13 @@ static void compute_pchip_integral_coeffs(
     struct pumas_physics * physics, int material);
 static void compute_csda_magnetic_transport(
     struct pumas_physics * physics, int imed);
-static enum pumas_return compute_coulomb_parameters(
+static enum pumas_return compute_scattering_parameters(
     struct pumas_physics * physics, int medium_index, int row,
     struct error_context * error_);
-static enum pumas_return compute_coulomb_soft(struct pumas_physics * physics,
+static enum pumas_return compute_msc_soft(struct pumas_physics * physics,
     int row, double ** data, struct error_context * error_);
+static double compute_msc_electronic(struct pumas_physics * physics,
+    enum pumas_mode mode, int material, int row);
 static double compute_cutoff_objective(
     const struct pumas_physics * physics, double mu, void * workspace);
 static double * compute_cel_and_del(struct pumas_physics * physics, int row);
@@ -1248,6 +1251,9 @@ static struct physics_element * tabulation_element_create(
     struct physics_tabulation_data * data, int element);
 static struct physics_element * tabulation_element_get(
     struct physics_tabulation_data * data, int element);
+static struct atomic_shell * atomic_shell_create(
+    const struct pumas_physics * physics, int material, int * n_shells_ptr,
+    double * aS_ptr);
 /**
  * Helper function for mapping an atomic element from its name.
  */
@@ -1384,7 +1390,7 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         FILE * fid_mdf = NULL;
         struct mdf_buffer * mdf = NULL;
         const int pad_size = sizeof(*((*physics_ptr)->data));
-#define N_DATA_POINTERS 49
+#define N_DATA_POINTERS 50
         int size_data[N_DATA_POINTERS];
 
         /* Check the particle type. */
@@ -1650,6 +1656,9 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         /* material_I */
         size_data[imem++] =
             memory_padded_size(sizeof(double) * settings.n_materials, pad_size);
+        /* material_aS */
+        size_data[imem++] =
+            memory_padded_size(sizeof(double) * settings.n_materials, pad_size);
         /* element. */
         const int n_dcs = (N_DEL_PROCESSES - 1) *
             (DCS_MODEL_ORDER_P + DCS_MODEL_ORDER_Q + 1 + DCS_SAMPLING_N) *
@@ -1786,9 +1795,18 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         /* Precompute the CEL integrals and the TT parameters. */
         for (imat = 0; imat < physics->n_materials - physics->n_composites;
              imat++) {
+                /* Set the scalling factor */
+                struct atomic_shell * shells = atomic_shell_create(
+                    physics, imat, NULL, physics->material_aS + imat);
+                if (shells == NULL) {
+                        ERROR_REGISTER_MEMORY();
+                        goto clean_and_exit;
+                }
+                deallocate(shells);
+
                 int ikin;
                 for (ikin = 0; ikin < physics->n_energies; ikin++) {
-                        if (compute_coulomb_parameters(physics, imat, ikin,
+                        if (compute_scattering_parameters(physics, imat, ikin,
                                 error_) != PUMAS_RETURN_SUCCESS)
                                 goto clean_and_exit;
                 }
@@ -1827,8 +1845,8 @@ clean_and_exit:
         if (fid_mdf != NULL) fclose(fid_mdf);
         deallocate(mdf);
         io_read_line(NULL, NULL, NULL, 0, error_);
-        compute_coulomb_parameters(physics, -1, -1, error_);
-        compute_coulomb_soft(physics, -1, NULL, error_);
+        compute_scattering_parameters(physics, -1, -1, error_);
+        compute_msc_soft(physics, -1, NULL, error_);
         compute_cel_and_del(physics, -1);
         compute_dcs_model(physics, NULL, NULL, error_);
         if ((error_->code != PUMAS_RETURN_SUCCESS) && (physics != NULL)) {
@@ -3325,7 +3343,7 @@ enum pumas_return pumas_physics_composite_update(struct pumas_physics * physics,
 
 clean_and_exit:
         /* Free temporary workspace and return. */
-        compute_coulomb_parameters(physics, -1, -1, error_);
+        compute_scattering_parameters(physics, -1, -1, error_);
         return ERROR_RAISE();
 }
 
@@ -7574,41 +7592,45 @@ void coulomb_transport_coefficients(double mu_, double fspin, int n_parameters,
 }
 
 /**
- * The 1st transport coefficient for multiple scattering on electronic
+ * The 1st transport cross-section for multiple scattering on electronic
  * shells.
  *
- * @param Physics Handle for physics tables.
- * @param element The target atomic element.
- * @param kinetic The projectile initiale kinetic energy.
+ * @param ZoA      The target Z over A ratio.
+ * @param I        The target mean excitation energy.
+ * @param aS       The target electronic scaling parameter.
+ * @param mass     The projectile rest mass.
+ * @param kinetic  The projectile initiale kinetic energy.
+ * @param nu       The projectile energy loss cutoff.
  * @return The inverse of the electronic 1st transport path length in kg/m^2.
  *
  * The contribution from atomic electronic shells is computed following
- * Salvat et al., NIMB316 (2013) 144-159, considering only close interactions
- * and approximating the electronic structure by a single shell of energy I
- * with occupancy Z.
+ * Salvat et al., NIMB316 (2013) 144-159, using small angle approximation for
+ * close collisions and keeping only leading term for distant ones.
  */
-double transverse_transport_ionisation(const struct pumas_physics * physics,
-    const struct atomic_element * element, double kinetic)
+double transverse_transport_electronic(double ZoA, double I, double aS,
+    double mass, double kinetic, double nu)
 {
-        /* Soft close interactions, restricted to physics->cutoff. */
-        const double momentum2 = kinetic * (kinetic + 2. * physics->mass);
-        const double E = kinetic + physics->mass;
-        const double Wmax = 2. * ELECTRON_MASS * momentum2 /
-            (physics->mass * physics->mass +
-                                ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
-        const double W0 = 2. * momentum2 / ELECTRON_MASS;
-        const double mu_max = Wmax / W0;
-        double mu3 = kinetic * physics->cutoff / W0;
-        if (mu3 > mu_max) mu3 = mu_max;
-        const double mu2 = 0.62 * element->I / W0;
-        if (mu2 >= mu3) return 0.;
-        const double a0 = 0.5 * W0 / momentum2;
-        const double a1 = -1. / Wmax;
-        const double a2 = E * E / (W0 * momentum2);
-        const double cs0 = 1.535336E-05 / element->A; /* m^2/kg/GeV. */
-        return 2. * cs0 * element->Z *
-            (0.5 * a0 * (mu3 * mu3 - mu2 * mu2) + a1 * (mu3 - mu2) +
-                   a2 * log(mu3 / mu2));
+        /* Soft close and distant interactions restricted to cutoff. */
+        const double momentum2 = kinetic * (kinetic + 2. * mass);
+        const double E = kinetic + mass;
+        const double Wr = 2. * ELECTRON_MASS * momentum2 /
+            (mass * mass + ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
+        const double Wmax = (nu > Wr) ? Wr : nu;
+
+        const double beta2 = momentum2 / (E * E);
+        const double J = log(aS * Wmax / I) - beta2 * Wmax / Wr +
+            0.25 * Wmax * Wmax / (E * E) + 1 / aS;
+
+        /* Electronic Bremsstrahlung correction. */
+        const double gamma = E / mass;
+        const double lQ = log(1. + 2. * Wr / ELECTRON_MASS);
+        const double Delta =
+            ALPHA_EM / (2 * M_PI) * (log(2. * gamma) - lQ / 3.) * lQ * lQ;
+
+        /* First transport cross-section */
+        return 2 * M_PI * ELECTRON_RADIUS * ELECTRON_RADIUS * ELECTRON_MASS *
+            ELECTRON_MASS * AVOGADRO_NUMBER * ZoA /
+            (beta2 * 1E-03 * momentum2) * (J + Delta);
 }
 
 /**
@@ -9452,7 +9474,8 @@ enum pumas_return compute_composite(
         int ikin;
         for (ikin = 0; ikin < physics->n_energies; ikin++) {
                 const enum pumas_return rc =
-                    compute_coulomb_parameters(physics, material, ikin, error_);
+                    compute_scattering_parameters(
+                        physics, material, ikin, error_);
                 if (rc != PUMAS_RETURN_SUCCESS) return rc;
         }
         compute_cel_integrals(physics, material);
@@ -10153,7 +10176,7 @@ void compute_csda_magnetic_transport(
  * updated. This routine manages a temporary workspace memory buffer. Calling
  * it with a negative *material* index causes the workspace memory to be freed.
  */
-enum pumas_return compute_coulomb_parameters(struct pumas_physics * physics,
+enum pumas_return compute_scattering_parameters(struct pumas_physics * physics,
     int material, int row, struct error_context * error_)
 {
         /* Handle the memory for the temporary workspace. */
@@ -10280,7 +10303,7 @@ enum pumas_return compute_coulomb_parameters(struct pumas_physics * physics,
                 if (material == 0) {
                         /* Precompute the per element soft scattering terms. */
                         enum pumas_return rc;
-                        if ((rc = compute_coulomb_soft(physics, row, &ms1_table,
+                        if ((rc = compute_msc_soft(physics, row, &ms1_table,
                                  error_)) != PUMAS_RETURN_SUCCESS)
                                 return rc;
                 }
@@ -10309,6 +10332,12 @@ enum pumas_return compute_coulomb_parameters(struct pumas_physics * physics,
                             PUMAS_MODE_HYBRID, iel, row, ms1_table) *
                             component->fraction;
                 }
+
+                invlb1_csda += compute_msc_electronic(
+                    physics, PUMAS_MODE_CSDA, material, row);
+                invlb1_hybrid += compute_msc_electronic(
+                    physics, PUMAS_MODE_HYBRID, material, row);
+
                 *table_get_Ms1(physics, PUMAS_MODE_VIRTUAL, material, row) =
                     invlb1;
                 *table_get_Ms1(physics, PUMAS_MODE_CSDA, material, row) =
@@ -10386,7 +10415,7 @@ enum pumas_return compute_coulomb_parameters(struct pumas_physics * physics,
  * **Note** This routine handles a static dynamically allocated table. If the
  * *row* index is negative the table is freed.
  */
-enum pumas_return compute_coulomb_soft(struct pumas_physics * physics, int row,
+enum pumas_return compute_msc_soft(struct pumas_physics * physics, int row,
     double ** data, struct error_context * error_)
 {
         static double * ms1_table = NULL;
@@ -10412,12 +10441,6 @@ enum pumas_return compute_coulomb_soft(struct pumas_physics * physics, int row,
                 struct atomic_element * element = physics->element[iel];
                 double invlb1_csda = 0., invlb1_hybrid = 0.;
 
-                /* Electron shells contribution to the transverse transport. */
-                const double invlb1_inel =
-                    transverse_transport_ionisation(physics, element, kinetic);
-                invlb1_csda += invlb1_inel;
-                invlb1_hybrid += invlb1_inel;
-
                 /* Photonuclear contribution to the transverse transport. */
                 invlb1_csda += transverse_transport_photonuclear(
                     physics, element, kinetic, 1.);
@@ -10434,6 +10457,26 @@ enum pumas_return compute_coulomb_soft(struct pumas_physics * physics, int row,
 
         *data = ms1_table;
         return PUMAS_RETURN_SUCCESS;
+}
+
+/**
+ * Tabulate the electronic multiple scattering for a material.
+ *
+ * @param Physics   Handle for physics tables.
+ * @param mode      The energy loss mode.
+ * @param material  The material index.
+ * @param row       The row index for the kinetic value.
+ * @return The computed value.
+ */
+double compute_msc_electronic(struct pumas_physics * physics,
+    enum pumas_mode mode, int material, int row)
+{
+        const double kinetic = *table_get_K(physics, row);
+        const double nu = (mode == PUMAS_MODE_CSDA) ?
+            kinetic : physics->cutoff * kinetic;
+        return transverse_transport_electronic(
+            physics->material_ZoA[material], physics->material_I[material],
+            physics->material_aS[material], physics->mass, kinetic, nu);
 }
 
 /**
@@ -11332,8 +11375,7 @@ double polar_photonuclear(const struct pumas_physics * physics,
  * @return The polar parameters as 0.5 * (1 - cos_theta).
  *
  * The polar angle is set from energy-momentum conservation assuming that the
- * electron is initially at rest. See for example appendix A of Fernandez-Varea
- * et al., NIMB 229 (2005) 185-218.
+ * electron is initially at rest. See for example Salvat (2013), NIMB 316.
  */
 double polar_ionisation(const struct pumas_physics * physics,
     struct pumas_context * context, double ki, double kf)
@@ -11342,11 +11384,14 @@ double polar_ionisation(const struct pumas_physics * physics,
                 const double tmp = ki;
                 ki = kf, kf = tmp;
         }
-        const double p02 = ki * (ki + 2. * physics->mass);
-        const double p12 = kf * (kf + 2. * physics->mass);
-        const double ke = ki - kf;
-        const double pe2 = ke * (ke + 2. * ELECTRON_MASS);
-        return 0.5 * (1. - 0.5 * (p02 + p12 - pe2) / sqrt(p02 * p12));
+
+        const double nu = ki - kf;
+        const double p2 = ki * (ki + 2 * physics->mass);
+        const double E = ki + physics->mass;
+        const double c = (p2 - nu * (E + ELECTRON_MASS)) /
+            sqrt(p2 * (p2 + nu * nu - 2 * nu * E));
+
+        return 0.5 * (1. - c);
 }
 
 /*
@@ -12323,7 +12368,7 @@ struct atomic_shell {
  * Oscillators strength and level are scaled in order to match the Mean
  * Excitation Energy, I.
  */
-static void atomic_shell_normalise(int n_shells, struct atomic_shell * shells,
+static double atomic_shell_normalise(int n_shells, struct atomic_shell * shells,
     double ZoA, double I, double density)
 {
         double ftot = 0., lnI = 0.;
@@ -12337,12 +12382,15 @@ static void atomic_shell_normalise(int n_shells, struct atomic_shell * shells,
         lnI *= ftot;
 
         const double wp = 28.816 * sqrt(ZoA * density * 1E-03);
-        const double r = I * 1E+09 / (exp(lnI) * wp);
+        const double aS = I * 1E+09 / exp(lnI);
+        const double r = aS / wp;
 
         for (i = 0, shell = shells; i < n_shells; i++, shell++) {
                 shell->f *= ftot;
                 shell->E *= r;
         }
+
+        return aS;
 }
 
 static int atomic_shell_getn1(double Z, int * i0)
@@ -12444,8 +12492,9 @@ static struct atomic_shell * atomic_shell_unpack(int n_elements,
  *     U. Fano, Ann. Rev. Nucl. Sci. 13, 1 (1963)
  *     D. Liljequist, J. Phys. D: Appl. Phys. 16 1567 (1983)
  */
-static struct atomic_shell * atomic_shell_create(
-    const struct pumas_physics * physics, int material, int * n_shells_ptr)
+struct atomic_shell * atomic_shell_create(
+    const struct pumas_physics * physics, int material, int * n_shells_ptr,
+    double * aS_ptr)
 {
         int n_shells = 0;
         int i;
@@ -12456,7 +12505,7 @@ static struct atomic_shell * atomic_shell_create(
                     physics->element[c->element];
                 n_shells += atomic_shell_getn(e->Z, e->A);
         }
-        *n_shells_ptr = n_shells;
+        if (n_shells_ptr != NULL) *n_shells_ptr = n_shells;
 
         struct atomic_shell * shells = allocate(n_shells * sizeof(*shells));
 
@@ -12471,9 +12520,11 @@ static struct atomic_shell * atomic_shell_create(
                 is += atomic_shell_copyweight(e->Z, e->A, shells + is, wi);
         }
 
-        atomic_shell_normalise(n_shells, shells,
+        const double aS = atomic_shell_normalise(n_shells, shells,
             physics->material_ZoA[material], physics->material_I[material],
             physics->material_density[material]);
+
+        if (aS_ptr != NULL) * aS_ptr = aS;
 
         return shells;
 }
@@ -12857,7 +12908,7 @@ enum pumas_return physics_tabulate(struct pumas_physics * physics,
         /* Build electronic shells by merging element's one */
         int n_shells = 0;
         struct atomic_shell * shells = atomic_shell_create(
-            physics, material, &n_shells);
+            physics, material, &n_shells, NULL);
 
         /* Loop on the kinetic energy values and print the table. */
         const int n = data->n_energies + 1;

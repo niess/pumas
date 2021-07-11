@@ -965,7 +965,7 @@ START_TEST(test_api_property)
         pumas_physics_property_multiple_scattering_length(
             physics, PUMAS_MODE_HYBRID, 0, 1E+00, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq_tol(2.382E+06, value, 1E+03);
+        ck_assert_double_eq_tol(2.368E+06, value, 1E+03);
 
         /* Check overflows */
         double vmax, emax;
@@ -1189,7 +1189,7 @@ START_TEST(test_api_table)
         pumas_physics_table_value(physics,
             PUMAS_PROPERTY_MULTIPLE_SCATTERING_LENGTH, 0, 0, 17, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq_tol(1.737E+03, value, 1.);
+        ck_assert_double_eq_tol(1.715E+03, value, 1.);
 
         /* Check unsuported properties  */
         pumas_physics_table_index(
