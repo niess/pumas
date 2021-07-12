@@ -930,6 +930,8 @@ static double dcs_pair_production(const struct pumas_physics * physics,
 static double dcs_photonuclear(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double q);
 static inline int dcs_photonuclear_check(double m, double K, double q);
+static double dcs_photonuclear_transport(const struct pumas_physics * physics,
+    const struct atomic_element * element, double K, double cutoff);
 static double dcs_ionisation(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double q);
 static double dcs_ionisation_integrate(const struct pumas_physics * physics,
@@ -1049,9 +1051,6 @@ static void coulomb_transport_coefficients(double mu, double fspin,
     const long double * b, const long double * c, double * coefficient);
 static double transverse_transport_electronic(
     double ZoA, double I, double aS, double mass, double kinetic, double nu);
-static double transverse_transport_photonuclear(
-    const struct pumas_physics * physics, const struct atomic_element * element,
-    double kinetic, double cutoff);
 /**
  * Routines for handling tables: interpolation and utility accessors.
  */
@@ -7633,67 +7632,6 @@ double transverse_transport_electronic(double ZoA, double I, double aS,
             (beta2 * 1E-03 * momentum2) * (J + Delta);
 }
 
-/**
- * The 1st transport coefficient for multiple scattering in soft photonuclear
- * events.
- *
- * @param Physics Handle for physics tables.
- * @param element The target atomic element.
- * @param kinetic The projectile initial kinetic energy.
- * @param cutoff  The integration cutoff for CEL.
- * @return The inverse of the photonuclear 1st transport path length in kg/m^2.
- *
- * The doubly differential cross section is computed assuming a Q^2 dependency
- * as given by GEANT4 Physics Reference Manual and further approximating 1-nu
- * as 1. Following: Q^2 = mu*p^2, and the integration over mu can be done
- * analyticaly. The integration over nu is done numericaly with a Gaussian
- * quadrature.
- */
-double transverse_transport_photonuclear(const struct pumas_physics * physics,
-    const struct atomic_element * element, double kinetic, double cutoff)
-{
-        /* Integration over the kinetic transfer, q, done with a log sampling.
-         */
-        const double E = kinetic + physics->mass;
-        double x0 = log(1E-06);
-        double x1 = 0.;
-        math_gauss_quad(100, &x0, &x1); /* Initialisation. */
-
-        double xi, wi, lbipn = 0.;
-        while (math_gauss_quad(0, &xi, &wi) == 0) { /* Stepping. */
-                const double nu = cutoff * exp(xi);
-                const double q = nu * kinetic;
-
-                /* Analytical integration over mu. */
-                const double m02 = 0.4;
-                const double q2 = q * q;
-                const double tmax = 1.876544 * q;
-                const double tmin =
-                    q2 * physics->mass * physics->mass / (E * (E - q));
-                const double b1 = 1. / (1. - q2 / m02);
-                const double c1 = 1. / (1. - m02 / q2);
-                double L1 = b1 * log((q2 + tmax) / (q2 + tmin));
-                double L2 = c1 * log((m02 + tmax) / (m02 + tmin));
-                const double I0 = log(tmax / tmin) - L1 - L2;
-                L1 *= q2;
-                L2 *= m02;
-                const double I1 = L1 + L2;
-                L1 *= q2;
-                L2 *= m02;
-                const double I2 =
-                    (tmax - tmin) * (b1 * q2 + c1 * m02) - L1 - L2;
-                const double ratio =
-                    (I1 * tmax - I2) / ((I0 * tmax - I1) * kinetic *
-                                           (kinetic + 2. * physics->mass));
-
-                /* Update the double integral value.  */
-                lbipn += ratio * nu *
-                    dcs_photonuclear(physics, element, kinetic, nu * kinetic) *
-                    wi;
-        }
-        return 2. * lbipn;
-}
-
 /* Low level routine: helper function for recording a MC state. */
 /**
  * Register a Monte-Carlo state.
@@ -10440,9 +10378,9 @@ enum pumas_return compute_msc_soft(struct pumas_physics * physics, int row,
                 double invlb1_csda = 0., invlb1_hybrid = 0.;
 
                 /* Photonuclear contribution to the transverse transport. */
-                invlb1_csda += transverse_transport_photonuclear(
+                invlb1_csda += dcs_photonuclear_transport(
                     physics, element, kinetic, 1.);
-                invlb1_hybrid += transverse_transport_photonuclear(
+                invlb1_hybrid += dcs_photonuclear_transport(
                     physics, element, kinetic, physics->cutoff);
 
                 *table_get_ms1(
@@ -10642,7 +10580,6 @@ once. */
  * Compute integrals of DCSs.
  *
  * @param Physics Handle for physics tables.
- * @param forward The MC flow direction.
  * @param mode    Flag to select the integration mode.
  * @param element The target atomic element.
  * @param kinetic The initial or final kinetic energy.
@@ -14094,7 +14031,7 @@ static double dcs_photonuclear_d2_DRSS(
 static double dcs_photonuclear_d2_BM(
     double Z, double A, double ml, double K, double q, double Q2)
 {
-        const double cf = 2.6056342605319227E-35;
+        const double cf = 4 * M_PI * ALPHA_EM * ALPHA_EM * HBAR_C * HBAR_C;
         const double M = 0.5 * (PROTON_MASS + NEUTRON_MASS);
         const double E = K + ml;
         const double y = q / E;
@@ -14119,6 +14056,7 @@ typedef double dcs_photonuclear_d2_t(
 /**
  * The photonuclear differential cross section by integration over Q2.
  *
+ * @param mode    Integration mode (see below).
  * @param Z       The charge number of the target atom.
  * @param A       The mass number of the target atom.
  * @param ml      The projectile rest mass, in GeV
@@ -14129,9 +14067,12 @@ typedef double dcs_photonuclear_d2_t(
  *
  * The photonuclear differential cross-section is computed by integration over
  * Q2 of the doubly differential cross-section using a Gaussian quadrature.
+ *
+ * If mode is `0` then the DCS is computed. Else the partial first transport
+ * cross-section is computed.
  */
-inline static double dcs_photonuclear_integrated(double Z, double A, double ml,
-    double K, double q, dcs_photonuclear_d2_t * ddcs)
+inline static double dcs_photonuclear_integrated(int mode, double Z, double A,
+    double ml, double K, double q, dcs_photonuclear_d2_t * ddcs)
 {
         /* Check inputs */
         if ((Z <= 0) || (A <= 0) || (ml <= 0) || (K <= 0))
@@ -14173,12 +14114,32 @@ inline static double dcs_photonuclear_integrated(double Z, double A, double ml,
          * a Gaussian quadrature. Note that 9 points are enough to get a
          * better than 0.1 % accuracy.
          */
+        double a_mu = 1., b_mu = 0;
+        if (mode) {
+                const double p = sqrt(K * (K + 2 * ml));
+                const double E1 = E - q;
+                const double eps = ml / E1;
+                const double p1 = E1 * sqrt((1. + eps) * (1. - eps));
+                const double p2 = p * p1;
+                double tmp = p2 + ml * ml - E * E1;
+                if (fabs(tmp) <= 10 * FLT_EPSILON * p2) tmp = 0.;
+                a_mu = 0.5 * tmp / p2;
+                b_mu = 0.25 / p2;
+        }
+
         double ds = 0.;
         int i;
         for (i = 0; i < N_GQ; i++) {
                 const double Q2 = exp(pQ2c + 0.5 * dpQ2 * xGQ[i]);
-                const double tmp = ddcs(Z, A, ml, K, q, Q2);
-                if (tmp > 0.) ds += tmp * Q2 * wGQ[i];
+                double tmp = ddcs(Z, A, ml, K, q, Q2);
+                if (tmp <= 0.) continue;
+                if (mode) {
+                        double mu = a_mu + b_mu * Q2;
+                        if (mu < 0.) mu = 0.;
+                        else if (mu > 1.) mu = 1.;
+                        tmp *= mu;
+                }
+                ds += tmp * Q2 * wGQ[i];
         }
 
         if (ds < 0.) ds = 0.;
@@ -14203,11 +14164,11 @@ inline static double dcs_photonuclear_integrated(double Z, double A, double ml,
  * References:
  *      Dutta et al., Phys.Rev. D63 (2001) 094020 [arXiv:hep-ph/0012350].
  */
-static double dcs_photonuclear_DRSS(double Z, double A, double m,
+double dcs_photonuclear_DRSS(double Z, double A, double m,
     double K, double q)
 {
         return dcs_photonuclear_integrated(
-            Z, A, m, K, q, &dcs_photonuclear_d2_DRSS);
+            0, Z, A, m, K, q, &dcs_photonuclear_d2_DRSS);
 }
 
 /**
@@ -14228,7 +14189,61 @@ static double dcs_photonuclear_BM(
     double Z, double A, double m, double K, double q)
 {
         return dcs_photonuclear_integrated(
-            Z, A, m, K, q, &dcs_photonuclear_d2_BM);
+            0, Z, A, m, K, q, &dcs_photonuclear_d2_BM);
+}
+
+/**
+ * Integrate the photonuclear transport.
+ *
+ * @param Z       The charge number of the target atom.
+ * @param A       The mass number of the target atom.
+ * @param ml      The projectile rest mass, in GeV
+ * @param kinetic The projectile initial kinetic energy.
+ * @param qcut    The cut on the kinetic energy lost to the photon.
+ * @param ddcs    The doubly differential cross-section.
+ * @return The corresponding value of the transport DCS, in m^2 / kg.
+ */
+static double dcs_photonuclear_transport_integrate(double Z, double A,
+    double ml, double kinetic, double qcut, dcs_photonuclear_d2_t * ddcs)
+{
+        /* Set the integration boundaries */
+        const double M = 0.5 * (NEUTRON_MASS + PROTON_MASS);
+        const double mpi = 0.13957018;
+        const double qmin = mpi + 0.5 * mpi * mpi / M;
+        double qmax = kinetic + ml - 0.5 * (M + ml * ml / M);
+        if (qcut < qmax) qmax = qcut;
+        if (qmin >= qmax) return 0.;
+
+        /* We integrate over the recoil energy using a logarithmic sampling. */
+        const int nint = 180;
+        double dcsint = 0.;
+        double x0 = log(qmin), x1 = log(qmax);
+        math_gauss_quad(nint, &x0, &x1); /* Initialisation. */
+
+        double xi, wi;
+        while (math_gauss_quad(0, &xi, &wi) == 0) { /* Iterations. */
+                const double qi = exp(xi);
+                double y = dcs_photonuclear_integrated(
+                    1, Z, A, ml, kinetic, qi, ddcs);
+                dcsint += y * qi * wi;
+        }
+
+        return 2 * AVOGADRO_NUMBER / (A * 1E-03) * dcsint;
+}
+
+/**
+ * Wrapper for photonuclear transport integral.
+ */
+double dcs_photonuclear_transport(const struct pumas_physics * physics,
+    const struct atomic_element * element, double K, double cutoff)
+{
+        dcs_photonuclear_d2_t * ddcs = &dcs_photonuclear_d2_DRSS;
+        if (physics->dcs_photonuclear == &dcs_photonuclear_BM) {
+                ddcs = &dcs_photonuclear_d2_BM;
+        }
+
+        return dcs_photonuclear_transport_integrate(element->Z, element->A,
+            physics->mass, K, K * cutoff, ddcs);
 }
 
 /**
