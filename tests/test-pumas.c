@@ -3587,7 +3587,7 @@ START_TEST(test_hybrid_straight)
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_le(state->distance, d - d1);
                 ck_assert_double_le(state->grammage, X - X1);
-                ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
+                ck_assert_double_ge(state->time, t0 - t1 - FLT_EPSILON);
                 ck_assert_double_eq_tol(
                     state->weight, exp(-state->time / ctau), FLT_EPSILON);
                 ck_assert_double_eq(state->position[0], 0.);

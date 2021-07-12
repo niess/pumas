@@ -10321,8 +10321,7 @@ enum pumas_return compute_scattering_parameters(struct pumas_physics * physics,
                             data->b, data->c, G);
                         double d = 1. / (data->fCM[0] * (1. + data->fCM[1]));
                         d *= d;
-                        invlb1 += data->normalisation * d * G[1] *
-                            component->fraction;
+                        invlb1 += data->normalisation * d * G[1];
 
                         /* Other precomputed soft scattering terms. */
                         const int iel = component->element;
@@ -10361,8 +10360,7 @@ enum pumas_return compute_scattering_parameters(struct pumas_physics * physics,
                             data->b, data->c, G);
                         double d = 1. / (data->fCM[0] * (1. + data->fCM[1]));
                         d *= d;
-                        invlb1 += data->normalisation * d * G[1] *
-                            component->fraction;
+                        invlb1 += data->normalisation * d * G[1];
                 }
 
                 /* Then, let's loop on the base material components and add
@@ -14056,7 +14054,7 @@ static inline double dcs_photonuclear_f2a_BM(
 static double dcs_photonuclear_d2_DRSS(
     double Z, double A, double ml, double K, double q, double Q2)
 {
-        const double cf = 2.6056342605319227E-35;
+        const double cf = 4 * M_PI * ALPHA_EM * ALPHA_EM * HBAR_C * HBAR_C;
         const double M = 0.5 * (PROTON_MASS + NEUTRON_MASS);
         const double E = K + ml;
         const double y = q / E;
@@ -14179,7 +14177,8 @@ inline static double dcs_photonuclear_integrated(double Z, double A, double ml,
         int i;
         for (i = 0; i < N_GQ; i++) {
                 const double Q2 = exp(pQ2c + 0.5 * dpQ2 * xGQ[i]);
-                ds += ddcs(Z, A, ml, K, q, Q2) * Q2 * wGQ[i];
+                const double tmp = ddcs(Z, A, ml, K, q, Q2);
+                if (tmp > 0.) ds += tmp * Q2 * wGQ[i];
         }
 
         if (ds < 0.) ds = 0.;
