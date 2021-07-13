@@ -173,6 +173,10 @@
  * The neutron mass in GeV/c^2.
  */
 #define NEUTRON_MASS 0.939565
+/**
+ * The pion mass in GeV/c^2.
+ */
+#define PION_MASS 0.13957018
 #ifndef M_PI
 /**
  * Define pi, if unknown.
@@ -277,7 +281,13 @@ typedef double(dcs_function_t)(const struct pumas_physics * physics,
  * Handle for a polar angle sampling function.
  */
 typedef double(polar_function_t)(const struct pumas_physics * physics,
-    struct pumas_context * context, double ki, double kf);
+    struct pumas_context * context, const struct atomic_element * element,
+    double ki, double kf);
+/**
+ * Generic doubly differential cross-section.
+ */
+typedef double ddcs_t(
+    double Z, double A, double m, double K, double q, double Q2);
 
 /* A collection of low level flags. */
 /**
@@ -930,6 +940,8 @@ static double dcs_pair_production(const struct pumas_physics * physics,
 static double dcs_photonuclear(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double q);
 static inline int dcs_photonuclear_check(double m, double K, double q);
+static inline ddcs_t * dcs_photonuclear_ddcs(
+    const struct pumas_physics * physics);
 static double dcs_photonuclear_transport(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double cutoff);
 static double dcs_ionisation(const struct pumas_physics * physics,
@@ -951,13 +963,17 @@ static void dcs_model_fit(int m, int n, const double * x, const double * y,
  */
 static inline polar_function_t * polar_get(int process);
 static double polar_bremsstrahlung(const struct pumas_physics * physics,
-    struct pumas_context * context, double ki, double kf);
+    struct pumas_context * context, const struct atomic_element * element,
+    double ki, double kf);
 static double polar_pair_production(const struct pumas_physics * physics,
-    struct pumas_context * context, double ki, double kf);
+    struct pumas_context * context, const struct atomic_element * element,
+    double ki, double kf);
 static double polar_photonuclear(const struct pumas_physics * physics,
-    struct pumas_context * context, double ki, double kf);
+    struct pumas_context * context, const struct atomic_element * element,
+    double ki, double kf);
 static double polar_ionisation(const struct pumas_physics * physics,
-    struct pumas_context * context, double ki, double kf);
+    struct pumas_context * context, const struct atomic_element * element,
+    double ki, double kf);
 /**
  * Low level routines for the propagation in matter.
  */
@@ -996,10 +1012,12 @@ static void transport_do_ehs(const struct pumas_physics * physics,
  */
 static polar_function_t * del_randomise_forward(
     const struct pumas_physics * physics, struct pumas_context * context,
-    struct pumas_state * state, int material, int * process);
+    struct pumas_state * state, int material, int * process,
+    const struct atomic_element ** element);
 static polar_function_t * del_randomise_reverse(
     const struct pumas_physics * physics, struct pumas_context * context,
-    struct pumas_state * state, int material, int * process);
+    struct pumas_state * state, int material, int * process,
+    const struct atomic_element ** element);
 static void del_randomise_power_law(struct pumas_context * context,
     double alpha, double xmin, double xmax, double * p_r, double * p_w);
 static void del_randomise_ziggurat(const struct pumas_physics * physics,
@@ -1271,6 +1289,11 @@ static int math_find_root(
     const struct pumas_physics * physics, double xa, double xb,
     const double * fa_p, const double * fb_p, double xtol, double rtol,
     int iter, void * params, double * x0);
+static int math_find_minimum(
+    double (*f)(const struct pumas_physics * physics, double x, void * params),
+    const struct pumas_physics * physics, double xa, double xc,
+    const double * fa_p, const double * fc_p, double tol, int max_iter,
+    void * params, double * x0, double * f0);
 static int math_gauss_quad(int n, double * p1, double * p2);
 static void math_gauss_quad_coefficients(
     int n, const double ** xGQ, const double ** wGQ);
@@ -5596,15 +5619,16 @@ void transport_do_del(const struct pumas_physics * physics,
         double ki, kf;
         int process = -1;
         polar_function_t * polar_func;
+        const struct atomic_element * element = NULL;
         if (context->mode.direction == PUMAS_MODE_FORWARD) {
                 ki = state->energy;
                 polar_func = del_randomise_forward(
-                    physics, context, state, material, &process);
+                    physics, context, state, material, &process, &element);
                 kf = state->energy;
         } else {
                 kf = state->energy;
                 polar_func = del_randomise_reverse(
-                    physics, context, state, material, &process);
+                    physics, context, state, material, &process, &element);
                 ki = state->energy;
         }
 
@@ -5626,7 +5650,13 @@ void transport_do_del(const struct pumas_physics * physics,
         /* Update the direction. */
         if ((context->mode.scattering == PUMAS_MODE_FULL_SPACE) &&
             (polar_func != NULL)) {
-                const double mu = polar_func(physics, context, ki, kf);
+                if (kf > ki) {
+                        const double tmp = kf;
+                        kf = ki;
+                        ki = tmp;
+                }
+
+                const double mu = polar_func(physics, context, element, ki, kf);
                 step_rotate_direction(context, state, mu);
         }
 }
@@ -5766,7 +5796,8 @@ void transport_do_ehs(const struct pumas_physics * physics,
  * @param context  The simulation context.
  * @param state    The initial/final state.
  * @param material The index of the propagation material.
- * @param process  The index opf the randomised process.
+ * @param process  The index of the randomised process.
+ * @param target   The targeted atomic element.
  * @return The polar function for the randomisation of the corresponding TT or
  * `NULL` if none.
  *
@@ -5776,7 +5807,7 @@ void transport_do_ehs(const struct pumas_physics * physics,
 
 polar_function_t * del_randomise_forward(const struct pumas_physics * physics,
     struct pumas_context * context, struct pumas_state * state, int material,
-    int * process)
+    int * process, const struct atomic_element ** target)
 {
         /* Check for a *do nothing* process. */
         if (state->energy <= *table_get_Kt(physics, material)) return NULL;
@@ -5786,6 +5817,7 @@ polar_function_t * del_randomise_forward(const struct pumas_physics * physics,
         del_randomise_target(physics, context, state, material, &info);
         dcs_function_t * const dcs_func = dcs_get(info.process);
         const struct atomic_element * element = physics->element[info.element];
+        *target = element;
 
         if (info.process == 3) {
                 state->energy = dcs_ionisation_randomise(physics,
@@ -5884,6 +5916,7 @@ polar_function_t * del_randomise_forward(const struct pumas_physics * physics,
  * @param state    The initial/final state.
  * @param material The index of the propagation material.
  * @param process  The index of the randomised process.
+ * @param target   The targeted atomic element.
  * @return The polar function for the randomisation of the corresponding TT or
  * `NULL` if none.
  *
@@ -5894,7 +5927,7 @@ polar_function_t * del_randomise_forward(const struct pumas_physics * physics,
  */
 polar_function_t * del_randomise_reverse(const struct pumas_physics * physics,
     struct pumas_context * context, struct pumas_state * state, int material,
-    int * process)
+    int * process, const struct atomic_element ** target)
 {
         /* Check for a pure CEL event. */
         const double lnq0 = -log(physics->cutoff);
@@ -5928,12 +5961,13 @@ polar_function_t * del_randomise_reverse(const struct pumas_physics * physics,
         w_bias /= r; /* Jacobian factor. */
         state->energy /= r;
 
-        /* Randomise the target element and the SEL process. */
+        /* Randomise the target element and the DEL process. */
         struct del_info info;
         info.reverse.Q = state->energy - kf;
         del_randomise_target(physics, context, state, material, &info);
         dcs_function_t * const dcs_func = dcs_get(info.process);
         const struct atomic_element * element = physics->element[info.element];
+        *target = element;
 
         /* Update the MC weight. */
         const double f = dcs_evaluate(physics, context, dcs_func, element,
@@ -10616,7 +10650,7 @@ double compute_dcs_integral(struct pumas_physics * physics, int mode,
         double qmin = 0, qmax;
         if (dcs == &dcs_photonuclear) {
                 const double M = 0.5 * (NEUTRON_MASS + PROTON_MASS);
-                const double mpi = 0.13957018;
+                const double mpi = PION_MASS;
                 qmin = mpi + 0.5 * mpi * mpi / M;
                 qmax = kinetic + physics->mass -
                     0.5 * (M + physics->mass * physics->mass / M);
@@ -10910,7 +10944,7 @@ double dcs_photonuclear(const struct pumas_physics * physics,
 int dcs_photonuclear_check(double m, double K, double q)
 {
         const double M = 0.5 * (NEUTRON_MASS + PROTON_MASS);
-        const double mpi = 0.13957018;
+        const double mpi = PION_MASS;
         const double qmin = mpi + 0.5 * mpi * mpi / M;
         const double qmax = K + m - 0.5 * (M + m * m / M);
         return (q < qmin) || (q > qmax);
@@ -11232,12 +11266,14 @@ polar_function_t * polar_get(int process)
  *
  * @param Physics Handle for physics tables.
  * @param context The simulation context.
+ * @param element The targeted atomic element.
  * @param ki      The initial kinetic energy.
  * @param kf      The final kinetic energy.
  * @return The polar parameters as 0.5 * (1 - cos_theta).
  */
 double polar_bremsstrahlung(const struct pumas_physics * physics,
-    struct pumas_context * context, double ki, double kf)
+    struct pumas_context * context, const struct atomic_element * element,
+    double ki, double kf)
 {
         const double e = ki + physics->mass;
         const double q = ki - kf;
@@ -11255,6 +11291,7 @@ double polar_bremsstrahlung(const struct pumas_physics * physics,
  *
  * @param Physics Handle for physics tables.
  * @param context The simulation context.
+ * @param element The targeted atomic element.
  * @param ki      The initial kinetic energy.
  * @param kf      The final kinetic energy.
  * @return The polar parameters as 0.5 * (1 - cos_theta).
@@ -11262,9 +11299,26 @@ double polar_bremsstrahlung(const struct pumas_physics * physics,
  * The polar angle is sampled assuming a virtual Bremsstrahlung event.
  */
 double polar_pair_production(const struct pumas_physics * physics,
-    struct pumas_context * context, double ki, double kf)
+    struct pumas_context * context, const struct atomic_element * element,
+    double ki, double kf)
 {
-        return polar_bremsstrahlung(physics, context, ki, kf);
+        return polar_bremsstrahlung(physics, context, element, ki, kf);
+}
+
+struct photonuclear_polar_parameters {
+        double Z;
+        double A;
+        double K;
+        double q;
+};
+
+static double photonuclear_polar_objective(
+    const struct pumas_physics * physics, double lnQ2, void * params)
+{
+        ddcs_t * ddcs = dcs_photonuclear_ddcs(physics);
+        struct photonuclear_polar_parameters * p = params;
+        const double Q2 = exp(lnQ2);
+        return -ddcs(p->Z, p->A, physics->mass, p->K, p->q, Q2) * Q2;
 }
 
 /**
@@ -11272,36 +11326,70 @@ double polar_pair_production(const struct pumas_physics * physics,
  *
  * @param Physics Handle for physics tables.
  * @param context The simulation context.
+ * @param element The targeted atomic element.
  * @param ki      The initial kinetic energy.
  * @param kf      The final kinetic energy.
  * @return The polar parameters as 0.5 * (1 - cos_theta).
  */
 double polar_photonuclear(const struct pumas_physics * physics,
-    struct pumas_context * context, double ki, double kf)
+    struct pumas_context * context, const struct atomic_element * element,
+    double ki, double kf)
 {
+#define MAX_TRIALS 100
+        const double M = 0.5 * (PROTON_MASS + NEUTRON_MASS);
         const double q = ki - kf;
-        const double e = ki + physics->mass;
-        const double y = q / e;
-        const double tmin = physics->mass * physics->mass * y * y / (1. - y);
-        const double tmax = 1.87914 * q;
-        const double m02 = 0.4;
-        const double q2 = q * q;
-        const double t1 = (q2 < m02) ? q2 : m02;
+        const double ml = physics->mass;
+        const double E = ki + ml;
+        const double ml2 = ml * ml;
+        const double Q2min = ml2 * (q * q - 0.5 * ml2) / (E * (E - q));
+        const double Q2max = 2.0 * M * (q - PION_MASS) - PION_MASS * PION_MASS;
+        if ((Q2max < Q2min) | (Q2min < 0)) return 0.;
 
-        const double p = context->random(context);
-        const double r = tmax * (tmin + t1) / (tmin * (tmax + t1));
-        const double tp = tmax * t1 / ((tmax + t1) * pow(r, p) - tmax);
-        const double mu = 0.5 *
-            (tp - tmin) / (2. * (e * (kf + physics->mass) -
-                                    physics->mass * physics->mass) -
-                              tmin);
+        struct photonuclear_polar_parameters args = {
+                .Z = element->Z,
+                .A = element->A,
+                .K = ki,
+                .q = q
+        };
+        double fopt = 0.;
+        const double lnQ2min = log(Q2min);
+        const double lnQ2max = log(Q2max);
+        const int status = math_find_minimum(photonuclear_polar_objective,
+            physics, lnQ2min, lnQ2max, NULL, NULL, 1E-06, 100, &args, NULL,
+            &fopt);
+        fopt = -fopt;
+        if (status == -2) return 0.;
 
-        if (mu < 0.)
-                return 0.;
-        else if (mu > 1.)
-                return 1.;
-        else
-                return mu;
+        ddcs_t * ddcs = dcs_photonuclear_ddcs(physics);
+        const double rQ2 = lnQ2max - lnQ2min;
+        double Q2 = 0.;
+        int i;
+        for (i = 0; i < MAX_TRIALS; i++) {
+                const double u = context->random(context);
+                Q2 = Q2min * exp(rQ2 * u);
+
+                const double r =
+                    ddcs(element->Z, element->A, ml, ki, q, Q2) * Q2;
+                if (context->random(context) * fopt <= r) break;
+        }
+        if (i == MAX_TRIALS) return 0.;
+
+        const double p = sqrt(ki * (ki + 2 * ml));
+        const double E1 = E - q;
+        const double eps = ml / E1;
+        const double p1 = E1 * sqrt((1. + eps) * (1. - eps));
+        const double p2 = p * p1;
+        double tmp = p2 + ml * ml - E * E1;
+        if (fabs(tmp) <= 3 * DBL_EPSILON * p2) tmp = 0.;
+        const double a_mu = 0.5 * tmp / p2;
+        const double b_mu = 0.25 / p2;
+        double mu = a_mu + b_mu * Q2;
+        if (mu < 0) mu = 0.;
+        else if (mu > 1.) mu = 1.;
+
+        return mu;
+
+#undef MAX_TRIALS
 }
 
 /**
@@ -11309,6 +11397,7 @@ double polar_photonuclear(const struct pumas_physics * physics,
  *
  * @param Physics Handle for physics tables.
  * @param context The simulation context.
+ * @param element The targeted atomic element.
  * @param ki      The initial kinetic energy.
  * @param kf      The final kinetic energy.
  * @return The polar parameters as 0.5 * (1 - cos_theta).
@@ -11317,13 +11406,9 @@ double polar_photonuclear(const struct pumas_physics * physics,
  * electron is initially at rest. See for example Salvat (2013), NIMB 316.
  */
 double polar_ionisation(const struct pumas_physics * physics,
-    struct pumas_context * context, double ki, double kf)
+    struct pumas_context * context, const struct atomic_element * element,
+    double ki, double kf)
 {
-        if (kf > ki) {
-                const double tmp = ki;
-                ki = kf, kf = tmp;
-        }
-
         const double nu = ki - kf;
         const double p2 = ki * (ki + 2 * physics->mass);
         const double E = ki + physics->mass;
@@ -11344,10 +11429,10 @@ double polar_ionisation(const struct pumas_physics * physics,
  * @param f       The objective function to resolve.
  * @param xa      The lower bound of the search interval.
  * @param xb      The upper bound of the search interval.
- * @param fa_p    The initial value at *a* if already computed.
- * @param fb_p    The initial value at *b* if already computed.
+ * @param fa_p    The initial value at *xa* if already computed.
+ * @param fb_p    The initial value at *xb* if already computed.
  * @param xtol    The absolute tolerance on the root value.
- * @param rtol    The absolute tolerance on the root value.
+ * @param rtol    The relative tolerance on the root value.
  * @param params  A handle for passing additional parameters to the
  *                objective function.
  * @param x0      An estimate of the root over `[xa; xb]`.
@@ -11429,6 +11514,165 @@ int math_find_root(
         /* The maximum number of iterations was reached*/
         *x0 = xn;
         return -2;
+}
+
+/**
+ * Locate the minimum for a function of a scalar variable.
+ *
+ * @param Physics Handle for physics tables.
+ * @param f       The objective function to resolve.
+ * @param xa      The lower bound of the search interval.
+ * @param xc      The upper bound of the search interval.
+ * @param fa_p    The initial value at *xa* if already computed.
+ * @param fc_p    The initial value at *xc* if already computed.
+ * @param  tol    The relative tolerance on the minimizer.
+ * @param params  A handle for passing additional parameters to the
+ *                objective function.
+ * @param xopt    An estimate of the minimizer over `[xa, xc]` or `NULL`.
+ * @param xopt    An estimate of the function minimum over `[xa; xc]` or `NULL`.
+ * @return On success `0` or more is returned. Otherwise a negative number.
+ *
+ * The minimum is searched for over `[xa, xc]` using Brent's method
+ * (https://en.wikipedia.org/wiki/Brent%27s_method). If initial values of the
+ * objective have already been computed they can be passed over as *fa_p* or
+ * *fb_p*. Otherwise these values must be `NULL`. The relative tolerance is
+ * relative to `xc - xa`.
+ *
+ * Warning: A local minimum is found. The algorithm assumes that the objective
+ * function has a single minimum over `[xa, xc]`.
+ */
+int math_find_minimum(
+    double (*f)(const struct pumas_physics * physics, double x, void * params),
+    const struct pumas_physics * physics, double xa, double xc,
+    const double * fa_p, const double * fc_p, double tol, int max_iter,
+    void * params, double * xopt, double * fopt)
+{
+#define EPS 1E-10
+#define GOLD 0.3819660
+#define SIGN(a,b) ((b) >= 0.0 ? fabs(a) : -fabs(a))
+
+        double fa, fc;
+        if (fa_p == NULL)
+                fa = (*f)(physics, xa, params);
+        else
+                fa = *fa_p;
+        if (fc_p == NULL)
+                fc = (*f)(physics, xc, params);
+        else
+                fc = *fc_p;
+
+        tol *= fabs(xc - xa);
+
+        /* Initial bracketing using a bisection */
+        double xb = 0, fb = 0;
+        int i;
+        for (i = 0; i < max_iter; i++) {
+                xb = 0.5 * (xa + xc);
+                fb = (*f)(physics, xb, params);
+                if ((fb < fa) && (fb < fc)) break;
+
+                if (fabs(xc - xa) <= tol) {
+                        if (xopt != NULL) *xopt = xb;
+                        if (fopt != NULL) *fopt = fb;
+                        return i;
+                }
+
+                /* It is assumed that fb < max(fa, fb) */
+                if (fb < fc) {
+                        xc = xb;
+                        fc = fb;
+                } else {
+                        xa = xb;
+                        fa = fb;
+                }
+        }
+        if (i == max_iter) {
+                if (fa < fb) {
+                        fb = fa;
+                        xb = xa;
+                } else if (fc < fb) {
+                        fb = fc;
+                        xb = xc;
+                }
+
+                if (xopt != NULL) *xopt = xb;
+                if (fopt != NULL) *fopt = fb;
+                return -1;
+        }
+
+        /* Minimum search using Brent's algorithm */
+        double x = xb, w = xb, v = xb;
+        double fw = fb, fv = fb, fx = fb;
+        double d = 0., e = 0.;
+        for (; i < max_iter; i++) {
+                const double xm = 0.5 * (xa + xb);
+                const double tol1 = tol * fabs(x) + EPS;
+                const double tol2 = 2 * tol1;
+                if (fabs(x - xm) <= (tol2 - 0.5 * (xb - xa))) {
+                        break;
+                }
+                if (fabs(e) > tol1) {
+                        /* Construct a trial parabolic fit */
+                        const double r = (x - w) * (fx - fv);
+                        double q = (x - v) * (fx - fw);
+                        double p = (x - v) * q - (x - w) * r;
+                        q = 2.* (q - r);
+                        if (q > 0.) p = -p;
+                        q = fabs(q);
+                        const double etemp = e;
+                        e = d;
+                        if (fabs(p) >= fabs(0.5 * q * etemp) ||
+                            (p <= q * (xa - x)) || (p >= q * (xb - x))) {
+                                e = (x >= xm) ? xa - x : xb - x;
+                                d = GOLD * e;
+                        } else {
+                                d = p / q;
+                                const double u = x + d;
+                                if ((u - xa < tol2) || (xb - u < tol2)) {
+                                        d = SIGN(tol1, xm - x);
+                                }
+                        }
+                } else {
+                        e = (x >= xm) ? xa - x : xb - x;
+                        d = GOLD * e;
+                }
+                const double u = (fabs(d) >= tol1) ? x + d : x + SIGN(tol1, d);
+                const double fu = (*f)(physics, u, params);
+                if (fu <= fx) {
+                        if (u >= x) {
+                                xa = x;
+                        } else {
+                                xb = x;
+                        }
+
+                        v = w, w = x, x = u;
+                        fv = fw, fw = fx, fx = fu;
+                } else {
+                        if (u < x) {
+                                xa = u;
+                        } else {
+                                xb = u;
+                        }
+                        if ((fu <= fw) || (w == x)) {
+                                v = w;
+                                w = u;
+                                fv = fw;
+                                fw = fu;
+                        } else if ((fu <= fv) || (v == x) || (v == w)) {
+                                v = u;
+                                fv = fu;
+                        }
+                }
+        }
+
+        if (xopt != NULL) *xopt = x;
+        if (fopt != NULL) *fopt = fx;
+
+        return (i < max_iter) ? i : -2;
+
+#undef EPS
+#undef GOLD
+#undef SIGN
 }
 
 /**
@@ -13258,7 +13502,6 @@ static double dcs_bremsstrahlung_KKP(
 static double dcs_bremsstrahlung_ABB(
     double Z, double A, double m, double K, double q)
 {
-#define ALPHA 0.0072973525664
 #define SQRTE 1.648721270700128
 #define ME    0.5109989461
 #define RE    2.8179403227E-13
@@ -13330,7 +13573,7 @@ static double dcs_bremsstrahlung_ABB(
         if (result < 0) return 0;
 
         aux = 2 * (ME / m) * RE * Z;
-        return aux * aux * (ALPHA / q) * result * 1E-04;
+        return aux * aux * (ALPHA_EM / q) * result * 1E-04;
 }
 
 /* Bremsstahlung DCS according to Sandrock, Soedingrekso & Rhode.
@@ -13435,14 +13678,14 @@ static double dcs_bremsstrahlung_SSR(
         }
 
         const double result = ((2. - 2. * v + v * v) * phi1 - 2. / 3. *
-            (1. - v) * phi2) + 1. / Z * s_atomic + 0.25 * ALPHA * phi1 * s_rad;
+            (1. - v) * phi2) + 1. / Z * s_atomic +
+            0.25 * ALPHA_EM * phi1 * s_rad;
 
         if (result <= 0.) return 0.;
 
         const double aux = 2 * (ME / m) * RE * Z;
-        return aux * aux * (ALPHA / q) * result * 1E-04;
+        return aux * aux * (ALPHA_EM / q) * result * 1E-04;
 
-#undef ALPHA
 #undef SQRTE
 #undef ME
 #undef RE
@@ -13604,7 +13847,6 @@ static double dcs_pair_production_KKP(
 static inline double dcs_pair_production_d2_SSR(
     double Z, double A, double m, double K, double q, double rho)
 {
-#define ALPHA 0.0072973525664
 #define SQRTE 1.648721270700128
 #define ME    0.5109989461
 #define RE    2.8179403227E-13
@@ -13624,7 +13866,7 @@ static inline double dcs_pair_production_d2_SSR(
         const double rad_log = radiation_logarithm(Z);
 
         const double const_prefactor = 4. / (3. * M_PI) * Z *
-            pow(ALPHA * RE, 2.);
+            pow(ALPHA_EM * RE, 2.);
         const double Z13 = 1. / z13;
         const double d_n = 1.54 * pow(A, 0.27);
 
@@ -13749,7 +13991,6 @@ static inline double dcs_pair_production_d2_SSR(
 
         return (diagram_e + diagram_mu) * 1E-01 / energy;
 
-#undef ALPHA
 #undef SQRTE
 #undef ME
 #undef RE
@@ -14182,10 +14423,6 @@ static double dcs_photonuclear_d2_BM(
         return cf * F2A * dds / q;
 }
 
-/** Generic doubly differential photonuclear cross-section. */
-typedef double dcs_photonuclear_d2_t(
-    double Z, double A, double ml, double K, double q, double Q2);
-
 /**
  * The photonuclear differential cross section by integration over Q2.
  *
@@ -14205,14 +14442,14 @@ typedef double dcs_photonuclear_d2_t(
  * cross-section is computed.
  */
 inline static double dcs_photonuclear_integrated(int mode, double Z, double A,
-    double ml, double K, double q, dcs_photonuclear_d2_t * ddcs)
+    double ml, double K, double q, ddcs_t * ddcs)
 {
         /* Check inputs */
         if ((Z <= 0) || (A <= 0) || (ml <= 0) || (K <= 0))
                 return 0.;
 
         const double M = 0.5 * (NEUTRON_MASS + PROTON_MASS);
-        const double mpi = 0.13957018;
+        const double mpi = PION_MASS;
         if ((q <= mpi + 0.5 * mpi * mpi / M) ||
             (q >= K + ml - 0.5 * (M + ml * ml / M))) return 0.;
 
@@ -14320,11 +14557,11 @@ static double dcs_photonuclear_BM(
  * @return The corresponding value of the transport DCS, in m^2 / kg.
  */
 static double dcs_photonuclear_transport_integrate(double Z, double A,
-    double ml, double kinetic, double qcut, dcs_photonuclear_d2_t * ddcs)
+    double ml, double kinetic, double qcut, ddcs_t * ddcs)
 {
         /* Set the integration boundaries */
         const double M = 0.5 * (NEUTRON_MASS + PROTON_MASS);
-        const double mpi = 0.13957018;
+        const double mpi = PION_MASS;
         const double qmin = mpi + 0.5 * mpi * mpi / M;
         double qmax = kinetic + ml - 0.5 * (M + ml * ml / M);
         if (qcut < qmax) qmax = qcut;
@@ -14347,17 +14584,22 @@ static double dcs_photonuclear_transport_integrate(double Z, double A,
         return 2 * AVOGADRO_NUMBER / (A * 1E-03) * dcsint;
 }
 
+ddcs_t * dcs_photonuclear_ddcs(const struct pumas_physics * physics)
+{
+        if (physics->dcs_photonuclear == &dcs_photonuclear_BM) {
+                return &dcs_photonuclear_d2_BM;
+        } else {
+                return &dcs_photonuclear_d2_DRSS;
+        }
+}
+
 /**
  * Wrapper for photonuclear transport integral.
  */
 double dcs_photonuclear_transport(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double cutoff)
 {
-        dcs_photonuclear_d2_t * ddcs = &dcs_photonuclear_d2_DRSS;
-        if (physics->dcs_photonuclear == &dcs_photonuclear_BM) {
-                ddcs = &dcs_photonuclear_d2_BM;
-        }
-
+        ddcs_t * ddcs = dcs_photonuclear_ddcs(physics);
         return dcs_photonuclear_transport_integrate(element->Z, element->A,
             physics->mass, K, K * cutoff, ddcs);
 }
@@ -14404,14 +14646,12 @@ inline static double dcs_photonuclear_phn_Kokoulin(double q)
 static double dcs_photonuclear_BBKS(
     double Z, double A, double m, double K, double q)
 {
-#define ALPHA 0.0072973525664
-
         /* Check inputs */
         if ((Z <= 0) || (A <= 0) || (m <= 0) || (K <= 0))
                 return 0.;
 
         const double M = 0.5 * (NEUTRON_MASS + PROTON_MASS);
-        const double mpi = 0.13957018;
+        const double mpi = PION_MASS;
         if ((q <= mpi + 0.5 * mpi * mpi / M) ||
             (q >= K + m - 0.5 * (M + m * m / M))) return 0.;
 
@@ -14449,7 +14689,7 @@ static double dcs_photonuclear_BBKS(
             log(1. + m2 / t) - aux) + aux * (G * (m1 - 4. * t) / (m1 + t) +
             (m2 / t) * log(1. + t / m2));
 
-        aux *= ALPHA / (8. * M_PI) * A * v * sgn;
+        aux *= ALPHA_EM / (8. * M_PI) * A * v * sgn;
 
         /* Hard component by Bugaev, Montaruli, Shelpin, Sokalski
          * Astrop. Phys. 21 (2004), 491
@@ -14539,8 +14779,6 @@ static double dcs_photonuclear_BBKS(
         }
 
         return aux * 1E-34 / (K + m);
-
-#undef ALPHA
 }
 
 /** Data structure for caracterising a DCS model */
