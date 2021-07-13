@@ -1272,6 +1272,10 @@ static int math_find_root(
     const double * fa_p, const double * fb_p, double xtol, double rtol,
     int iter, void * params, double * x0);
 static int math_gauss_quad(int n, double * p1, double * p2);
+static void math_gauss_quad_coefficients(
+    int n, const double ** xGQ, const double ** wGQ);
+static void math_gauss_quad_initialise(
+   int n, double xmin, double xmax, int log, double * xGQ, double * wGQ);
 static int math_svd(
     int m, int n, double * a, double * w, double * v, double * work);
 static void math_svdsol(int m, int n, double * b, double * u, double * w,
@@ -11450,16 +11454,17 @@ int math_gauss_quad(int n, double * p1, double * p2)
  * https://pomax.github.io/bezierinfo/legendre-gauss.html.
  */
 #define N_GQ 6
-        const double xGQ[N_GQ] = { 0.03376524, 0.16939531, 0.38069041,
-                0.61930959, 0.83060469, 0.96623476 };
-        const double wGQ[N_GQ] = { 0.08566225, 0.18038079, 0.23395697,
-                0.23395697, 0.18038079, 0.08566225 };
+        static const double * xGQ = NULL;
+        static const double * wGQ = NULL;
 
         /* Initialisation step. */
         static int i, j, n_itv;
         static double h;
         static double x0;
         if (n > 0) {
+                if (xGQ == NULL)
+                        math_gauss_quad_coefficients(N_GQ, &xGQ, &wGQ);
+
                 n_itv = (n + N_GQ - 1) / N_GQ;
                 i = j = 0;
                 h = (*p2 - (x0 = *p1)) / n_itv;
@@ -11480,6 +11485,157 @@ int math_gauss_quad(int n, double * p1, double * p2)
         return 0;
 
 #undef N_GQ
+}
+
+/**
+ * Coefficients for a Gaussian quadrature or order n
+ *
+ * @param n       The number of integration points.
+ * @param xGQ     The integration nodes.
+ * @param wGQ     The integration weights.
+ *
+ * The coefficients for the Gaussian quadratures are taken from:
+ * https://pomax.github.io/bezierinfo/legendre-gauss.html.
+ */
+void math_gauss_quad_coefficients(
+    int n, const double ** xGQ, const double ** wGQ)
+{
+        static const double x[] = {
+            /* N_GQ = 1 */
+            0.5000000000000000,
+            /* N_GQ = 2 */
+            0.2113248654051871, 0.7886751345948129,
+            /* N_GQ = 3 */
+            0.1127016653792583, 0.5000000000000000, 0.8872983346207417,
+            /* N_GQ = 4 */
+            0.0694318442029737, 0.3300094782075719, 0.6699905217924281,
+            0.9305681557970262,
+            /* N_GQ = 5 */
+            0.0469100770306680, 0.2307653449471584, 0.5000000000000000,
+            0.7692346550528415, 0.9530899229693319,
+            /* N_GQ = 6 */
+            0.0337652428984240, 0.1693953067668678, 0.3806904069584016,
+            0.6193095930415985, 0.8306046932331322, 0.9662347571015760,
+            /* N_GQ = 7 */
+            0.0254460438286208, 0.1292344072003028, 0.2970774243113014,
+            0.5000000000000000, 0.7029225756886985, 0.8707655927996972,
+            0.9745539561713792,
+            /* N_GQ = 8 */
+            0.0198550717512319, 0.1016667612931866, 0.2372337950418355,
+            0.4082826787521751, 0.5917173212478249, 0.7627662049581645,
+            0.8983332387068134, 0.9801449282487682,
+            /* N_GQ = 9 */
+            0.0159198802461870, 0.0819844463366821, 0.1933142836497048,
+            0.3378732882980955, 0.5000000000000000, 0.6621267117019045,
+            0.8066857163502952, 0.9180155536633179, 0.9840801197538130,
+            /* N_GQ = 10 */
+            0.0130467357414141, 0.0674683166555077, 0.1602952158504878,
+            0.2833023029353764, 0.4255628305091844, 0.5744371694908156,
+            0.7166976970646236, 0.8397047841495122, 0.9325316833444923,
+            0.9869532642585859,
+            /* N_GQ = 11 */
+            0.0108856709269715, 0.0564687001159523, 0.1349239972129753,
+            0.2404519353965941, 0.3652284220238275, 0.5000000000000000,
+            0.6347715779761725, 0.7595480646034058, 0.8650760027870247,
+            0.9435312998840477, 0.9891143290730284,
+            /* N_GQ = 12 */
+            0.0092196828766404, 0.0479413718147625, 0.1150486629028477,
+            0.2063410228566913, 0.3160842505009099, 0.4373832957442655,
+            0.5626167042557344, 0.6839157494990901, 0.7936589771433087,
+            0.8849513370971523, 0.9520586281852375, 0.9907803171233596
+        };
+
+        static const double w[] = {
+            /* N_GQ = 1 */
+            1.0000000000000000,
+            /* N_GQ = 2 */
+            0.5000000000000000, 0.5000000000000000,
+            /* N_GQ = 3 */
+            0.2777777777777778, 0.4444444444444444, 0.2777777777777778,
+            /* N_GQ = 4 */
+            0.1739274225687269, 0.3260725774312731, 0.3260725774312731,
+            0.1739274225687269,
+            /* N_GQ = 5 */
+            0.1184634425280946, 0.2393143352496833, 0.2844444444444444,
+            0.2393143352496833, 0.1184634425280946,
+            /* N_GQ = 6 */
+            0.0856622461895852, 0.1803807865240693, 0.2339569672863455,
+            0.2339569672863455, 0.1803807865240693, 0.0856622461895852,
+            /* N_GQ = 7 */
+            0.0647424830844349, 0.1398526957446383, 0.1909150252525595,
+            0.2089795918367347, 0.1909150252525595, 0.1398526957446383,
+            0.0647424830844349,
+            /* N_GQ = 8 */
+            0.0506142681451881, 0.1111905172266872, 0.1568533229389436,
+            0.1813418916891810, 0.1813418916891810, 0.1568533229389436,
+            0.1111905172266872, 0.0506142681451881,
+            /* N_GQ = 9 */
+            0.0406371941807872, 0.0903240803474287, 0.1303053482014677,
+            0.1561735385200015, 0.1651196775006299, 0.1561735385200015,
+            0.1303053482014677, 0.0903240803474287, 0.0406371941807872,
+            /* N_GQ = 10 */
+            0.0333356721543440, 0.0747256745752903, 0.1095431812579910,
+            0.1346333596549981, 0.1477621123573765, 0.1477621123573765,
+            0.1346333596549981, 0.1095431812579910, 0.0747256745752903,
+            0.0333356721543440,
+            /* N_GQ = 11 */
+            0.0278342835580868, 0.0627901847324523, 0.0931451054638671,
+            0.1165968822959952, 0.1314022722551233, 0.1364625433889503,
+            0.1314022722551233, 0.1165968822959952, 0.0931451054638671,
+            0.0627901847324523, 0.0278342835580868,
+            /* N_GQ = 12 */
+            0.0235876681932559, 0.0534696629976592, 0.0800391642716731,
+            0.1015837133615330, 0.1167462682691774, 0.1245735229067014,
+            0.1245735229067014, 0.1167462682691774, 0.1015837133615330,
+            0.0800391642716731, 0.0534696629976592, 0.0235876681932559
+        };
+
+        /* Return the requested coefficients */
+        n *= n - 1;
+        n /= 2;
+        *xGQ = x + n;
+        *wGQ = w + n;
+}
+
+/**
+ * Initialise arrays for a single pass Gaussian quadrature.
+ *
+ * @param n       The number of integration points.
+ * @param xmin    The integration range lower bound.
+ * @param xmax    The integration range upper bound.
+ * @param xmin    The integration range lower bound.
+ * @param xGQ     The integration nodes.
+ * @param wGQ     The integration weights.
+ *
+ * Warning: the xGQ and wGQ arrays must be of size n or more.
+ */
+void math_gauss_quad_initialise(
+   int n, double xmin, double xmax, int logscale, double * xGQ, double * wGQ)
+{
+        const double *x, *w;
+        math_gauss_quad_coefficients(n, &x, &w);
+        memcpy(xGQ, x, n * sizeof(*xGQ));
+        memcpy(wGQ, w, n * sizeof(*wGQ));
+
+        if (logscale) {
+                xmin = log(xmin);
+                xmax = log(xmax);
+
+                const double dx = xmax - xmin;
+                int i;
+                for (i = 0; i < n; i++) {
+                        const double xi = exp(xmin + dx * xGQ[i]);
+                        xGQ[i] = xi;
+                        wGQ[i] *= dx * xi;
+                }
+        } else {
+                const double dx = xmax - xmin;
+                int i;
+                for (i = 0; i < n; i++) {
+                        xGQ[i] = xmin + dx * xGQ[i];
+                        wGQ[i] *= dx;
+                }
+        }
 }
 
 /*
@@ -13313,22 +13469,6 @@ static double dcs_pair_production_KKP(
         if ((Z <= 0) || (A_ <= 0) || (mass <= 0) || (K <= 0) || (q <= 0))
                 return 0.;
 
-/*
- * Coefficients for the Gaussian quadrature from:
- * https://pomax.github.io/bezierinfo/legendre-gauss.html.
- */
-#define N_GQ 12
-        const double xGQ[N_GQ] = {
-            0.0092196828766404, 0.0479413718147625, 0.1150486629028477,
-            0.2063410228566913, 0.3160842505009099, 0.4373832957442655,
-            0.5626167042557344, 0.6839157494990901, 0.7936589771433087,
-            0.8849513370971523, 0.9520586281852375, 0.9907803171233596};
-        const double wGQ[N_GQ] = {
-            0.0235876681932559, 0.0534696629976592, 0.0800391642716731,
-            0.1015837133615330, 0.1167462682691774, 0.1245735229067014,
-            0.1245735229067014, 0.1167462682691774, 0.1015837133615330,
-            0.0800391642716731, 0.0534696629976592, 0.0235876681932559};
-
         /*  Check the bounds of the energy transfer. */
         if (q <= 4. * ELECTRON_MASS) return 0.;
         const double sqrte = 1.6487212707;
@@ -13355,6 +13495,10 @@ static double dcs_pair_production_KKP(
         const double tmin = log(argmin);
 
         /*  Compute the integral over t = ln(1-rho). */
+#define N_GQ 12
+        const double * xGQ, * wGQ;
+        math_gauss_quad_coefficients(N_GQ, &xGQ, &wGQ);
+
         double I = 0.;
         int i;
         for (i = 0; i < N_GQ; i++) {
@@ -13630,21 +13774,6 @@ static double dcs_pair_production_SSR(
 {
         if ((Z <= 0) || (A_ <= 0) || (mass <= 0) || (K <= 0) || (q <= 0))
                 return 0.;
-/*
- * Coefficients for the Gaussian quadrature from:
- * https://pomax.github.io/bezierinfo/legendre-gauss.html.
- */
-#define N_GQ 12
-        const double xGQ[N_GQ] = {
-            0.0092196828766404, 0.0479413718147625, 0.1150486629028477,
-            0.2063410228566913, 0.3160842505009099, 0.4373832957442655,
-            0.5626167042557344, 0.6839157494990901, 0.7936589771433087,
-            0.8849513370971523, 0.9520586281852375, 0.9907803171233596};
-        const double wGQ[N_GQ] = {
-            0.0235876681932559, 0.0534696629976592, 0.0800391642716731,
-            0.1015837133615330, 0.1167462682691774, 0.1245735229067014,
-            0.1245735229067014, 0.1167462682691774, 0.1015837133615330,
-            0.0800391642716731, 0.0534696629976592, 0.0235876681932559};
 
         /*  Check the bounds of the energy transfer. */
         if (q <= 4. * ELECTRON_MASS) return 0.;
@@ -13669,6 +13798,10 @@ static double dcs_pair_production_SSR(
         const double tmin = log(ri);
 
         /*  Compute the integral over t = ln(rho) */
+#define N_GQ 12
+        const double * xGQ, * wGQ;
+        math_gauss_quad_coefficients(N_GQ, &xGQ, &wGQ);
+
         double I = 0.;
         int i;
         for (i = 0; i < N_GQ; i++) {
@@ -14083,31 +14216,11 @@ inline static double dcs_photonuclear_integrated(int mode, double Z, double A,
         if ((q <= mpi + 0.5 * mpi * mpi / M) ||
             (q >= K + ml - 0.5 * (M + ml * ml / M))) return 0.;
 
-/*
- * Coefficients for the Gaussian quadrature from:
- * https://pomax.github.io/bezierinfo/legendre-gauss.html.
- */
-#define N_GQ 9
-        const double xGQ[N_GQ] = { 0.0000000000000000, -0.8360311073266358,
-                0.8360311073266358, -0.9681602395076261, 0.9681602395076261,
-                -0.3242534234038089, 0.3242534234038089, -0.6133714327005904,
-                0.6133714327005904 };
-        const double wGQ[N_GQ] = { 0.3302393550012598, 0.1806481606948574,
-                0.1806481606948574, 0.0812743883615744, 0.0812743883615744,
-                0.3123470770400029, 0.3123470770400029, 0.2606106964029354,
-                0.2606106964029354 };
-
         const double E = K + ml;
         const double ml2 = ml * ml;
         const double Q2min = ml2 * (q * q - 0.5 * ml2) / (E * (E - q));
         const double Q2max = 2.0 * M * (q - mpi) - mpi * mpi;
         if ((Q2max < Q2min) | (Q2min < 0)) return 0.;
-
-        /* Set the binning. */
-        const double pQ2min = log(Q2min);
-        const double pQ2max = log(Q2max);
-        const double dpQ2 = pQ2max - pQ2min;
-        const double pQ2c = 0.5 * (pQ2max + pQ2min);
 
         /*
          * Integrate the doubly differential cross-section over Q2 using
@@ -14122,15 +14235,19 @@ inline static double dcs_photonuclear_integrated(int mode, double Z, double A,
                 const double p1 = E1 * sqrt((1. + eps) * (1. - eps));
                 const double p2 = p * p1;
                 double tmp = p2 + ml * ml - E * E1;
-                if (fabs(tmp) <= 10 * FLT_EPSILON * p2) tmp = 0.;
+                if (fabs(tmp) <= 3 * DBL_EPSILON * p2) tmp = 0.;
                 a_mu = 0.5 * tmp / p2;
                 b_mu = 0.25 / p2;
         }
 
+#define N_GQ 9
+        double xGQ[N_GQ], wGQ[N_GQ];
+        math_gauss_quad_initialise(N_GQ, Q2min, Q2max, 1, xGQ, wGQ);
+
         double ds = 0.;
         int i;
         for (i = 0; i < N_GQ; i++) {
-                const double Q2 = exp(pQ2c + 0.5 * dpQ2 * xGQ[i]);
+                const double Q2 = xGQ[i];
                 double tmp = ddcs(Z, A, ml, K, q, Q2);
                 if (tmp <= 0.) continue;
                 if (mode) {
@@ -14139,11 +14256,10 @@ inline static double dcs_photonuclear_integrated(int mode, double Z, double A,
                         else if (mu > 1.) mu = 1.;
                         tmp *= mu;
                 }
-                ds += tmp * Q2 * wGQ[i];
+                ds += tmp * wGQ[i];
         }
 
-        if (ds < 0.) ds = 0.;
-        return 0.5 * ds * dpQ2;
+        return (ds < 0.) ? 0. : ds;
 
 #undef N_GQ
 }
