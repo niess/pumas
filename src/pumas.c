@@ -11351,14 +11351,31 @@ double polar_photonuclear(const struct pumas_physics * physics,
                 .K = ki,
                 .q = q
         };
-        double fopt = 0.;
+        double fopt = 0., xopt = 0.;
         const double lnQ2min = log(Q2min);
         const double lnQ2max = log(Q2max);
         const int status = math_find_minimum(photonuclear_polar_objective,
-            physics, lnQ2min, lnQ2max, NULL, NULL, 1E-06, 100, &args, NULL,
+            physics, lnQ2min, lnQ2max, NULL, NULL, 1E-06, 100, &args, &xopt,
             &fopt);
         fopt = -fopt;
         if (status == -2) return 0.;
+
+        const double x = exp(xopt) / (2 * q * M);
+        const double lne = 0.1;
+        if ((x <= 0.04) && (xopt + lne < lnQ2max)) {
+                /* Look for a second maxima above */
+                double f2, x2;
+                const int status2 = math_find_minimum(
+                    photonuclear_polar_objective, physics, xopt + lne, lnQ2max,
+                    NULL, NULL, 1E-06, 100, &args, &x2, &f2);
+                if (status2 >= 0) {
+                        f2 = -f2;
+                        if (f2 > fopt) {
+                                xopt = x2;
+                                fopt = f2;
+                        }
+                }
+        }
 
         ddcs_t * ddcs = dcs_photonuclear_ddcs(physics);
         const double rQ2 = lnQ2max - lnQ2min;
