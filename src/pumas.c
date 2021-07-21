@@ -941,7 +941,7 @@ static double dcs_photonuclear(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double q);
 static inline int dcs_photonuclear_check(double m, double K, double q);
 static inline ddcs_t * dcs_photonuclear_ddcs(
-    const struct pumas_physics * physics);
+    const struct pumas_physics * physics, pumas_dcs_t ** dcs);
 static double dcs_photonuclear_transport(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double cutoff);
 static double dcs_ionisation(const struct pumas_physics * physics,
@@ -11315,7 +11315,7 @@ struct photonuclear_polar_parameters {
 static double photonuclear_polar_objective(
     const struct pumas_physics * physics, double lnQ2, void * params)
 {
-        ddcs_t * ddcs = dcs_photonuclear_ddcs(physics);
+        ddcs_t * ddcs = dcs_photonuclear_ddcs(physics, NULL);
         struct photonuclear_polar_parameters * p = params;
         const double Q2 = exp(lnQ2);
         return -ddcs(p->Z, p->A, physics->mass, p->K, p->q, Q2) * Q2;
@@ -11377,7 +11377,7 @@ double polar_photonuclear(const struct pumas_physics * physics,
                 }
         }
 
-        ddcs_t * ddcs = dcs_photonuclear_ddcs(physics);
+        ddcs_t * ddcs = dcs_photonuclear_ddcs(physics, NULL);
         const double rQ2 = lnQ2max - lnQ2min;
         double Q2 = 0.;
         int i;
@@ -14571,10 +14571,13 @@ static double dcs_photonuclear_BM(
  * @param kinetic The projectile initial kinetic energy.
  * @param qcut    The cut on the kinetic energy lost to the photon.
  * @param ddcs    The doubly differential cross-section.
+ * @param dcs0    The physics true DCS.
+ * @param ddcs    The DCS corresponding to the transport DDCS.
  * @return The corresponding value of the transport DCS, in m^2 / kg.
  */
 static double dcs_photonuclear_transport_integrate(double Z, double A,
-    double ml, double kinetic, double qcut, ddcs_t * ddcs)
+    double ml, double kinetic, double qcut, ddcs_t * ddcs, pumas_dcs_t * dcs0,
+    pumas_dcs_t * dcs1)
 {
         /* Set the integration boundaries */
         const double M = 0.5 * (NEUTRON_MASS + PROTON_MASS);
@@ -14593,19 +14596,34 @@ static double dcs_photonuclear_transport_integrate(double Z, double A,
         double xi, wi;
         while (math_gauss_quad(0, &xi, &wi) == 0) { /* Iterations. */
                 const double qi = exp(xi);
-                double y = dcs_photonuclear_integrated(
-                    1, Z, A, ml, kinetic, qi, ddcs);
-                dcsint += y * qi * wi;
+                double r = 1.;
+                if (dcs0 != dcs1) {
+                        const double d = dcs1(Z, A, ml, kinetic, qi);
+                        if (d > 0) {
+                                r = dcs0(Z, A, ml, kinetic, qi) / d;
+                        } else {
+                                r = 0.;
+                        }
+                }
+
+                if (r > 0) {
+                        const double y = dcs_photonuclear_integrated(
+                            1, Z, A, ml, kinetic, qi, ddcs);
+                        dcsint += y * r * qi * wi;
+                }
         }
 
         return 2 * AVOGADRO_NUMBER / (A * 1E-03) * dcsint;
 }
 
-ddcs_t * dcs_photonuclear_ddcs(const struct pumas_physics * physics)
+ddcs_t * dcs_photonuclear_ddcs(const struct pumas_physics * physics,
+    pumas_dcs_t ** dcs)
 {
         if (physics->dcs_photonuclear == &dcs_photonuclear_BM) {
+                if (dcs != NULL) *dcs = physics->dcs_photonuclear;
                 return &dcs_photonuclear_d2_BM;
         } else {
+                if (dcs != NULL) *dcs = &dcs_photonuclear_DRSS;
                 return &dcs_photonuclear_d2_DRSS;
         }
 }
@@ -14616,9 +14634,10 @@ ddcs_t * dcs_photonuclear_ddcs(const struct pumas_physics * physics)
 double dcs_photonuclear_transport(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double cutoff)
 {
-        ddcs_t * ddcs = dcs_photonuclear_ddcs(physics);
+        pumas_dcs_t * dcs;
+        ddcs_t * ddcs = dcs_photonuclear_ddcs(physics, &dcs);
         return dcs_photonuclear_transport_integrate(element->Z, element->A,
-            physics->mass, K, K * cutoff, ddcs);
+            physics->mass, K, K * cutoff, ddcs, physics->dcs_photonuclear, dcs);
 }
 
 /**
