@@ -1163,6 +1163,10 @@ static inline float * table_get_dcs_coeff(const struct pumas_physics * physics,
 static inline float * table_get_dcs_value(const struct pumas_physics * physics,
     const struct atomic_element * element, int process, int kinetic);
 /**
+ * Routine(s) wrapping static data
+ */
+static double data_nuclear_radius(double Z, double A);
+/**
  * Low level routines for the stepping.
  */
 static enum pumas_return step_transport(const struct pumas_physics * physics,
@@ -7095,6 +7099,37 @@ static enum pumas_return material_index(const struct pumas_physics * physics,
             PUMAS_RETURN_UNKNOWN_MATERIAL, "unknown material `%s'", material);
 }
 
+double data_nuclear_radius(double Z, double A)
+{
+        /* Nuclear r.m.s. radii, in fm. */
+        static const double rN[119] = {
+            2.098, 0.859, 1.680, 2.400, 2.518, 2.405, 2.470, 2.548, 2.734,
+            2.900, 2.993, 2.940, 3.043, 3.035, 3.098, 3.187, 3.245, 3.360,
+            3.413, 3.408, 3.477, 3.443, 3.595, 3.600, 3.644, 3.681, 3.748,
+            3.843, 3.776, 3.943, 3.942, 4.032, 4.065, 4.078, 4.123, 4.135,
+            4.188, 4.209, 4.237, 4.249, 4.306, 4.318, 4.363, 4.388, 4.432,
+            4.435, 4.479, 4.520, 4.612, 4.646, 4.640, 4.630, 4.714, 4.706,
+            4.756, 4.774, 4.823, 4.848, 4.878, 4.897, 4.927, 4.948, 5.054,
+            5.093, 5.133, 5.177, 5.197, 5.210, 5.264, 5.301, 5.390, 5.371,
+            5.429, 5.479, 5.423, 5.400, 5.409, 5.411, 5.387, 5.318, 5.404,
+            5.471, 5.498, 5.520, 5.520, 5.529, 5.629, 5.637, 5.661, 5.669,
+            5.710, 5.701, 5.784, 5.825, 5.824, 5.817, 5.843, 5.843, 5.868,
+            5.875, 5.906, 5.912, 5.918, 5.937, 5.967, 5.973, 5.979, 5.985,
+            5.980, 6.033, 6.051, 6.056, 6.074, 6.079, 6.097, 6.097, 6.119,
+            6.125, 6.125};
+
+        int iN = (int)Z;
+        const int nN = sizeof(rN) / sizeof(rN[0]);
+        if (iN >= nN) iN = nN - 1;
+        else if ((iN == 1) && (A >= 1.5)) {
+                /* For hydrogen isotopes we use a different radius because
+                 * it differs significantly.
+                 */
+                iN = 0;
+        }
+        return rN[iN] * 1E-15; /* fm */
+}
+
 /*
  * Low level routines: various functions related to Coulomb scattering.
  */
@@ -7296,33 +7331,8 @@ void coulomb_screening_parameters(double Z, double A, double mass,
                 screening[i] = d * a * a;
         }
 
-        /* Nuclear r.m.s. radii, in fm. */
-        static double rN[119] = {
-            2.098, 0.859, 1.680, 2.400, 2.518, 2.405, 2.470, 2.548, 2.734,
-            2.900, 2.993, 2.940, 3.043, 3.035, 3.098, 3.187, 3.245, 3.360,
-            3.413, 3.408, 3.477, 3.443, 3.595, 3.600, 3.644, 3.681, 3.748,
-            3.843, 3.776, 3.943, 3.942, 4.032, 4.065, 4.078, 4.123, 4.135,
-            4.188, 4.209, 4.237, 4.249, 4.306, 4.318, 4.363, 4.388, 4.432,
-            4.435, 4.479, 4.520, 4.612, 4.646, 4.640, 4.630, 4.714, 4.706,
-            4.756, 4.774, 4.823, 4.848, 4.878, 4.897, 4.927, 4.948, 5.054,
-            5.093, 5.133, 5.177, 5.197, 5.210, 5.264, 5.301, 5.390, 5.371,
-            5.429, 5.479, 5.423, 5.400, 5.409, 5.411, 5.387, 5.318, 5.404,
-            5.471, 5.498, 5.520, 5.520, 5.529, 5.629, 5.637, 5.661, 5.669,
-            5.710, 5.701, 5.784, 5.825, 5.824, 5.817, 5.843, 5.843, 5.868,
-            5.875, 5.906, 5.912, 5.918, 5.937, 5.967, 5.973, 5.979, 5.985,
-            5.980, 6.033, 6.051, 6.056, 6.074, 6.079, 6.097, 6.097, 6.119,
-            6.125, 6.125};
-
-        int iN = (int)Z;
-        const int nN = sizeof(rN) / sizeof(rN[0]);
-        if (iN >= nN) iN = nN - 1;
-        else if ((iN == 1) && (A >= 1.5)) {
-                /* For hydrogen isotopes we use a different radius because
-                 * it differs significantly.
-                 */
-                iN = 0;
-        }
-        const double RN = rN[iN] * 1E-15; /* fm */
+        /* Nuclear screening. */
+        const double RN = data_nuclear_radius(Z, A);
         screening[n++] = 12. * d / (RN * RN); /* the factor 12 corresponds to
                                                * a 4th order pole used in
                                                * integrals as an approximation
@@ -11270,20 +11280,77 @@ polar_function_t * polar_get(int process)
  * @param ki      The initial kinetic energy.
  * @param kf      The final kinetic energy.
  * @return The polar parameters as 0.5 * (1 - cos_theta).
+ *
+ * The polar angle is sampled using Tsai's DDCS. A rejection sampling method is
+ * used in two steps.
+ *
+ * References:
+ *   Y. Tsai, Rev. Mod. Phys. (1974).
  */
 double polar_bremsstrahlung(const struct pumas_physics * physics,
     struct pumas_context * context, const struct atomic_element * element,
     double ki, double kf)
 {
-        const double e = ki + physics->mass;
-        const double q = ki - kf;
-        double rmax2 = e / q - 1.;
-        rmax2 = (rmax2 > 1.) ? 1. : rmax2 * rmax2;
-        double r = context->random(context) * rmax2 / (1. + rmax2);
-        r = sqrt(r / (1. - r));
+#define MAX_TRIALS 100
 
-        return 0.5 * (1. -
-            cos(r * physics->mass * q / (e * (kf + physics->mass))));
+        const double m = physics->mass;
+        const double E = ki + m;
+        const double nu = ki - kf;
+        const double y = nu / E;
+
+        const double tmp = m * nu / (E * (E - nu));
+        const double mu0 = tmp * tmp;
+        const double c1 = (2 * (1. - y) + y * y) * mu0;
+        const double c2 = 4 * (1. - y) * mu0 * mu0;
+
+        const double RN = data_nuclear_radius(element->Z, element->A);
+        const double tmp2 = m * RN / HBAR_C;
+        const double muni = tmp2 * tmp2 / 12.;
+        const double muc = sqrt(mu0) - mu0;
+        if (muc < 0) return 0;
+
+        int i;
+        for (i = 0; i < MAX_TRIALS; i++) {
+                const double r0 = context->random(context);
+                const double r1 = context->random(context);
+
+                /* Randomise over the envelope */
+                const double mu = r0 * mu0 / (mu0 + 1. - r0);
+
+                /* First, compare to the unscreened PDF */
+                const double mus = mu0 + mu;
+                const double mu2 = mus * mus;
+                const double d1 = 1 / mu2;
+                const double d2 = d1 * d1;
+                const double score = r1 * c1 * d1;
+
+                double pdf = c1 * d1 - mu * c2 * d2;
+                if (score > pdf) continue;
+
+                /* Second, check the nuclear screening */
+                const double l2 = mu2 / (mu0 * mu0);
+                double q = muni * l2;
+                double r = mu0 * l2;
+                double qr = q * r;
+                if (qr > 1E+05) continue; /* Above this value the nuclear
+                                           * screening is close to zero and
+                                           * results are numericaly
+                                           * instable using double precision.
+                                           */
+
+                const double x = (1. + 2 * qr) * log((1. + qr) / (r + qr)) -
+                    (1. - r) * (1 + 2 * q) / (1 + q);
+                q = muni;
+                r = mu0;
+                qr = q * r;
+                const double x0 = (1. + 2 * qr) * log((1. + qr) / (r + qr)) -
+                    (1. - r) * (1 + 2 * q) / (1 + q);
+
+                pdf *= x / x0;
+                if (score <= pdf) return mu;
+        }
+
+        return 0.; /* Fallback to no scattering in case of failure */
 }
 
 /**
@@ -14534,7 +14601,7 @@ inline static double dcs_photonuclear_integrated(int mode, double Z, double A,
  * References:
  *      Dutta et al., Phys.Rev. D63 (2001) 094020 [arXiv:hep-ph/0012350].
  */
-double dcs_photonuclear_DRSS(double Z, double A, double m,
+static double dcs_photonuclear_DRSS(double Z, double A, double m,
     double K, double q)
 {
         return dcs_photonuclear_integrated(
