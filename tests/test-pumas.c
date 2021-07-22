@@ -205,7 +205,7 @@ START_TEST(test_api_error)
         CHECK_STRING(pumas_physics_property_elastic_cutoff_angle);
         CHECK_STRING(pumas_physics_property_stopping_power);
         CHECK_STRING(pumas_physics_property_energy_straggling);
-        CHECK_STRING(pumas_physics_property_grammage);
+        CHECK_STRING(pumas_physics_property_range);
         CHECK_STRING(pumas_physics_property_kinetic_energy);
         CHECK_STRING(pumas_physics_property_magnetic_rotation);
         CHECK_STRING(pumas_physics_property_transport_path);
@@ -770,7 +770,7 @@ START_TEST(test_api_property)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         reset_error();
-        pumas_physics_property_grammage(physics, 0, 0, 0., &value);
+        pumas_physics_property_range(physics, 0, 0, 0., &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         reset_error();
@@ -823,12 +823,12 @@ START_TEST(test_api_property)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
-        pumas_physics_property_grammage(
+        pumas_physics_property_range(
             physics, PUMAS_MODE_MIXED, 4, 0., &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
-        pumas_physics_property_grammage(
+        pumas_physics_property_range(
             physics, PUMAS_MODE_STRAGGLED, 0, 0., &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
@@ -907,17 +907,17 @@ START_TEST(test_api_property)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq_tol(value, 2.507E-03, 1E-06);
 
-        pumas_physics_property_grammage(
+        pumas_physics_property_range(
             physics, PUMAS_MODE_CSDA, 0, 1E+00, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq_tol(value, 5.518E+03, 1.);
 
-        pumas_physics_property_grammage(
+        pumas_physics_property_range(
             physics, PUMAS_MODE_CSDA, 0, 1E+03, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq_tol(value, 2.449E+06, 1E+03);
 
-        pumas_physics_property_grammage(
+        pumas_physics_property_range(
             physics, PUMAS_MODE_MIXED, 0, 1E+03, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_gt(value, 2.449E+06);
@@ -979,10 +979,10 @@ START_TEST(test_api_property)
             PUMAS_MODE_CSDA, 0, -1, &vmax);
         ck_assert_double_gt(value, vmax);
 
-        pumas_physics_property_grammage(
+        pumas_physics_property_range(
             physics, PUMAS_MODE_CSDA, 0, 1E+11, &value);
         pumas_physics_table_value(
-            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_MODE_CSDA, 0, -1, &vmax);
+            physics, PUMAS_PROPERTY_RANGE, PUMAS_MODE_CSDA, 0, -1, &vmax);
         ck_assert_double_gt(value, vmax);
 
         pumas_physics_property_proper_time(
@@ -1034,22 +1034,22 @@ START_TEST(test_api_table)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
-        pumas_physics_table_index(physics, PUMAS_PROPERTY_GRAMMAGE,
+        pumas_physics_table_index(physics, PUMAS_PROPERTY_RANGE,
             PUMAS_MODE_STRAGGLED, 0, 0., &index);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
         pumas_physics_table_index(
-            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_MODE_CSDA, 4, 0., &index);
+            physics, PUMAS_PROPERTY_RANGE, PUMAS_MODE_CSDA, 4, 0., &index);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
-        pumas_physics_table_index(physics, PUMAS_PROPERTY_GRAMMAGE,
+        pumas_physics_table_index(physics, PUMAS_PROPERTY_RANGE,
             PUMAS_MODE_CSDA, 0, 1E+18, &index);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_VALUE_ERROR);
 
         reset_error();
-        pumas_physics_table_index(physics, PUMAS_PROPERTY_GRAMMAGE,
+        pumas_physics_table_index(physics, PUMAS_PROPERTY_RANGE,
             PUMAS_MODE_CSDA, 0, -1., &index);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_VALUE_ERROR);
 
@@ -1058,22 +1058,22 @@ START_TEST(test_api_table)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
-        pumas_physics_table_value(physics, PUMAS_PROPERTY_GRAMMAGE,
+        pumas_physics_table_value(physics, PUMAS_PROPERTY_RANGE,
             PUMAS_MODE_STRAGGLED, 0, 0, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
         pumas_physics_table_value(
-            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_MODE_CSDA, 4, 0, &value);
+            physics, PUMAS_PROPERTY_RANGE, PUMAS_MODE_CSDA, 4, 0, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
-        pumas_physics_table_value(physics, PUMAS_PROPERTY_GRAMMAGE,
+        pumas_physics_table_value(physics, PUMAS_PROPERTY_RANGE,
             PUMAS_MODE_CSDA, 0, 200, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
-        pumas_physics_table_value(physics, PUMAS_PROPERTY_GRAMMAGE,
+        pumas_physics_table_value(physics, PUMAS_PROPERTY_RANGE,
             PUMAS_MODE_CSDA, 0, -1000, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
@@ -1106,31 +1106,31 @@ START_TEST(test_api_table)
         ck_assert_double_eq(value, 1E+00);
 
         pumas_physics_table_index(
-            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_MODE_CSDA, 0, 0., &index);
+            physics, PUMAS_PROPERTY_RANGE, PUMAS_MODE_CSDA, 0, 0., &index);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(index, 0);
 
-        pumas_physics_table_index(physics, PUMAS_PROPERTY_GRAMMAGE,
+        pumas_physics_table_index(physics, PUMAS_PROPERTY_RANGE,
             PUMAS_MODE_CSDA, 0, 5.518E+03, &index);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_int_eq(index, 49);
 
         pumas_physics_table_value(
-            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_MODE_CSDA, 0, 0, &value);
+            physics, PUMAS_PROPERTY_RANGE, PUMAS_MODE_CSDA, 0, 0, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq(value, 0.);
 
         pumas_physics_table_value(
-            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_MODE_CSDA, 0, 49, &value);
+            physics, PUMAS_PROPERTY_RANGE, PUMAS_MODE_CSDA, 0, 49, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq_tol(value, 5.518E+03, 1.);
 
         pumas_physics_table_value(
-            physics, PUMAS_PROPERTY_GRAMMAGE, PUMAS_MODE_CSDA, 0, -49, &value);
+            physics, PUMAS_PROPERTY_RANGE, PUMAS_MODE_CSDA, 0, -49, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq_tol(value, 1.676E+07, 1E+04);
 
-        pumas_physics_table_value(physics, PUMAS_PROPERTY_GRAMMAGE,
+        pumas_physics_table_value(physics, PUMAS_PROPERTY_RANGE,
             PUMAS_MODE_MIXED, 0, 49, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_gt(value, 5.518E+03);
@@ -2374,7 +2374,7 @@ START_TEST(test_csda_straight)
                 reset_error();
                 initialise_state();
                 state->energy = 1.;
-                pumas_physics_property_grammage(
+                pumas_physics_property_range(
                     physics, PUMAS_MODE_CSDA, 0, state->energy, &X);
                 pumas_physics_property_proper_time(
                     physics, PUMAS_MODE_CSDA, 0, state->energy, &t0);
@@ -2487,7 +2487,7 @@ START_TEST(test_csda_straight)
         double X1, d1, t1;
         context->limit.energy = 0.5;
         context->event = PUMAS_EVENT_LIMIT_ENERGY;
-        pumas_physics_property_grammage(
+        pumas_physics_property_range(
             physics, PUMAS_MODE_CSDA, 0, context->limit.energy, &X1);
         pumas_physics_property_proper_time(
             physics, PUMAS_MODE_CSDA, 0, context->limit.energy, &t1);
@@ -2638,7 +2638,7 @@ START_TEST(test_csda_straight)
                 state->energy = 1.;
                 pumas_context_transport(context, state, event, media);
                 k1 = state->energy;
-                pumas_physics_property_grammage(
+                pumas_physics_property_range(
                     physics, PUMAS_MODE_CSDA, 0, k1, &X1);
                 d1 = X1 / TEST_ROCK_DENSITY;
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
@@ -2672,7 +2672,7 @@ START_TEST(test_csda_straight)
         context->limit.energy = 1.;
         context->event = PUMAS_EVENT_LIMIT_ENERGY;
         k1 = 0.5;
-        pumas_physics_property_grammage(physics, PUMAS_MODE_CSDA, 0, k1, &X1);
+        pumas_physics_property_range(physics, PUMAS_MODE_CSDA, 0, k1, &X1);
         pumas_physics_property_proper_time(
             physics, PUMAS_MODE_CSDA, 0, k1, &t1);
         t1 /= TEST_ROCK_DENSITY;
@@ -3090,7 +3090,7 @@ START_TEST(test_csda_straight)
                 pumas_physics_table_value(physics,
                     PUMAS_PROPERTY_KINETIC_ENERGY, 0, 0, -1, &state->energy);
                 state->energy *= 1E+02;
-                pumas_physics_property_grammage(
+                pumas_physics_property_range(
                     physics, PUMAS_MODE_CSDA, 0, state->energy, &X);
                 pumas_physics_property_proper_time(
                     physics, PUMAS_MODE_CSDA, 0, state->energy, &t0);
@@ -3142,7 +3142,7 @@ START_TEST(test_csda_record)
         state->energy = 1.;
 
         double X, d, t0;
-        pumas_physics_property_grammage(
+        pumas_physics_property_range(
             physics, PUMAS_MODE_CSDA, 0, state->energy, &X);
         pumas_physics_property_proper_time(
             physics, PUMAS_MODE_CSDA, 0, state->energy, &t0);
@@ -3206,7 +3206,7 @@ START_TEST(test_csda_magnet)
         state->energy = 1.;
 
         double X, d, phi0, phi1, phi, *u = state->direction;
-        pumas_physics_property_grammage(
+        pumas_physics_property_range(
             physics, PUMAS_MODE_CSDA, 0, state->energy, &X);
         d = X / TEST_ROCK_DENSITY;
         pumas_physics_property_magnetic_rotation(
@@ -3403,7 +3403,7 @@ START_TEST(test_hybrid_straight)
                         } else {
                                 state->energy = 1E+03;
                         }
-                        pumas_physics_property_grammage(physics,
+                        pumas_physics_property_range(physics,
                             PUMAS_MODE_MIXED, 0, state->energy, &X);
                         pumas_physics_property_proper_time(physics,
                             PUMAS_MODE_MIXED, 0, state->energy, &t0);
@@ -3520,7 +3520,7 @@ START_TEST(test_hybrid_straight)
         double X1, d1, t1;
         context->limit.energy = 0.5E+03;
         context->event = PUMAS_EVENT_LIMIT_ENERGY;
-        pumas_physics_property_grammage(
+        pumas_physics_property_range(
             physics, PUMAS_MODE_MIXED, 0, context->limit.energy, &X1);
         pumas_physics_property_proper_time(
             physics, PUMAS_MODE_MIXED, 0, context->limit.energy, &t1);
@@ -3670,7 +3670,7 @@ START_TEST(test_hybrid_straight)
                 state->energy = 1E+03;
                 pumas_context_transport(context, state, event, media);
                 k1 = state->energy;
-                pumas_physics_property_grammage(
+                pumas_physics_property_range(
                     physics, PUMAS_MODE_MIXED, 0, k1, &X1);
                 d1 = X1 / TEST_ROCK_DENSITY;
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
@@ -3703,7 +3703,7 @@ START_TEST(test_hybrid_straight)
         context->limit.energy = 1E+03;
         context->event = PUMAS_EVENT_LIMIT_ENERGY;
         k1 = 0.5 * context->limit.energy;
-        pumas_physics_property_grammage(
+        pumas_physics_property_range(
             physics, PUMAS_MODE_MIXED, 0, k1, &X1);
         pumas_physics_property_proper_time(
             physics, PUMAS_MODE_MIXED, 0, k1, &t1);
@@ -4113,7 +4113,7 @@ START_TEST(test_hybrid_scattering)
         initialise_state();
         state->energy = 1E+03;
 
-        pumas_physics_property_grammage(
+        pumas_physics_property_range(
             physics, PUMAS_MODE_MIXED, 0, state->energy, &X);
         pumas_physics_property_proper_time(
             physics, PUMAS_MODE_MIXED, 0, state->energy, &t0);
@@ -4142,7 +4142,7 @@ START_TEST(test_hybrid_scattering)
 
         double k1, X1, d1, t1;
         k1 = 0.5 * context->limit.energy;
-        pumas_physics_property_grammage(
+        pumas_physics_property_range(
             physics, PUMAS_MODE_MIXED, 0, k1, &X1);
         pumas_physics_property_proper_time(
             physics, PUMAS_MODE_MIXED, 0, k1, &t1);
@@ -4190,7 +4190,7 @@ START_TEST(test_hybrid_record)
         state->energy = 1E+03;
 
         double X, d, t0;
-        pumas_physics_property_grammage(
+        pumas_physics_property_range(
             physics, PUMAS_MODE_MIXED, 0, state->energy, &X);
         pumas_physics_property_proper_time(
             physics, PUMAS_MODE_MIXED, 0, state->energy, &t0);
@@ -4255,7 +4255,7 @@ START_TEST(test_hybrid_magnet)
         state->energy = 1E+00;
 
         double X, d, phi0, phi1, phi, *u = state->direction;
-        pumas_physics_property_grammage(
+        pumas_physics_property_range(
             physics, PUMAS_MODE_MIXED, 0, state->energy, &X);
         d = X / TEST_ROCK_DENSITY;
         pumas_physics_property_magnetic_rotation(
@@ -4279,7 +4279,7 @@ START_TEST(test_hybrid_magnet)
         initialise_state();
         state->energy = 1E+03;
 
-        pumas_physics_property_grammage(
+        pumas_physics_property_range(
             physics, PUMAS_MODE_MIXED, 0, state->energy, &X);
         d = X / TEST_ROCK_DENSITY;
         pumas_physics_property_magnetic_rotation(
@@ -4356,7 +4356,7 @@ START_TEST(test_detailed_straight)
                 reset_error();
                 initialise_state();
                 state->energy = 1E+03;
-                pumas_physics_property_grammage(
+                pumas_physics_property_range(
                     physics, PUMAS_MODE_MIXED, 0, state->energy, &X);
                 pumas_physics_property_proper_time(
                     physics, PUMAS_MODE_MIXED, 0, state->energy, &t0);
@@ -4470,7 +4470,7 @@ START_TEST(test_detailed_straight)
         double X1, d1, t1;
         context->limit.energy = 0.5E+03;
         context->event = PUMAS_EVENT_LIMIT_ENERGY;
-        pumas_physics_property_grammage(
+        pumas_physics_property_range(
             physics, PUMAS_MODE_MIXED, 0, context->limit.energy, &X1);
         pumas_physics_property_proper_time(
             physics, PUMAS_MODE_MIXED, 0, context->limit.energy, &t1);
@@ -4619,7 +4619,7 @@ START_TEST(test_detailed_straight)
                 state->energy = 1E+03;
                 pumas_context_transport(context, state, event, media);
                 k1 = state->energy;
-                pumas_physics_property_grammage(
+                pumas_physics_property_range(
                     physics, PUMAS_MODE_MIXED, 0, k1, &X1);
                 d1 = X1 / TEST_ROCK_DENSITY;
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
@@ -4653,7 +4653,7 @@ START_TEST(test_detailed_straight)
         context->limit.energy = 1E+03;
         context->event = PUMAS_EVENT_LIMIT_ENERGY;
         k1 = 0.5 * context->limit.energy;
-        pumas_physics_property_grammage(
+        pumas_physics_property_range(
             physics, PUMAS_MODE_MIXED, 0, k1, &X1);
         pumas_physics_property_proper_time(
             physics, PUMAS_MODE_MIXED, 0, k1, &t1);
@@ -5060,7 +5060,7 @@ START_TEST(test_detailed_scattering)
         initialise_state();
         state->energy = 1E+03;
 
-        pumas_physics_property_grammage(
+        pumas_physics_property_range(
             physics, PUMAS_MODE_MIXED, 0, state->energy, &X);
         pumas_physics_property_proper_time(
             physics, PUMAS_MODE_MIXED, 0, state->energy, &t0);
@@ -5089,7 +5089,7 @@ START_TEST(test_detailed_scattering)
 
         double k1, X1, d1, t1;
         k1 = 1E-03;
-        pumas_physics_property_grammage(
+        pumas_physics_property_range(
             physics, PUMAS_MODE_MIXED, 0, k1, &X1);
         pumas_physics_property_proper_time(
             physics, PUMAS_MODE_MIXED, 0, k1, &t1);
@@ -5135,7 +5135,7 @@ START_TEST(test_detailed_magnet)
         state->energy = 1E+00;
 
         double X, d, phi0, phi1, phi, *u = state->direction;
-        pumas_physics_property_grammage(
+        pumas_physics_property_range(
             physics, PUMAS_MODE_MIXED, 0, state->energy, &X);
         d = X / TEST_ROCK_DENSITY;
         pumas_physics_property_magnetic_rotation(
@@ -5164,7 +5164,7 @@ START_TEST(test_detailed_magnet)
         initialise_state();
         state->energy = 1E+03;
 
-        pumas_physics_property_grammage(
+        pumas_physics_property_range(
             physics, PUMAS_MODE_MIXED, 0, state->energy, &X);
         d = X / TEST_ROCK_DENSITY;
         pumas_physics_property_magnetic_rotation(
@@ -5228,7 +5228,7 @@ START_TEST(test_tau_csda)
         state->energy = 1.;
 
         double X, d;
-        pumas_physics_property_grammage(
+        pumas_physics_property_range(
             physics, PUMAS_MODE_CSDA, 0, state->energy, &X);
         d = X / TEST_ROCK_DENSITY;
 

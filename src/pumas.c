@@ -2224,7 +2224,7 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_physics_composite_properties)
         TOSTRING(pumas_physics_print)
         TOSTRING(pumas_error_raise)
-        TOSTRING(pumas_physics_property_grammage)
+        TOSTRING(pumas_physics_property_range)
         TOSTRING(pumas_physics_property_proper_time)
         TOSTRING(pumas_physics_property_magnetic_rotation)
         TOSTRING(pumas_physics_property_kinetic_energy)
@@ -2799,11 +2799,11 @@ void pumas_recorder_clear(struct pumas_recorder * recorder)
 }
 
 /* Public library functions: properties accessors. */
-enum pumas_return pumas_physics_property_grammage(
+enum pumas_return pumas_physics_property_range(
     const struct pumas_physics * physics, enum pumas_mode scheme,
     int material, double kinetic, double * grammage)
 {
-        ERROR_INITIALISE(pumas_physics_property_grammage);
+        ERROR_INITIALISE(pumas_physics_property_range);
         *grammage = 0.;
 
         if (physics == NULL) {
@@ -3436,7 +3436,7 @@ enum pumas_return pumas_physics_table_value(
         if (property == PUMAS_PROPERTY_KINETIC_ENERGY) {
                 *value = *table_get_K(physics, row);
                 return PUMAS_RETURN_SUCCESS;
-        } else if (property == PUMAS_PROPERTY_GRAMMAGE) {
+        } else if (property == PUMAS_PROPERTY_RANGE) {
                 if ((scheme <= PUMAS_MODE_DISABLED) ||
                     (scheme >= PUMAS_MODE_STRAGGLED)) {
                         return ERROR_INVALID_SCHEME(scheme);
@@ -3523,7 +3523,7 @@ enum pumas_return pumas_physics_table_index(
         const double * table;
         if (property == PUMAS_PROPERTY_KINETIC_ENERGY)
                 table = table_get_K(physics, 0);
-        else if (property == PUMAS_PROPERTY_GRAMMAGE) {
+        else if (property == PUMAS_PROPERTY_RANGE) {
                 if ((scheme <= PUMAS_MODE_DISABLED) ||
                     (scheme >= PUMAS_MODE_STRAGGLED)) {
                         return ERROR_INVALID_SCHEME(scheme);

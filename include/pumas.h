@@ -65,8 +65,8 @@ enum pumas_property {
         PUMAS_PROPERTY_ELASTIC_PATH,
         /** The material stopping power, in GeV/(kg/m^(2)). */
         PUMAS_PROPERTY_STOPPING_POWER,
-        /** The particle range, in kg/m^(2). */
-        PUMAS_PROPERTY_GRAMMAGE,
+        /** The particle grammage range, in kg/m^(2). */
+        PUMAS_PROPERTY_RANGE,
         /** The particle kinetic energy, in GeV. */
         PUMAS_PROPERTY_KINETIC_ENERGY,
         /** The total magnetic rotation angle, in rad kg/m^(3). */
@@ -85,7 +85,7 @@ enum pumas_property {
 enum pumas_mode {
         /** The simulation of the corresponding property is disabled.
          *
-         * **Note** : When running without energy losses a range / grammage
+         * **Note** : When running without energy losses a distance / grammage
          * limit must be defined or geometry callback provided.
          *
          * **Note** : When scattering is disabled, charged particles are still
@@ -1209,14 +1209,14 @@ PUMAS_API const struct pumas_physics * pumas_context_physics_get(
     const struct pumas_context * context);
 
 /**
- * Get the total grammage that a particle can travel assuming continuous
+ * Get the total grammage range that a particle can travel assuming continuous
  * energy loss.
  *
  * @param physics     Handle for the Physics tables.
  * @param mode        The energy loss mode.
  * @param material    The material index.
  * @param energy      The initial kinetic energy, in GeV.
- * @param grammage    The grammage in kg/m^(2).
+ * @param range       The grammage range in kg/m^(2).
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
@@ -1231,9 +1231,9 @@ PUMAS_API const struct pumas_physics * pumas_context_physics_get(
  *
  *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  */
-PUMAS_API enum pumas_return pumas_physics_property_grammage(
+PUMAS_API enum pumas_return pumas_physics_property_range(
     const struct pumas_physics * physics, enum pumas_mode mode,
-    int material, double energy, double * grammage);
+    int material, double energy, double * range);
 
 /**
  * Get the normalised total proper time spent assuming continuous energy loss.
@@ -1287,12 +1287,12 @@ PUMAS_API enum pumas_return pumas_physics_property_magnetic_rotation(
 
 /**
  * Get the minimum kinetic energy required for travelling over a given
- * `grammage`, assuming continuous energy loss.
+ * grammage range, assuming continuous energy loss.
  *
  * @param physics     Handle for the Physics tables.
  * @param mode        The energy loss mode
  * @param material    The material index.
- * @param grammage    The requested grammage, in kg/m^(2).
+ * @param range       The requested grammage range, in kg/m^(2).
  * @param energy      The required kinetic energy in GeV.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
@@ -1308,7 +1308,7 @@ PUMAS_API enum pumas_return pumas_physics_property_magnetic_rotation(
  */
 PUMAS_API enum pumas_return pumas_physics_property_kinetic_energy(
     const struct pumas_physics * physics, enum pumas_mode mode,
-    int material, double grammage, double * energy);
+    int material, double range, double * energy);
 
 /**
  * Get the stopping power per unit weight of material.
