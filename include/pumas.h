@@ -63,8 +63,8 @@ enum pumas_property {
          * in kg/m^(2).
          */
         PUMAS_PROPERTY_ELASTIC_PATH,
-        /** The average (continuous) energy loss, in GeV/(kg/m^(2)). */
-        PUMAS_PROPERTY_ENERGY_LOSS,
+        /** The material stopping power, in GeV/(kg/m^(2)). */
+        PUMAS_PROPERTY_STOPPING_POWER,
         /** The particle range, in kg/m^(2). */
         PUMAS_PROPERTY_GRAMMAGE,
         /** The particle kinetic energy, in GeV. */
@@ -122,8 +122,9 @@ enum pumas_mode {
         /** Do a forward Monte Carlo transport.
          *
          * **Note** : the forward Monte Carlo transport is analog, i.e.
-         * unweighted. However, if the decay mode is set to `PUMAS_MODE_DECAY`
-         * then the particle weight is updated accordingly.
+         * unweighted. However, if the decay mode is set to
+         * `PUMAS_MODE_WEIGHTED` then the particle weight is updated
+         * accordingly.
          */
         PUMAS_MODE_FORWARD = 0,
         /** Do a backward Monte Carlo transport.
@@ -510,14 +511,14 @@ typedef double pumas_random_cb (struct pumas_context * context);
 /** Mode flags for the Monte Carlo transport. */
 struct pumas_context_mode {
         /**
-        * The scheme used for the computation of energy losses. Default
-        * is `PUMAS_MOED_DETAILED`.
+        * The mode used for the computation of energy losses. Default
+        * is `PUMAS_MODE_STRAGGLED`.
         */
         enum pumas_mode energy_loss;
         /**
-        * The mode for handling decays. Default is `PUMAS_MODE_WEIGHT`
-        * for a muon or `PUMAS_MODE_DECAY` for a tau. Set this to
-        * `PUMAS_MODE_STABLE` in order to disable decays at all.
+        * The mode for handling decays. Default is `PUMAS_MODE_WEIGHTED`
+        * for a muon or `PUMAS_MODE_RANDOMISED` for a tau. Set this to
+        * `PUMAS_MODE_DISABLED` in order to disable decays at all.
         */
         enum pumas_mode decay;
         /**
@@ -528,9 +529,8 @@ struct pumas_context_mode {
         enum pumas_mode direction;
         /**
         * Algorithm for the simulation of the scattering. Default is
-        * `PUMAS_MODE_FULL_SPACE`. Other option is
-        * `PUMAS_MODE_LONGITUDNAL` which neglects any transverse
-        * scattering.
+        * `PUMAS_MODE_MIXED`. Other option is `PUMAS_MODE_DISABLED` which
+        * neglects any transverse scattering.
         */
         enum pumas_mode scattering;
 };
@@ -1213,52 +1213,52 @@ PUMAS_API const struct pumas_physics * pumas_context_physics_get(
  * energy loss.
  *
  * @param physics     Handle for the Physics tables.
- * @param scheme      The energy loss scheme.
+ * @param mode        The energy loss mode.
  * @param material    The material index.
  * @param energy      The initial kinetic energy, in GeV.
  * @param grammage    The grammage in kg/m^(2).
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * The energy loss scheme must be one of `PUMAS_MODE_CSDA` or
- * `PUMAS_MODE_HYBRID`. For a uniform medium, divide the return value by the
- * density in order to get the corresponding total travelled distance.
+ * The energy loss mode must be one of `PUMAS_MODE_CSDA` or `PUMAS_MODE_MIXED`.
+ * For a uniform medium, divide the return value by the density in order to get
+ * the corresponding total travelled distance.
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_INDEX_ERROR             The scheme of material index is
+ *     PUMAS_RETURN_INDEX_ERROR             The mode or material index is
  * not valid.
  *
  *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_grammage(
-    const struct pumas_physics * physics, enum pumas_mode scheme,
+    const struct pumas_physics * physics, enum pumas_mode mode,
     int material, double energy, double * grammage);
 
 /**
  * Get the normalised total proper time spent assuming continuous energy loss.
  *
  * @param physics     Handle for the Physics tables.
- * @param scheme      The energy loss scheme.
+ * @param mode        The energy loss mode.
  * @param material    The material index.
  * @param energy      The initial kinetic energy, in GeV.
  * @param time        The normalised proper time in kg/m^(2).
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * The energy loss scheme must be one of `PUMAS_MODE_CSDA` or
- * `PUMAS_MODE_HYBRID`. Divide the returned value by the medium density
- * times *c* in order to get the proper time in unit of time.
+ * The energy loss mode must be one of `PUMAS_MODE_CSDA` or `PUMAS_MODE_MIXED`.
+ * Divide the returned value by the medium density times *c* in order to get the
+ * proper time in unit of time.
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_INDEX_ERROR             The scheme of material index is
+ *     PUMAS_RETURN_INDEX_ERROR             The mode or material index is
  * not valid.
  *
  *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_proper_time(
-    const struct pumas_physics * physics, enum pumas_mode scheme,
+    const struct pumas_physics * physics, enum pumas_mode mode,
     int material, double energy, double * time);
 
 /**
@@ -1290,50 +1290,48 @@ PUMAS_API enum pumas_return pumas_physics_property_magnetic_rotation(
  * `grammage`, assuming continuous energy loss.
  *
  * @param physics     Handle for the Physics tables.
- * @param scheme      The energy loss scheme
+ * @param mode        The energy loss mode
  * @param material    The material index.
  * @param grammage    The requested grammage, in kg/m^(2).
  * @param energy      The required kinetic energy in GeV.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- *  The energy loss scheme must be one of `PUMAS_MODE_CSDA` or
- * `PUMAS_MODE_HYBRID`.
+ *  The energy loss mode must be one of `PUMAS_MODE_CSDA` or `PUMAS_MODE_MIXED`.
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_INDEX_ERROR             The scheme of material index is
+ *     PUMAS_RETURN_INDEX_ERROR             The mode or material index is
  * not valid.
  *
  *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_kinetic_energy(
-    const struct pumas_physics * physics, enum pumas_mode scheme,
+    const struct pumas_physics * physics, enum pumas_mode mode,
     int material, double grammage, double * energy);
 
 /**
- * Get the average energy loss per unit weight of material.
+ * Get the stopping power per unit weight of material.
  *
  * @param physics     Handle for the Physics tables.
- * @param scheme      The energy loss scheme
+ * @param mode        The energy loss mode
  * @param material    The material index.
  * @param energy      The kinetic energy, in GeV.
- * @param dedx        The computed energy loss in GeV/(kg/m^(2)).
+ * @param dedx        The computed stopping power in GeV/(kg/m^(2)).
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * The energy loss scheme must be one of `PUMAS_MODE_CSDA` or
- * `PUMAS_MODE_HYBRID`.
+ * The energy loss mode must be one of `PUMAS_MODE_CSDA` or `PUMAS_MODE_MIXED`.
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_INDEX_ERROR             The scheme of material index is
+ *     PUMAS_RETURN_INDEX_ERROR             The mode or material index is
  * not valid.
  *
  *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  */
-PUMAS_API enum pumas_return pumas_physics_property_energy_loss(
-    const struct pumas_physics * physics, enum pumas_mode scheme,
+PUMAS_API enum pumas_return pumas_physics_property_stopping_power(
+    const struct pumas_physics * physics, enum pumas_mode mode,
     int material, double energy, double * dedx);
 
 /**
@@ -1408,7 +1406,7 @@ PUMAS_API enum pumas_return pumas_physics_property_elastic_scattering_length(
  * Get the transport mean free path for soft events.
  *
  * @param physics     Handle for the Physics tables.
- * @param scheme      The energy loss scheme.
+ * @param mode        The energy loss mode.
  * @param material    The material index.
  * @param energy      The kinetic energy, in GeV.
  * @param path        The corresponding path per unit mass, in kg/m^(2).
@@ -1426,7 +1424,7 @@ PUMAS_API enum pumas_return pumas_physics_property_elastic_scattering_length(
  *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_transport_path(
-    const struct pumas_physics * physics, enum pumas_mode scheme, int material,
+    const struct pumas_physics * physics, enum pumas_mode mode, int material,
     double energy, double * path);
 
 /**
@@ -1443,7 +1441,7 @@ PUMAS_API enum pumas_return pumas_physics_property_transport_path(
  * The returned cross-section is restricted to single events with fractionnal
  * energy loss larger than the physics *cutoff*. Events with smaller energy loss
  * are included in the continuous energy loss given by
- * `pumas_physics_property_energy_loss`.
+ * `pumas_physics_property_stopping_power`.
  *
  * The returned value is in unit m^(2)/kg. Multiply by the density in order to
  * get the inverse of the interaction length in unit of distance.
@@ -1675,14 +1673,14 @@ PUMAS_API enum pumas_return pumas_physics_composite_properties(
  *
  * @param physics     Handle for the Physics tables.
  * @param property    The column index of a property of interest.
- * @param scheme      The energy loss scheme.
+ * @param mode        The energy loss mode.
  * @param material    The material index.
  * @param row         The kinetic energy value row index in the table.
  * @param value       The corresponding table value.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * For a given `material` and energy loss `scheme`, this function returns the
+ * For a given `material` and energy loss `mode`, this function returns the
  * tabulated data corresponding to the given `property` column and `row` index.
  * Each row of the table corresponds to a different kinetic energy value.
  *
@@ -1693,13 +1691,13 @@ PUMAS_API enum pumas_return pumas_physics_composite_properties(
  * __Error codes__
  *
  *     PUMAS_RETURN_INDEX_ERROR             Some input index is not valid
- * (property, material or scheme).
+ * (property, material or mode).
  *
  *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_table_value(
     const struct pumas_physics * physics, enum pumas_property property,
-    enum pumas_mode scheme, int material, int row, double * value);
+    enum pumas_mode mode, int material, int row, double * value);
 
 /**
  * The depth, i.e. number of kinetic energy values, of the tabulated data.
@@ -1714,7 +1712,7 @@ PUMAS_API int pumas_physics_table_length(const struct pumas_physics * physics);
  *
  * @param physics     Handle for the Physics tables.
  * @param property    The column index of the property.
- * @param scheme      The energy loss scheme.
+ * @param mode        The energy loss mode.
  * @param material    The material index.
  * @param value       The property value.
  * @param index       The row index from below for the given value.
@@ -1732,7 +1730,7 @@ PUMAS_API int pumas_physics_table_length(const struct pumas_physics * physics);
  * __Error codes__
  *
  *     PUMAS_RETURN_INDEX_ERROR             Some input index is not valid
- * (property, material or scheme).
+ * (property, material or mode).
  *
  *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  *
@@ -1741,7 +1739,7 @@ PUMAS_API int pumas_physics_table_length(const struct pumas_physics * physics);
  */
 PUMAS_API enum pumas_return pumas_physics_table_index(
     const struct pumas_physics * physics, enum pumas_property property,
-    enum pumas_mode scheme, int material, double value, int * index);
+    enum pumas_mode mode, int material, double value, int * index);
 
 /**
  * Create a new particle recorder.
@@ -2063,7 +2061,7 @@ PUMAS_API double pumas_electronic_density_effect(int n_elements,
     double density, double gamma);
 
 /**
- * The electronic energy loss for a material.
+ * The stopping power due to collisions with atomic electrons.
  *
  * @param n_elements    The number of atomic elements in the material.
  * @param Z             The charge numbers of the constitutive atomic elements.
@@ -2073,11 +2071,12 @@ PUMAS_API double pumas_electronic_density_effect(int n_elements,
  * @param density       The density of the material, in kg / m^(3).
  * @param mass          The mass of the projectile, in GeV / c^(2).
  * @param energy        The energy of the projectile, in GeV
- * @return The corresponding energy loss per unit mass, in GeV m^(2) / kg.
+ * @return The corresponding stopping power per unit mass, in GeV m^(2) / kg.
  *
- * The electronic energy loss is computed following Salvat (2013). The result is
- * identical to Groom et al. (2001) except for the density effect. The later is
- * computed following Fano (1963), see e.g. `pumas_electronic_density_effect`.
+ * The electronic stopping power is computed following Salvat (2013). The result
+ * is identical to Groom et al. (2001) except for the density effect. The later
+ * is computed following Fano (1963), see e.g.
+ * `pumas_electronic_density_effect`.
  *
  * The mass fractions of the elements, *w*, can be `NULL` in wich case they are
  * assumed to be 1. The mass fractions do not need to be normalised to 1.
@@ -2087,9 +2086,9 @@ PUMAS_API double pumas_electronic_density_effect(int n_elements,
  *     Groom et al., Atomic Data and Nuclear Data Tables, 78 (2001)
  *     U. Fano, Ann. Rev. Nucl. Sci. 13, 1 (1963)
  */
-PUMAS_API double pumas_electronic_energy_loss(int n_elements, const double * Z,
-    const double * A, const double * w, double I, double density, double mass,
-    double energy);
+PUMAS_API double pumas_electronic_stopping_power(int n_elements,
+    const double * Z, const double * A, const double * w, double I,
+    double density, double mass, double energy);
 
 #ifdef __cplusplus
 }

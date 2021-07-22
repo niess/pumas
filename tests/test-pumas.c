@@ -177,7 +177,7 @@ START_TEST(test_api_error)
         CHECK_STRING(pumas_elastic_path);
         CHECK_STRING(pumas_electronic_dcs);
         CHECK_STRING(pumas_electronic_density_effect);
-        CHECK_STRING(pumas_electronic_energy_loss);
+        CHECK_STRING(pumas_electronic_stopping_power);
         CHECK_STRING(pumas_error_catch);
         CHECK_STRING(pumas_error_function);
         CHECK_STRING(pumas_error_handler_get);
@@ -203,7 +203,7 @@ START_TEST(test_api_error)
         CHECK_STRING(pumas_physics_property_cross_section);
         CHECK_STRING(pumas_physics_property_elastic_scattering_length);
         CHECK_STRING(pumas_physics_property_elastic_cutoff_angle);
-        CHECK_STRING(pumas_physics_property_energy_loss);
+        CHECK_STRING(pumas_physics_property_stopping_power);
         CHECK_STRING(pumas_physics_property_energy_straggling);
         CHECK_STRING(pumas_physics_property_grammage);
         CHECK_STRING(pumas_physics_property_kinetic_energy);
@@ -762,7 +762,7 @@ START_TEST(test_api_property)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         reset_error();
-        pumas_physics_property_energy_loss(physics, 0, 0, 0., &value);
+        pumas_physics_property_stopping_power(physics, 0, 0, 0., &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         reset_error();
@@ -809,7 +809,7 @@ START_TEST(test_api_property)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
-        pumas_physics_property_energy_loss(
+        pumas_physics_property_stopping_power(
             physics, PUMAS_MODE_MIXED, 4, 0., &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
@@ -818,7 +818,7 @@ START_TEST(test_api_property)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
-        pumas_physics_property_energy_loss(
+        pumas_physics_property_stopping_power(
             physics, PUMAS_MODE_STRAGGLED, 0, 0., &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
@@ -887,17 +887,17 @@ START_TEST(test_api_property)
         ck_assert_double_gt(value, 0.);
         ck_assert_double_lt(1. / (value * TEST_ROCK_DENSITY), 1E+03);
 
-        pumas_physics_property_energy_loss(
+        pumas_physics_property_stopping_power(
             physics, PUMAS_MODE_CSDA, 0, 1E+00, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq_tol(value, 1.823E-04, 1E-06);
 
-        pumas_physics_property_energy_loss(
+        pumas_physics_property_stopping_power(
             physics, PUMAS_MODE_CSDA, 0, 1E+03, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq_tol(value, 6.610E-04, 1E-07);
 
-        pumas_physics_property_energy_loss(
+        pumas_physics_property_stopping_power(
             physics, PUMAS_MODE_MIXED, 0, 1E+03, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_lt(value, 6.610E-04);
@@ -973,9 +973,9 @@ START_TEST(test_api_property)
             0, 0, -1, &emax);
         emax *= 100.;
 
-        pumas_physics_property_energy_loss(
+        pumas_physics_property_stopping_power(
             physics, PUMAS_MODE_CSDA, 0, 1E+11, &value);
-        pumas_physics_table_value(physics, PUMAS_PROPERTY_ENERGY_LOSS,
+        pumas_physics_table_value(physics, PUMAS_PROPERTY_STOPPING_POWER,
             PUMAS_MODE_CSDA, 0, -1, &vmax);
         ck_assert_double_gt(value, vmax);
 
@@ -1135,7 +1135,7 @@ START_TEST(test_api_table)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_gt(value, 5.518E+03);
 
-        pumas_physics_table_value(physics, PUMAS_PROPERTY_ENERGY_LOSS,
+        pumas_physics_table_value(physics, PUMAS_PROPERTY_STOPPING_POWER,
             PUMAS_MODE_CSDA, 0, 0, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq(value, 0.);
@@ -1197,7 +1197,7 @@ START_TEST(test_api_table)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         pumas_physics_table_index(
-            physics, PUMAS_PROPERTY_ENERGY_LOSS, 0, 0, value, &index);
+            physics, PUMAS_PROPERTY_STOPPING_POWER, 0, 0, value, &index);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         pumas_physics_table_index(physics,
@@ -1768,15 +1768,15 @@ START_TEST(test_api_electronic)
                 const double m = 0.10566;
 
                 double v;
-                v = pumas_electronic_energy_loss(
+                v = pumas_electronic_stopping_power(
                     1, &Z, &A, NULL, I, density, m, 1E-02);
                 ck_assert_double_eq_tol(6.62E-04, v, 1E-06);
 
-                v = pumas_electronic_energy_loss(
+                v = pumas_electronic_stopping_power(
                     1, &Z, &A, NULL, I, density, m, 1E+00);
                 ck_assert_double_eq_tol(1.82E-04, v, 1E-06);
 
-                v = pumas_electronic_energy_loss(
+                v = pumas_electronic_stopping_power(
                     1, &Z, &A, NULL, I, density, m, 1E+02);
                 ck_assert_double_eq_tol(2.45E-04, v, 1E-06);
         }
@@ -2679,9 +2679,9 @@ START_TEST(test_csda_straight)
         d1 = X1 / TEST_ROCK_DENSITY;
 
         double de0, de1;
-        pumas_physics_property_energy_loss(
+        pumas_physics_property_stopping_power(
             physics, PUMAS_MODE_CSDA, 0, context->limit.energy, &de0);
-        pumas_physics_property_energy_loss(
+        pumas_physics_property_stopping_power(
             physics, PUMAS_MODE_CSDA, 0, k1, &de1);
         double w = exp(-(t0 - t1) / ctau) * de0 / de1;
 

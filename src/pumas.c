@@ -2228,7 +2228,7 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_physics_property_proper_time)
         TOSTRING(pumas_physics_property_magnetic_rotation)
         TOSTRING(pumas_physics_property_kinetic_energy)
-        TOSTRING(pumas_physics_property_energy_loss)
+        TOSTRING(pumas_physics_property_stopping_power)
         TOSTRING(pumas_physics_property_energy_straggling)
         TOSTRING(pumas_physics_property_elastic_scattering_length)
         TOSTRING(pumas_physics_property_elastic_cutoff_angle)
@@ -2246,7 +2246,7 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_elastic_path)
         TOSTRING(pumas_electronic_dcs)
         TOSTRING(pumas_electronic_density_effect)
-        TOSTRING(pumas_electronic_energy_loss)
+        TOSTRING(pumas_electronic_stopping_power)
         TOSTRING(pumas_physics_cutoff)
         TOSTRING(pumas_physics_elastic_ratio)
         TOSTRING(pumas_physics_destroy)
@@ -2877,11 +2877,11 @@ enum pumas_return pumas_physics_property_kinetic_energy(
         return PUMAS_RETURN_SUCCESS;
 }
 
-enum pumas_return pumas_physics_property_energy_loss(
+enum pumas_return pumas_physics_property_stopping_power(
     const struct pumas_physics * physics, enum pumas_mode scheme,
     int material, double kinetic, double * dedx)
 {
-        ERROR_INITIALISE(pumas_physics_property_energy_loss);
+        ERROR_INITIALISE(pumas_physics_property_stopping_power);
         *dedx = 0.;
 
         if (physics == NULL) {
@@ -3450,7 +3450,7 @@ enum pumas_return pumas_physics_table_value(
                 }
                 *value = *table_get_T(physics, scheme, material, row);
                 return PUMAS_RETURN_SUCCESS;
-        } else if (property == PUMAS_PROPERTY_ENERGY_LOSS) {
+        } else if (property == PUMAS_PROPERTY_STOPPING_POWER) {
                 if ((scheme <= PUMAS_MODE_DISABLED) ||
                     (scheme >= PUMAS_MODE_STRAGGLED)) {
                         return ERROR_INVALID_SCHEME(scheme);
@@ -13064,7 +13064,7 @@ double pumas_electronic_density_effect(int n_elements, const double * Z,
         return d;
 }
 
-double pumas_electronic_energy_loss(int n_elements, const double * Z,
+double pumas_electronic_stopping_power(int n_elements, const double * Z,
     const double * A, const double * w, double I, double density, double mass,
     double energy)
 {
