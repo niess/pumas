@@ -107,13 +107,13 @@ int main(int narg, char * argv[])
         /* Configure the context for simulating the detailed energy loss, à
          * la Geant4
          */
-        context->mode.energy_loss = PUMAS_MODE_DETAILED;
+        context->mode.energy_loss = PUMAS_MODE_STRAGGLED;
 
         /* Do a backward transport */
         context->mode.direction = PUMAS_MODE_BACKWARD;
 
         /* Disable any transverse transport */
-        context->mode.scattering = PUMAS_MODE_LONGITUDINAL;
+        context->mode.scattering = PUMAS_MODE_DISABLED;
 
         /* Set the medium callback */
         context->medium = &medium1;

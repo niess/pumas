@@ -2565,11 +2565,11 @@ enum pumas_return pumas_context_create(struct pumas_context ** context_,
         (*context_)->recorder = NULL;
 
         (*context_)->mode.decay = (physics->particle == PUMAS_PARTICLE_MUON) ?
-            PUMAS_MODE_WEIGHT :
-            PUMAS_MODE_DECAY;
+            PUMAS_MODE_WEIGHTED :
+            PUMAS_MODE_RANDOMISED;
         (*context_)->mode.direction = PUMAS_MODE_FORWARD;
-        (*context_)->mode.energy_loss = PUMAS_MODE_DETAILED;
-        (*context_)->mode.scattering = PUMAS_MODE_FULL_SPACE;
+        (*context_)->mode.energy_loss = PUMAS_MODE_STRAGGLED;
+        (*context_)->mode.scattering = PUMAS_MODE_MIXED;
         (*context_)->event = PUMAS_EVENT_NONE;
 
         (*context_)->limit.energy = 0.;    /* GeV */
@@ -2808,8 +2808,8 @@ enum pumas_return pumas_physics_property_grammage(
 
         if (physics == NULL) {
                 return ERROR_NOT_INITIALISED();
-        } else if ((scheme <= PUMAS_MODE_VIRTUAL) ||
-            (scheme >= PUMAS_MODE_DETAILED)) {
+        } else if ((scheme <= PUMAS_MODE_DISABLED) ||
+            (scheme >= PUMAS_MODE_STRAGGLED)) {
                 return ERROR_INVALID_SCHEME(scheme);
         } else if ((material < 0) || (material >= physics->n_materials)) {
                 return ERROR_INVALID_MATERIAL(material);
@@ -2828,8 +2828,8 @@ enum pumas_return pumas_physics_property_proper_time(
 
         if (physics == NULL) {
                 return ERROR_NOT_INITIALISED();
-        } else if ((scheme <= PUMAS_MODE_VIRTUAL) ||
-            (scheme >= PUMAS_MODE_DETAILED)) {
+        } else if ((scheme <= PUMAS_MODE_DISABLED) ||
+            (scheme >= PUMAS_MODE_STRAGGLED)) {
                 return ERROR_INVALID_SCHEME(scheme);
         } else if ((material < 0) || (material >= physics->n_materials)) {
                 return ERROR_INVALID_MATERIAL(material);
@@ -2865,8 +2865,8 @@ enum pumas_return pumas_physics_property_kinetic_energy(
 
         if (physics == NULL) {
                 return ERROR_NOT_INITIALISED();
-        } else if ((scheme <= PUMAS_MODE_VIRTUAL) ||
-            (scheme >= PUMAS_MODE_DETAILED)) {
+        } else if ((scheme <= PUMAS_MODE_DISABLED) ||
+            (scheme >= PUMAS_MODE_STRAGGLED)) {
                 return ERROR_INVALID_SCHEME(scheme);
         } else if ((material < 0) || (material >= physics->n_materials)) {
                 return ERROR_INVALID_MATERIAL(material);
@@ -2886,8 +2886,8 @@ enum pumas_return pumas_physics_property_energy_loss(
 
         if (physics == NULL) {
                 return ERROR_NOT_INITIALISED();
-        } else if ((scheme <= PUMAS_MODE_VIRTUAL) ||
-            (scheme >= PUMAS_MODE_DETAILED)) {
+        } else if ((scheme <= PUMAS_MODE_DISABLED) ||
+            (scheme >= PUMAS_MODE_STRAGGLED)) {
                 return ERROR_INVALID_SCHEME(scheme);
         } else if ((material < 0) || (material >= physics->n_materials)) {
                 return ERROR_INVALID_MATERIAL(material);
@@ -3003,8 +3003,8 @@ enum pumas_return pumas_physics_property_multiple_scattering_length(
         if (physics == NULL) {
                 *length = 0.;
                 return ERROR_NOT_INITIALISED();
-        } else if ((scheme < PUMAS_MODE_VIRTUAL) ||
-            (scheme >= PUMAS_MODE_DETAILED)) {
+        } else if ((scheme < PUMAS_MODE_DISABLED) ||
+            (scheme >= PUMAS_MODE_STRAGGLED)) {
                 return ERROR_INVALID_SCHEME(scheme);
         } else if ((material < 0) || (material >= physics->n_materials)) {
                 *length = 0.;
@@ -3104,9 +3104,9 @@ enum pumas_return pumas_context_transport(struct pumas_context * context,
                     PUMAS_RETURN_MEDIUM_ERROR, "no medium specified");
         } else if ((physics->particle == PUMAS_PARTICLE_TAU) &&
             (context->mode.direction == PUMAS_MODE_FORWARD) &&
-            (context->mode.decay == PUMAS_MODE_WEIGHT)) {
+            (context->mode.decay == PUMAS_MODE_WEIGHTED)) {
                 return ERROR_MESSAGE(PUMAS_RETURN_DECAY_ERROR,
-                    "`PUMAS_MODE_WEIGHT' mode is not valid for forward taus");
+                    "`PUMAS_MODE_WEIGHTED' mode is not valid for forward taus");
         }
 
         if ((context->accuracy <= 0) || (context->accuracy > 1)) {
@@ -3147,7 +3147,7 @@ enum pumas_return pumas_context_transport(struct pumas_context * context,
         }
 
         /* Randomise the lifetime, if required. */
-        if (context->mode.decay == PUMAS_MODE_DECAY) {
+        if (context->mode.decay == PUMAS_MODE_RANDOMISED) {
                 if (context->random == NULL) {
                         return ERROR_MESSAGE(PUMAS_RETURN_MISSING_RANDOM,
                             "no random engine specified");
@@ -3162,12 +3162,12 @@ enum pumas_return pumas_context_transport(struct pumas_context * context,
         if ((step_max_medium <= 0.) && (step_max_locals <= 0.) &&
             (context->mode.energy_loss <= PUMAS_MODE_CSDA)) {
                 /* This is an infinite and uniform medium. */
-                if ((context->mode.energy_loss == PUMAS_MODE_VIRTUAL) &&
+                if ((context->mode.energy_loss == PUMAS_MODE_DISABLED) &&
                     ((context->event & PUMAS_EVENT_LIMIT) == 0)) {
                         return ERROR_MESSAGE(PUMAS_RETURN_MISSING_LIMIT,
                             "infinite medium without external limit(s)");
                 } else if (
-                    (context->mode.scattering == PUMAS_MODE_LONGITUDINAL) &&
+                    (context->mode.scattering == PUMAS_MODE_DISABLED) &&
                     (context->mode.energy_loss == PUMAS_MODE_CSDA)) {
                         do_stepping = 0;
                 }
@@ -3437,22 +3437,22 @@ enum pumas_return pumas_physics_table_value(
                 *value = *table_get_K(physics, row);
                 return PUMAS_RETURN_SUCCESS;
         } else if (property == PUMAS_PROPERTY_GRAMMAGE) {
-                if ((scheme <= PUMAS_MODE_VIRTUAL) ||
-                    (scheme >= PUMAS_MODE_DETAILED)) {
+                if ((scheme <= PUMAS_MODE_DISABLED) ||
+                    (scheme >= PUMAS_MODE_STRAGGLED)) {
                         return ERROR_INVALID_SCHEME(scheme);
                 }
                 *value = *table_get_X(physics, scheme, material, row);
                 return PUMAS_RETURN_SUCCESS;
         } else if (property == PUMAS_PROPERTY_PROPER_TIME) {
-                if ((scheme <= PUMAS_MODE_VIRTUAL) ||
-                    (scheme >= PUMAS_MODE_DETAILED)) {
+                if ((scheme <= PUMAS_MODE_DISABLED) ||
+                    (scheme >= PUMAS_MODE_STRAGGLED)) {
                         return ERROR_INVALID_SCHEME(scheme);
                 }
                 *value = *table_get_T(physics, scheme, material, row);
                 return PUMAS_RETURN_SUCCESS;
         } else if (property == PUMAS_PROPERTY_ENERGY_LOSS) {
-                if ((scheme <= PUMAS_MODE_VIRTUAL) ||
-                    (scheme >= PUMAS_MODE_DETAILED)) {
+                if ((scheme <= PUMAS_MODE_DISABLED) ||
+                    (scheme >= PUMAS_MODE_STRAGGLED)) {
                         return ERROR_INVALID_SCHEME(scheme);
                 }
                 *value = *table_get_dE(physics, scheme, material, row);
@@ -3484,8 +3484,8 @@ enum pumas_return pumas_physics_table_value(
                 }
                 return PUMAS_RETURN_SUCCESS;
         } else if (property == PUMAS_PROPERTY_MULTIPLE_SCATTERING_LENGTH) {
-                if ((scheme < PUMAS_MODE_VIRTUAL) ||
-                    (scheme >= PUMAS_MODE_DETAILED)) {
+                if ((scheme < PUMAS_MODE_DISABLED) ||
+                    (scheme >= PUMAS_MODE_STRAGGLED)) {
                         return ERROR_INVALID_SCHEME(scheme);
                 }
                 const double invlb1 = *table_get_Ms1(
@@ -3524,14 +3524,14 @@ enum pumas_return pumas_physics_table_index(
         if (property == PUMAS_PROPERTY_KINETIC_ENERGY)
                 table = table_get_K(physics, 0);
         else if (property == PUMAS_PROPERTY_GRAMMAGE) {
-                if ((scheme <= PUMAS_MODE_VIRTUAL) ||
-                    (scheme >= PUMAS_MODE_DETAILED)) {
+                if ((scheme <= PUMAS_MODE_DISABLED) ||
+                    (scheme >= PUMAS_MODE_STRAGGLED)) {
                         return ERROR_INVALID_SCHEME(scheme);
                 }
                 table = table_get_X(physics, scheme, material, 0);
         } else if (property == PUMAS_PROPERTY_PROPER_TIME) {
-                if ((scheme <= PUMAS_MODE_VIRTUAL) ||
-                    (scheme >= PUMAS_MODE_DETAILED)) {
+                if ((scheme <= PUMAS_MODE_DISABLED) ||
+                    (scheme >= PUMAS_MODE_STRAGGLED)) {
                         return ERROR_INVALID_SCHEME(scheme);
                 }
                 table = table_get_T(physics, scheme, material, 0);
@@ -3870,7 +3870,7 @@ double del_interaction_length(const struct pumas_physics * physics,
                 const double k0 = *table_get_K(physics, imax);
                 const double a0 = *table_get_a_max(physics, material);
                 const double b0 =
-                    *table_get_b_max(physics, PUMAS_MODE_HYBRID, material);
+                    *table_get_b_max(physics, PUMAS_MODE_MIXED, material);
                 const double cs = *table_get_CS(physics, material, imax);
                 const double dZ =
                     cs / b0 * log((a0 + b0 * (kinetic + physics->mass)) /
@@ -3906,7 +3906,7 @@ double del_kinetic_from_interaction_length(const struct pumas_physics * physics,
                 const double k0 = *table_get_K(physics, imax);
                 const double a0 = *table_get_a_max(physics, material);
                 const double b0 =
-                    *table_get_b_max(physics, PUMAS_MODE_HYBRID, material);
+                    *table_get_b_max(physics, PUMAS_MODE_MIXED, material);
                 const double cs = *table_get_CS(physics, material, imax);
                 const double nI0 = *table_get_NI_in(physics, material, imax);
                 return ((a0 + b0 * (k0 + physics->mass)) *
@@ -4193,7 +4193,7 @@ double * table_get_K(const struct pumas_physics * physics, int row)
 double * table_get_K_dX(
     const struct pumas_physics * physics, int scheme, int material, int row)
 {
-        scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
+        scheme = (scheme > PUMAS_MODE_MIXED) ? PUMAS_MODE_MIXED : scheme;
         return physics->table_K_dX +
             (scheme * physics->n_materials + material) * physics->n_energies +
             row;
@@ -4202,7 +4202,7 @@ double * table_get_K_dX(
 double * table_get_K_dNI_el(
     const struct pumas_physics * physics, int scheme, int material, int row)
 {
-        scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
+        scheme = (scheme > PUMAS_MODE_MIXED) ? PUMAS_MODE_MIXED : scheme;
         return physics->table_K_dNI_el +
             (scheme * physics->n_materials + material) * physics->n_energies +
             row;
@@ -4226,7 +4226,7 @@ double * table_get_K_dNI_in(
 double * table_get_X(
     const struct pumas_physics * physics, int scheme, int material, int row)
 {
-        scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
+        scheme = (scheme > PUMAS_MODE_MIXED) ? PUMAS_MODE_MIXED : scheme;
         return physics->table_X +
             (scheme * physics->n_materials + material) * physics->n_energies +
             row;
@@ -4235,7 +4235,7 @@ double * table_get_X(
 double * table_get_X_dK(
     const struct pumas_physics * physics, int scheme, int material, int row)
 {
-        scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
+        scheme = (scheme > PUMAS_MODE_MIXED) ? PUMAS_MODE_MIXED : scheme;
         return physics->table_X_dK +
             (scheme * physics->n_materials + material) * physics->n_energies +
             row;
@@ -4244,7 +4244,7 @@ double * table_get_X_dK(
 double * table_get_X_dT(
     const struct pumas_physics * physics, int scheme, int material, int row)
 {
-        scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
+        scheme = (scheme > PUMAS_MODE_MIXED) ? PUMAS_MODE_MIXED : scheme;
         return physics->table_X_dT +
             (scheme * physics->n_materials + material) * physics->n_energies +
             row;
@@ -4262,7 +4262,7 @@ double * table_get_X_dT(
 double * table_get_T(
     const struct pumas_physics * physics, int scheme, int material, int row)
 {
-        scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
+        scheme = (scheme > PUMAS_MODE_MIXED) ? PUMAS_MODE_MIXED : scheme;
         return physics->table_T +
             (scheme * physics->n_materials + material) * physics->n_energies +
             row;
@@ -4271,7 +4271,7 @@ double * table_get_T(
 double * table_get_T_dK(
     const struct pumas_physics * physics, int scheme, int material, int row)
 {
-        scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
+        scheme = (scheme > PUMAS_MODE_MIXED) ? PUMAS_MODE_MIXED : scheme;
         return physics->table_T_dK +
             (scheme * physics->n_materials + material) * physics->n_energies +
             row;
@@ -4289,7 +4289,7 @@ double * table_get_T_dK(
 double * table_get_dE(
     const struct pumas_physics * physics, int scheme, int material, int row)
 {
-        scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
+        scheme = (scheme > PUMAS_MODE_MIXED) ? PUMAS_MODE_MIXED : scheme;
         return physics->table_dE +
             (scheme * physics->n_materials + material) * physics->n_energies +
             row;
@@ -4298,7 +4298,7 @@ double * table_get_dE(
 double * table_get_dE_dK(
     const struct pumas_physics * physics, int scheme, int material, int row)
 {
-        scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
+        scheme = (scheme > PUMAS_MODE_MIXED) ? PUMAS_MODE_MIXED : scheme;
         return physics->table_dE_dK +
             (scheme * physics->n_materials + material) * physics->n_energies +
             row;
@@ -4335,7 +4335,7 @@ double * table_get_Omega_dK(
 double * table_get_NI_el(
     const struct pumas_physics * physics, int scheme, int material, int row)
 {
-        scheme = (scheme >= PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID :
+        scheme = (scheme >= PUMAS_MODE_MIXED) ? PUMAS_MODE_MIXED :
                                                    PUMAS_MODE_CSDA;
         return physics->table_NI_el +
             (scheme * physics->n_materials + material) * physics->n_energies +
@@ -4345,7 +4345,7 @@ double * table_get_NI_el(
 double * table_get_NI_el_dK(
     const struct pumas_physics * physics, int scheme, int material, int row)
 {
-        scheme = (scheme >= PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID :
+        scheme = (scheme >= PUMAS_MODE_MIXED) ? PUMAS_MODE_MIXED :
                                                    PUMAS_MODE_CSDA;
         return physics->table_NI_el_dK +
             (scheme * physics->n_materials + material) * physics->n_energies +
@@ -4556,7 +4556,7 @@ double * table_get_a_max(const struct pumas_physics * physics, int material)
 double * table_get_b_max(
     const struct pumas_physics * physics, int scheme, int material)
 {
-        scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
+        scheme = (scheme > PUMAS_MODE_MIXED) ? PUMAS_MODE_MIXED : scheme;
         return physics->table_b_max + scheme * physics->n_materials + material;
 }
 
@@ -4612,7 +4612,7 @@ double * table_get_Lb_dK(
 double * table_get_Ms1(
     const struct pumas_physics * physics, int scheme, int material, int row)
 {
-        scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
+        scheme = (scheme > PUMAS_MODE_MIXED) ? PUMAS_MODE_MIXED : scheme;
         return physics->table_Ms1 +
             ((scheme + 1) * physics->n_materials + material) *
             physics->n_energies + row;
@@ -4621,7 +4621,7 @@ double * table_get_Ms1(
 double * table_get_Ms1_dK(
     const struct pumas_physics * physics, int scheme, int material, int row)
 {
-        scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
+        scheme = (scheme > PUMAS_MODE_MIXED) ? PUMAS_MODE_MIXED : scheme;
         return physics->table_Ms1_dK +
             ((scheme + 1) * physics->n_materials + material) *
             physics->n_energies + row;
@@ -4640,7 +4640,7 @@ double * table_get_Ms1_dK(
 double * table_get_ms1(const struct pumas_physics * physics, int scheme,
     int element, int row, double * table)
 {
-        scheme = (scheme > PUMAS_MODE_HYBRID) ? PUMAS_MODE_HYBRID : scheme;
+        scheme = (scheme > PUMAS_MODE_MIXED) ? PUMAS_MODE_MIXED : scheme;
         return table + (scheme * physics->n_elements + element) *
             physics->n_energies + row;
 }
@@ -4748,7 +4748,7 @@ enum pumas_event transport_with_csda(const struct pumas_physics * physics,
         int decayed = 0;
         double time_max = (context->event & PUMAS_EVENT_LIMIT_TIME) ?
             context->limit.time : 0.;
-        if (context->mode.decay == PUMAS_MODE_DECAY) {
+        if (context->mode.decay == PUMAS_MODE_RANDOMISED) {
                 struct simulation_context * c =
                     (struct simulation_context *)context;
                 if ((time_max <= 0.) || (c->lifetime < time_max)) {
@@ -4845,7 +4845,7 @@ enum pumas_event transport_with_csda(const struct pumas_physics * physics,
                                      PUMAS_MODE_CSDA, material, kf) /
                     cel_energy_loss(physics, context, PUMAS_MODE_CSDA,
                                      material, ki);
-        if (context->mode.decay == PUMAS_MODE_WEIGHT)
+        if (context->mode.decay == PUMAS_MODE_WEIGHTED)
                 state->weight *= exp(-fabs(ti - state->time) / physics->ctau);
 
         /* Update the position and direction. */
@@ -5123,8 +5123,8 @@ enum pumas_event transport_with_stepping(const struct pumas_physics * physics,
         /* Check the config */
         if ((context->random == NULL) &&
             ((context->mode.energy_loss > PUMAS_MODE_CSDA) ||
-                (context->mode.scattering == PUMAS_MODE_FULL_SPACE) ||
-                (context->mode.decay == PUMAS_MODE_DECAY))) {
+                (context->mode.scattering == PUMAS_MODE_MIXED) ||
+                (context->mode.decay == PUMAS_MODE_RANDOMISED))) {
                 ERROR_REGISTER(
                     PUMAS_RETURN_MISSING_RANDOM, "no random engine provided");
                 return PUMAS_EVENT_NONE;
@@ -5137,8 +5137,8 @@ enum pumas_event transport_with_stepping(const struct pumas_physics * physics,
         /* Check for a straight path in a uniform medium */
         const enum pumas_mode scheme = context->mode.energy_loss;
         int straight =
-            ((context->mode.scattering == PUMAS_MODE_LONGITUDINAL) &&
-            (scheme <= PUMAS_MODE_HYBRID) &&
+            ((context->mode.scattering == PUMAS_MODE_DISABLED) &&
+            (scheme <= PUMAS_MODE_MIXED) &&
             (step_max_locals <= 0.) && !locals->magnetized) ?
             1 :
             0;
@@ -5159,7 +5159,7 @@ enum pumas_event transport_with_stepping(const struct pumas_physics * physics,
         double wi = state->weight;
         double Xi = state->grammage;
         double dei, Xf;
-        if (scheme > PUMAS_MODE_VIRTUAL) {
+        if (scheme > PUMAS_MODE_DISABLED) {
                 const double ki = state->energy;
                 Xf = cel_grammage(physics, context, scheme, material, ki);
                 dei = 1. /
@@ -5187,7 +5187,7 @@ enum pumas_event transport_with_stepping(const struct pumas_physics * physics,
         context_->step_first = 1;
         context_->step_X_limit = (context->event & PUMAS_EVENT_LIMIT_ENERGY) ?
             cel_grammage(physics, context,
-                (scheme > PUMAS_MODE_VIRTUAL) ? scheme : PUMAS_MODE_CSDA,
+                (scheme > PUMAS_MODE_DISABLED) ? scheme : PUMAS_MODE_CSDA,
                 material, context->limit.energy) :
             0.;
         context_->step_invlb1 = 0;
@@ -5233,7 +5233,7 @@ enum pumas_event transport_with_stepping(const struct pumas_physics * physics,
                  */
                 if (context->mode.energy_loss >= PUMAS_MODE_CSDA) {
                         const double w0 =
-                            (context->mode.decay == PUMAS_MODE_WEIGHT) ?
+                            (context->mode.decay == PUMAS_MODE_WEIGHTED) ?
                             wi * exp(-fabs(state->time - ti) / physics->ctau) :
                             wi;
                         state->weight =
@@ -5363,8 +5363,8 @@ enum pumas_event transport_with_stepping(const struct pumas_physics * physics,
                                         return context_->step_event;
                                 }
                                 straight = ((context->mode.scattering ==
-                                    PUMAS_MODE_LONGITUDINAL) &&
-                                    (scheme <= PUMAS_MODE_HYBRID) &&
+                                    PUMAS_MODE_DISABLED) &&
+                                    (scheme <= PUMAS_MODE_MIXED) &&
                                     (step_max_locals <= 0.) &&
                                     !locals->magnetized) ?
                                     1 :
@@ -5374,7 +5374,7 @@ enum pumas_event transport_with_stepping(const struct pumas_physics * physics,
                                  * to grammage for this material.
                                  */
                                 enum pumas_mode tmp_scheme =
-                                    scheme > PUMAS_MODE_VIRTUAL ?
+                                    scheme > PUMAS_MODE_DISABLED ?
                                     scheme :
                                     PUMAS_MODE_CSDA;
                                 context_->step_X_limit =
@@ -5539,8 +5539,8 @@ void transport_limit(const struct pumas_physics * physics,
 
         /* Check the NO LOSS case. */
         const enum pumas_mode scheme = context->mode.energy_loss;
-        if (scheme == PUMAS_MODE_VIRTUAL) {
-                if (context->mode.scattering == PUMAS_MODE_FULL_SPACE) {
+        if (scheme == PUMAS_MODE_DISABLED) {
+                if (context->mode.scattering == PUMAS_MODE_MIXED) {
                         const double X = Xi -
                             coulomb_ehs_length(
                                 physics, context, material, state->energy) *
@@ -5560,7 +5560,7 @@ void transport_limit(const struct pumas_physics * physics,
             (context->mode.direction == PUMAS_MODE_FORWARD) ? 1. : -1.;
         enum pumas_event foreseen = PUMAS_EVENT_NONE;
         double kinetic_limit = 0.;
-        if (scheme == PUMAS_MODE_HYBRID) {
+        if (scheme == PUMAS_MODE_MIXED) {
                 double zeta = 0;
                 while (zeta <= 0) {
                         zeta = context->random(context);
@@ -5581,8 +5581,8 @@ void transport_limit(const struct pumas_physics * physics,
         }
 
         /* Check for an EHS event. */
-        if ((scheme < PUMAS_MODE_DETAILED) &&
-            (context->mode.scattering == PUMAS_MODE_FULL_SPACE)) {
+        if ((scheme < PUMAS_MODE_STRAGGLED) &&
+            (context->mode.scattering == PUMAS_MODE_MIXED)) {
                 const double nI = ehs_interaction_length(physics, context,
                                       scheme, material, state->energy) +
                     sgn * log(context->random(context));
@@ -5657,7 +5657,7 @@ void transport_do_del(const struct pumas_physics * physics,
         }
 
         /* Update the direction. */
-        if ((context->mode.scattering == PUMAS_MODE_FULL_SPACE) &&
+        if ((context->mode.scattering == PUMAS_MODE_MIXED) &&
             (polar_func != NULL)) {
                 if (kf > ki) {
                         const double tmp = kf;
@@ -6295,7 +6295,7 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
 
         /* Total grammage for the initial kinetic energy.  */
         const int tmp_scheme =
-            (scheme == PUMAS_MODE_VIRTUAL) ? PUMAS_MODE_CSDA : scheme;
+            (scheme == PUMAS_MODE_DISABLED) ? PUMAS_MODE_CSDA : scheme;
         const double Xtot = cel_grammage(
             physics, context, tmp_scheme, material, state->energy);
 
@@ -6306,7 +6306,7 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
                 /* Compute the kinetic step length. */
                 double r = context->accuracy;
                 const double k_threshold = 1E+09;
-                if ((scheme == PUMAS_MODE_DETAILED) &&
+                if ((scheme == PUMAS_MODE_STRAGGLED) &&
                     (state->energy > k_threshold)) {
                         /* In detailed mode, at very high energies shorter
                          * steps are needed.
@@ -6317,7 +6317,7 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
                 }
                 step_loc = r * density_i * Xtot;
 
-                if (context->mode.scattering == PUMAS_MODE_FULL_SPACE) {
+                if (context->mode.scattering == PUMAS_MODE_MIXED) {
                         /* Compute the soft scattering path length. */
                         if (context_->step_first != 0) {
                                 double mu0;
@@ -6500,7 +6500,7 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
         /* Set the end step kinetic energy. */
         double k1 = state->energy, dk = 0.;
         const double dX = 0.5 * step * (density + locals->api.density);
-        if ((scheme >= PUMAS_MODE_CSDA) && (scheme <= PUMAS_MODE_HYBRID)) {
+        if ((scheme >= PUMAS_MODE_CSDA) && (scheme <= PUMAS_MODE_MIXED)) {
                 /* Deterministic CEL with check for any kinetic limit. */
                 const double X = Xtot - sgn * dX;
                 if ((context->mode.direction == PUMAS_MODE_FORWARD) &&
@@ -6529,7 +6529,7 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
                 } else
                         k1 = cel_kinetic_energy(
                             physics, context, scheme, material, X);
-        } else if (scheme == PUMAS_MODE_DETAILED) {
+        } else if (scheme == PUMAS_MODE_STRAGGLED) {
                 /* Fluctuate the CEL around its average value. */
                 double ratio;
                 step_fluctuate(
@@ -6590,7 +6590,7 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
                 event = PUMAS_EVENT_VERTEX_DEL;
         no_del_event:
 
-                if (context->mode.scattering == PUMAS_MODE_FULL_SPACE) {
+                if (context->mode.scattering == PUMAS_MODE_MIXED) {
                         /* Randomise an EHS. */
                         double kmin, kmax;
                         if (k1 <= state->energy)
@@ -6653,8 +6653,8 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
                 state->grammage = grammage_max;
                 if (!(event & PUMAS_EVENT_LIMIT_ENERGY)) {
                         /*  Update the kinetic energy. */
-                        if (scheme <= PUMAS_MODE_HYBRID) {
-                                if (scheme != PUMAS_MODE_VIRTUAL)
+                        if (scheme <= PUMAS_MODE_MIXED) {
+                                if (scheme != PUMAS_MODE_DISABLED)
                                         k1 = cel_kinetic_energy(physics,
                                             context, scheme, material, Xtot -
                                                 sgn * (state->grammage - Xi));
@@ -6683,7 +6683,7 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
         int decayed = 0;
         double time_max = (context->event & PUMAS_EVENT_LIMIT_TIME) ?
             context->limit.time : 0.;
-        if (context->mode.decay == PUMAS_MODE_DECAY) {
+        if (context->mode.decay == PUMAS_MODE_RANDOMISED) {
                 if ((time_max <= 0.) || (context_->lifetime < time_max)) {
                         time_max = context_->lifetime;
                         decayed = 1;
@@ -6691,7 +6691,7 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
         }
 
         const double sf1 = step;
-        if (straight && (scheme != PUMAS_MODE_VIRTUAL)) {
+        if (straight && (scheme != PUMAS_MODE_DISABLED)) {
                 const double Ti = cel_proper_time(
                     physics, context, scheme, material, state->energy);
                 if (time_max > 0.) {
@@ -6747,7 +6747,7 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
                         if (step < 0.) step = 0.;
 
                         /*  Update the kinetic energy. */
-                        if (scheme != PUMAS_MODE_VIRTUAL) {
+                        if (scheme != PUMAS_MODE_DISABLED) {
                                 const double p1 = momentum / (1 + a * step);
                                 k1 = sqrt(p1 * p1 -
                                          physics->mass * physics->mass) -
@@ -6787,7 +6787,7 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
         state->distance += step;
 
         /* Compute the multiple scattering path length. */
-        if (context->mode.scattering == PUMAS_MODE_FULL_SPACE) {
+        if (context->mode.scattering == PUMAS_MODE_MIXED) {
                 double mu0, invlb1_;
                 if (state->energy <= 0.) {
                         context_->step_invlb1 = invlb1;
@@ -7851,12 +7851,12 @@ enum pumas_return io_parse_dedx_file(struct pumas_physics * physics, FILE * fid,
         /* Initialise the new table. */
         int row = 0;
         *table_get_T(physics, PUMAS_MODE_CSDA, material, row) = 0.;
-        *table_get_T(physics, PUMAS_MODE_HYBRID, material, row) = 0.;
+        *table_get_T(physics, PUMAS_MODE_MIXED, material, row) = 0.;
         *table_get_K(physics, row) = 0.;
         *table_get_dE(physics, PUMAS_MODE_CSDA, material, row) = 0.;
-        *table_get_dE(physics, PUMAS_MODE_HYBRID, material, row) = 0.;
+        *table_get_dE(physics, PUMAS_MODE_MIXED, material, row) = 0.;
         *table_get_NI_el(physics, PUMAS_MODE_CSDA, material, row) = 0.;
-        *table_get_NI_el(physics, PUMAS_MODE_HYBRID, material, row) = 0.;
+        *table_get_NI_el(physics, PUMAS_MODE_MIXED, material, row) = 0.;
         *table_get_NI_in(physics, material, row) = 0.;
         *table_get_CS(physics, material, row) = 0.;
         int ip;
@@ -8023,19 +8023,19 @@ enum pumas_return io_parse_dedx_row(struct pumas_physics * physics,
                 *table_get_a_max(physics, material) = a;
                 *table_get_b_max(physics, PUMAS_MODE_CSDA, material) =
                     be / etot;
-                *table_get_b_max(physics, PUMAS_MODE_HYBRID, material) =
+                *table_get_b_max(physics, PUMAS_MODE_MIXED, material) =
                     (be - be_cel) / etot;
         }
 
         /* End point statistics */
         *table_get_dE(physics, PUMAS_MODE_CSDA, material, *row) = de;
-        *table_get_dE(physics, PUMAS_MODE_HYBRID, material, *row) = de_cel;
+        *table_get_dE(physics, PUMAS_MODE_MIXED, material, *row) = de_cel;
         *table_get_Omega(physics, material, *row) = straggling;
         *table_get_CS(physics, material, *row) = frct_cs_del;
 
         /* Weighted integrands */
         const double dei = 1. / de_cel;
-        *table_get_X(physics, PUMAS_MODE_HYBRID, material, *row) = dei;
+        *table_get_X(physics, PUMAS_MODE_MIXED, material, *row) = dei;
         *table_get_NI_in(physics, material, *row) = frct_cs_del * dei;
 
         (*row)++;
@@ -9490,8 +9490,8 @@ void compute_cel_integrals(struct pumas_physics * physics, int material)
             table_get_NI_el(physics, PUMAS_MODE_CSDA, material, 0),
             table_get_NI_el_dK(physics, PUMAS_MODE_CSDA, material, 0));
         compute_kinetic_integral(physics,
-            table_get_NI_el(physics, PUMAS_MODE_HYBRID, material, 0),
-            table_get_NI_el_dK(physics, PUMAS_MODE_HYBRID, material, 0));
+            table_get_NI_el(physics, PUMAS_MODE_MIXED, material, 0),
+            table_get_NI_el_dK(physics, PUMAS_MODE_MIXED, material, 0));
         compute_kinetic_integral(physics,
             table_get_NI_in(physics, material, 0),
             table_get_NI_in_dK(physics, material, 0));
@@ -9592,11 +9592,11 @@ void compute_composite_tables(struct pumas_physics * physics, int material)
         for (i = 0; i < material; i++) k0 += physics->elements_in[i];
         row = 0;
         *table_get_T(physics, PUMAS_MODE_CSDA, material, row) = 0.;
-        *table_get_T(physics, PUMAS_MODE_HYBRID, material, row) = 0.;
+        *table_get_T(physics, PUMAS_MODE_MIXED, material, row) = 0.;
         *table_get_NI_in(physics, material, row) = 0.;
         for (row = 0; row < physics->n_energies; row++) {
                 *table_get_dE(physics, PUMAS_MODE_CSDA, material, row) = 0.;
-                *table_get_dE(physics, PUMAS_MODE_HYBRID, material, row) = 0.;
+                *table_get_dE(physics, PUMAS_MODE_MIXED, material, row) = 0.;
                 *table_get_Omega(physics, material, row) = 0.;
                 *table_get_CS(physics, material, row) = 0.;
                 int k, ip;
@@ -9607,7 +9607,7 @@ void compute_composite_tables(struct pumas_physics * physics, int material)
         *table_get_Kt(physics, material) = 0.;
         *table_get_a_max(physics, material) = 0.;
         *table_get_b_max(physics, PUMAS_MODE_CSDA, material) = 0.;
-        *table_get_b_max(physics, PUMAS_MODE_HYBRID, material) = 0.;
+        *table_get_b_max(physics, PUMAS_MODE_MIXED, material) = 0.;
 
         /* End point statistics */
         for (i = 0; i < physics->composite[icomp]->n_components; i++) {
@@ -9708,7 +9708,7 @@ void compute_composite_tables(struct pumas_physics * physics, int material)
         for (row = 1; row < physics->n_energies; row++) {
                 *table_get_NI_in(physics, material, row) =
                     *table_get_CS(physics, material, row) /
-                    *table_get_dE(physics, PUMAS_MODE_HYBRID, material, row);
+                    *table_get_dE(physics, PUMAS_MODE_MIXED, material, row);
         }
 }
 
@@ -9764,11 +9764,11 @@ void compute_time_integrals(struct pumas_physics * physics, int material)
         double * const T0 =
             table_get_T(physics, PUMAS_MODE_CSDA, material, 0);
         double * const T1 =
-            table_get_T(physics, PUMAS_MODE_HYBRID, material, 0);
+            table_get_T(physics, PUMAS_MODE_MIXED, material, 0);
         double * const X0 =
             table_get_X(physics, PUMAS_MODE_CSDA, material, 0);
         double * const X1 =
-            table_get_X(physics, PUMAS_MODE_HYBRID, material, 0);
+            table_get_X(physics, PUMAS_MODE_MIXED, material, 0);
 
         T0[0] = T1[0] = 0.;
         T0[1] = I0 * X0[1] * physics->mass;
@@ -9969,13 +9969,13 @@ void compute_pchip_coeffs(
             table_get_Lb_dK(physics, material, 0));
 
         int scheme;
-        for (scheme = PUMAS_MODE_CSDA; scheme <= PUMAS_MODE_HYBRID; scheme++) {
+        for (scheme = PUMAS_MODE_CSDA; scheme <= PUMAS_MODE_MIXED; scheme++) {
                 math_pchip_initialise(0, n, K,
                     table_get_dE(physics, scheme, material, 0),
                     table_get_dE_dK(physics, scheme, material, 0));
         }
 
-        for (scheme = PUMAS_MODE_VIRTUAL; scheme <= PUMAS_MODE_HYBRID;
+        for (scheme = PUMAS_MODE_DISABLED; scheme <= PUMAS_MODE_MIXED;
             scheme++) {
                 math_pchip_initialise(0, n, K,
                     table_get_Ms1(physics, scheme, material, 0),
@@ -10041,7 +10041,7 @@ void compute_pchip_integral_coeffs(
         {
                 int i;
                 const double * dE =
-                    table_get_dE(physics, PUMAS_MODE_HYBRID, material, 0);
+                    table_get_dE(physics, PUMAS_MODE_MIXED, material, 0);
                 const double * CS =
                     table_get_CS(physics, material, 0);
                 double * m;
@@ -10059,7 +10059,7 @@ void compute_pchip_integral_coeffs(
         }
 
         int scheme;
-        for (scheme = PUMAS_MODE_CSDA; scheme <= PUMAS_MODE_HYBRID; scheme++) {
+        for (scheme = PUMAS_MODE_CSDA; scheme <= PUMAS_MODE_MIXED; scheme++) {
                 int i;
                 const double mass = physics->mass;
                 const double * dE =
@@ -10187,9 +10187,9 @@ enum pumas_return compute_scattering_parameters(struct pumas_physics * physics,
         const double kinetic = *table_get_K(physics, row);
         if (kinetic <= 0.) {
                 *table_get_Mu0(physics, material, row) = 0.;
-                *table_get_Ms1(physics, PUMAS_MODE_VIRTUAL, material, row) = 0.;
+                *table_get_Ms1(physics, PUMAS_MODE_DISABLED, material, row) = 0.;
                 *table_get_Ms1(physics, PUMAS_MODE_CSDA, material, row) = 0.;
-                *table_get_Ms1(physics, PUMAS_MODE_HYBRID, material, row) = 0.;
+                *table_get_Ms1(physics, PUMAS_MODE_MIXED, material, row) = 0.;
                 return PUMAS_RETURN_SUCCESS;
         }
 
@@ -10283,8 +10283,8 @@ enum pumas_return compute_scattering_parameters(struct pumas_physics * physics,
             lb_h * kinetic * (kinetic + 2. * physics->mass);
         *table_get_NI_el(physics, PUMAS_MODE_CSDA, material, row) = 1. /
             (*table_get_dE(physics, PUMAS_MODE_CSDA, material, row) * lb_h);
-        *table_get_NI_el(physics, PUMAS_MODE_HYBRID, material, row) = 1. /
-            (*table_get_dE(physics, PUMAS_MODE_HYBRID, material, row) * lb_h);
+        *table_get_NI_el(physics, PUMAS_MODE_MIXED, material, row) = 1. /
+            (*table_get_dE(physics, PUMAS_MODE_MIXED, material, row) * lb_h);
 
         /* Compute the 1st moment of the soft scattering. */
         const int n0 = physics->n_materials - physics->n_composites;
@@ -10319,20 +10319,20 @@ enum pumas_return compute_scattering_parameters(struct pumas_physics * physics,
                         invlb1_csda += *table_get_ms1(physics, PUMAS_MODE_CSDA,
                             iel, row, ms1_table) * component->fraction;
                         invlb1_hybrid += *table_get_ms1(physics,
-                            PUMAS_MODE_HYBRID, iel, row, ms1_table) *
+                            PUMAS_MODE_MIXED, iel, row, ms1_table) *
                             component->fraction;
                 }
 
                 invlb1_csda += compute_msc_electronic(
                     physics, PUMAS_MODE_CSDA, material, row);
                 invlb1_hybrid += compute_msc_electronic(
-                    physics, PUMAS_MODE_HYBRID, material, row);
+                    physics, PUMAS_MODE_MIXED, material, row);
 
-                *table_get_Ms1(physics, PUMAS_MODE_VIRTUAL, material, row) =
+                *table_get_Ms1(physics, PUMAS_MODE_DISABLED, material, row) =
                     invlb1;
                 *table_get_Ms1(physics, PUMAS_MODE_CSDA, material, row) =
                     invlb1 + invlb1_csda;
-                *table_get_Ms1(physics, PUMAS_MODE_HYBRID, material, row) =
+                *table_get_Ms1(physics, PUMAS_MODE_MIXED, material, row) =
                     invlb1 + invlb1_hybrid;
         } else {
                 /* We have a composite material. First we loop on atomic
@@ -10368,19 +10368,19 @@ enum pumas_return compute_scattering_parameters(struct pumas_physics * physics,
 
                         /* Base material soft scattering. */
                         const double tmp = *table_get_Ms1(
-                            physics, PUMAS_MODE_VIRTUAL, imat, row);
+                            physics, PUMAS_MODE_DISABLED, imat, row);
                         invlb1_csda += (*table_get_Ms1(
                             physics, PUMAS_MODE_CSDA, imat, row) - tmp) *
                             c->fraction;
                         invlb1_hybrid += (*table_get_Ms1(
-                            physics, PUMAS_MODE_HYBRID, imat, row) - tmp) *
+                            physics, PUMAS_MODE_MIXED, imat, row) - tmp) *
                             c->fraction;
                 }
-                *table_get_Ms1(physics, PUMAS_MODE_VIRTUAL, material, row) =
+                *table_get_Ms1(physics, PUMAS_MODE_DISABLED, material, row) =
                     invlb1;
                 *table_get_Ms1(physics, PUMAS_MODE_CSDA, material, row) =
                     invlb1 + invlb1_csda;
-                *table_get_Ms1(physics, PUMAS_MODE_HYBRID, material, row) =
+                *table_get_Ms1(physics, PUMAS_MODE_MIXED, material, row) =
                     invlb1 + invlb1_hybrid;
         }
 
@@ -10448,7 +10448,7 @@ enum pumas_return compute_msc_soft(struct pumas_physics * physics, int row,
                     physics, PUMAS_MODE_CSDA, iel, row, ms1_table) =
                         invlb1_csda;
                 *table_get_ms1(
-                    physics, PUMAS_MODE_HYBRID, iel, row, ms1_table) =
+                    physics, PUMAS_MODE_MIXED, iel, row, ms1_table) =
                         invlb1_hybrid;
         }
 
@@ -10588,7 +10588,7 @@ void compute_regularise_del(struct pumas_physics * physics, int material)
         for (row = 1; row < it; row++) {
                 *table_get_CS(physics, material, row) = cs0;
                 const double dEdX =
-                    *table_get_dE(physics, PUMAS_MODE_HYBRID, material, row);
+                    *table_get_dE(physics, PUMAS_MODE_MIXED, material, row);
                 *table_get_NI_in(physics, material, row) = cs0 / dEdX;
         }
 

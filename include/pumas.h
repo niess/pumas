@@ -84,53 +84,55 @@ enum pumas_property {
  * Modes for the Monte Carlo transport.
  */
 enum pumas_mode {
-        /** All energy losses are disabled.
+        /** The simulation of the corresponding property is disabled.
          *
-         * **Note** : This mode is provided for test purpose only. Running
-         * without energy losses requires specifying a range or grammage limit.
+         * **Note** : When running without energy losses a range / grammage
+         * limit must be defined or geometry callback provided.
+         *
+         * **Note** : When scattering is disabled, charged particles are still
+         * deflected by external electromagnetic fields.
          */
-        PUMAS_MODE_VIRTUAL = -1,
+        PUMAS_MODE_DISABLED = -1,
         /** Energy losses are purely determinstic as given by the Continuously
          * Slowing Down Approximation (CSDA).
          */
         PUMAS_MODE_CSDA = 0,
-        /** Energy losses are simulated using an hybrid Monte-Carlo scheme with
-         * hard stochastic interactions and a deterministic Continuous Energy
-         * Loss (CEL).
+        /** Energy losses or scattering are simulated using a mixed (class II)
+         * Monte-Carlo algorithm with a split between soft and hard collisions.
          */
-        PUMAS_MODE_HYBRID = 1,
-        /** In addition to the hybrid scheme small fluctuations of the CEL are
-         * also simulated.
+        PUMAS_MODE_MIXED = 1,
+        /** In addition to the mixed algorithm, soft energy losses are
+         * straggled according to the 2nd momentum of the energy loss
+         * distribution.
          */
-        PUMAS_MODE_DETAILED = 2,
-        /** Decays are disabled, i.e. muons or taus are stable. */
-        PUMAS_MODE_STABLE = 0,
+        PUMAS_MODE_STRAGGLED = 2,
         /**
          * Decays are accounted for by a weight factor. This is efficient
          * for muons but irrelevant -numerically instable- for the forward
-         * transport of taus since they decay in flight. Hence it is
-         * disabled in the latter case.
+         * transport of taus since they decay in flight. Hence this mode is
+         * not allowed in the latter case.
          */
-        PUMAS_MODE_WEIGHT = 1,
-        /** Decays are accounted for with a specific Monte-Carlo process.
+        PUMAS_MODE_WEIGHTED = 0,
+        /** Decay vertices are randomised as a specific Monte-Carlo process.
          *
-         * **Note** : the transported particle stops at the dcay vertex but
+         * **Note** : the transported particle stops at the decay vertex but
          * its decay is not simulated, i.e. no daughter particles are
-         * generated. */
-        PUMAS_MODE_DECAY = 2,
-        /** Do a classical forward Monte Carlo transport. */
-        PUMAS_MODE_FORWARD = 0,
-        /** Do a reverse Monte Carlo transport. */
-        PUMAS_MODE_BACKWARD = 1,
-        /** Fully simulate the (multiple)scattering. */
-        PUMAS_MODE_FULL_SPACE = 0,
-        /** Neglect the tranverse scattering, i.e. only simulate the energy
-         * loss.
-         *
-         * **Note** : charged particles are still deflected by external
-         * electromagnetic fields.
+         * generated.
          */
-        PUMAS_MODE_LONGITUDINAL = 1
+        PUMAS_MODE_RANDOMISED = 1,
+        /** Do a forward Monte Carlo transport.
+         *
+         * **Note** : the forward Monte Carlo transport is analog, i.e.
+         * unweighted. However, if the decay mode is set to `PUMAS_MODE_DECAY`
+         * then the particle weight is updated accordingly.
+         */
+        PUMAS_MODE_FORWARD = 0,
+        /** Do a backward Monte Carlo transport.
+         *
+         * **Note** : the backward Monte Carlo transport is **not** analog. I.e.
+         * the transported particle is weighted.
+         */
+        PUMAS_MODE_BACKWARD = 1
 };
 
 /** Return codes for the API functions. */

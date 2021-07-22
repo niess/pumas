@@ -269,16 +269,16 @@ int main(int narg, char * argv[])
                                  * à la Geant4, including transverse transport
                                  */
                                 context->mode.energy_loss =
-                                    PUMAS_MODE_DETAILED;
+                                    PUMAS_MODE_STRAGGLED;
                                 context->mode.scattering =
-                                    PUMAS_MODE_FULL_SPACE;
+                                    PUMAS_MODE_MIXED;
                                 context->limit.energy = 1E+02;
                         } else {
                                 /* Do a fast simulation à la MUM */
                                 context->mode.energy_loss =
-                                    PUMAS_MODE_HYBRID;
+                                    PUMAS_MODE_MIXED;
                                 context->mode.scattering =
-                                    PUMAS_MODE_LONGITUDINAL;
+                                    PUMAS_MODE_DISABLED;
                                 context->limit.energy = energy_threshold;
                         }
                         enum pumas_event event;
