@@ -2232,7 +2232,7 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_physics_property_energy_straggling)
         TOSTRING(pumas_physics_property_elastic_scattering_length)
         TOSTRING(pumas_physics_property_elastic_cutoff_angle)
-        TOSTRING(pumas_physics_property_multiple_scattering_length)
+        TOSTRING(pumas_physics_property_transport_path)
         TOSTRING(pumas_physics_property_cross_section)
         TOSTRING(pumas_physics_table_value)
         TOSTRING(pumas_physics_table_index)
@@ -2243,7 +2243,7 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_constant)
         TOSTRING(pumas_dcs_default)
         TOSTRING(pumas_elastic_dcs)
-        TOSTRING(pumas_elastic_length)
+        TOSTRING(pumas_elastic_path)
         TOSTRING(pumas_electronic_dcs)
         TOSTRING(pumas_electronic_density_effect)
         TOSTRING(pumas_electronic_energy_loss)
@@ -2994,11 +2994,11 @@ enum pumas_return pumas_physics_property_elastic_scattering_length(
 }
 
 /* Public library function: multiple scattering path length. */
-enum pumas_return pumas_physics_property_multiple_scattering_length(
+enum pumas_return pumas_physics_property_transport_path(
     const struct pumas_physics * physics, enum pumas_mode scheme, int material,
     double kinetic, double * length)
 {
-        ERROR_INITIALISE(pumas_physics_property_multiple_scattering_length);
+        ERROR_INITIALISE(pumas_physics_property_transport_path);
 
         if (physics == NULL) {
                 *length = 0.;
@@ -3466,7 +3466,7 @@ enum pumas_return pumas_physics_table_value(
         } else if (property == PUMAS_PROPERTY_CROSS_SECTION) {
                 *value = *table_get_CS(physics, material, row);
                 return PUMAS_RETURN_SUCCESS;
-        } else if (property == PUMAS_PROPERTY_ELASTIC_SCATTERING_LENGTH) {
+        } else if (property == PUMAS_PROPERTY_ELASTIC_PATH) {
                 if (row == 0) {
                         *value = 0.;
                 } else {
@@ -3483,7 +3483,7 @@ enum pumas_return pumas_physics_table_value(
                         *value = acos(1. - 2 * mu0);
                 }
                 return PUMAS_RETURN_SUCCESS;
-        } else if (property == PUMAS_PROPERTY_MULTIPLE_SCATTERING_LENGTH) {
+        } else if (property == PUMAS_PROPERTY_TRANSPORT_PATH) {
                 if ((scheme < PUMAS_MODE_DISABLED) ||
                     (scheme >= PUMAS_MODE_STRAGGLED)) {
                         return ERROR_INVALID_SCHEME(scheme);
@@ -15315,7 +15315,7 @@ double pumas_elastic_dcs(
 }
 
 /* Public library function: elastic scattering path length. */
-double pumas_elastic_length(
+double pumas_elastic_path(
     int order, double Z, double A, double mass, double kinetic)
 {
         if ((order < 0) || (order > 1) || (kinetic <= 0.)) return 0.;

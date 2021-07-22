@@ -54,15 +54,15 @@ enum pumas_property {
          */
         PUMAS_PROPERTY_CROSS_SECTION = 0,
         /**
-         * Cutoff angle for single elastic events in the center of mass frame,
+         * Cutoff angle for hard elastic events in the center of mass frame,
          * in rad.
          */
         PUMAS_PROPERTY_ELASTIC_CUTOFF_ANGLE,
         /**
-         * The restricted path length for elastic (Coulomb) processes,
+         * The mean free path for hard elastic (Coulomb) collisions,
          * in kg/m^(2).
          */
-        PUMAS_PROPERTY_ELASTIC_SCATTERING_LENGTH,
+        PUMAS_PROPERTY_ELASTIC_PATH,
         /** The average (continuous) energy loss, in GeV/(kg/m^(2)). */
         PUMAS_PROPERTY_ENERGY_LOSS,
         /** The particle range, in kg/m^(2). */
@@ -72,10 +72,9 @@ enum pumas_property {
         /** The total magnetic rotation angle, in rad kg/m^(3). */
         PUMAS_PROPERTY_MAGNETIC_ROTATION,
         /**
-         * The multiple scattering (first transport) path length for soft
-         * processes, in kg/m^(2).
+         * The transport mean free path for soft processes, in kg/m^(2).
          */
-        PUMAS_PROPERTY_MULTIPLE_SCATTERING_LENGTH,
+        PUMAS_PROPERTY_TRANSPORT_PATH,
         /** The particle proper time, in kg/m^(2). */
         PUMAS_PROPERTY_PROPER_TIME
 };
@@ -643,8 +642,8 @@ struct pumas_physics_settings {
          * et al., https://doi.org/10.1103/PhysRevD.64.074015).
          */
         double cutoff;
-        /** Ratio of the elastic hard path length w.r.t. the first transport
-         * path length.
+        /** Ratio of the mean free path for hard elastic events to the transport
+         * mean free path for soft elastic events.
          *
          * The lower the ratio the more detailed the simulation of elastic
          * scattering  (see e.g. Fernandez-Varea et al.,
@@ -880,10 +879,9 @@ PUMAS_API double pumas_physics_cutoff(const struct pumas_physics * physics);
  * @param context Handle for the physics tables.
  * @return The elastic ratio or -1 if the physics is not properly initialised.
  *
- * The ratio of elastic hard path length w.r.t. the first transport path length
- * is specified during the physics initialisation with `pumas_physics_create`.
- * It cannot be modified afterwards. Instead a new physics object must be
- * created.
+ * The ratio of the m.f.p. to the transport m.f.p. for elastic events is
+ * specified during the physics initialisation with `pumas_physics_create`.  It
+ * cannot be modified afterwards. Instead a new physics object must be created.
  */
 PUMAS_API double pumas_physics_elastic_ratio(
     const struct pumas_physics * physics);
@@ -1407,19 +1405,19 @@ PUMAS_API enum pumas_return pumas_physics_property_elastic_scattering_length(
     double * length);
 
 /**
- * Get the multiple scattering (first transport) path length.
+ * Get the transport mean free path for soft events.
  *
  * @param physics     Handle for the Physics tables.
  * @param scheme      The energy loss scheme.
  * @param material    The material index.
  * @param energy      The kinetic energy, in GeV.
- * @param length      The corresponding length, in kg/m^(2).
+ * @param path        The corresponding path per unit mass, in kg/m^(2).
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * The first transport path length, &lambda;, is related to the standard
- * deviation of the polar multiple scattering angle's as &theta;^(2) =
- * X/(2&lambda;), with X the column depth.
+ * The transport m.f.p., &lambda;, is related to the standard deviation of the
+ * polar multiple scattering angle's as &theta;^(2) = X/(2&lambda;), with X the
+ * column depth.
  *
  * __Error codes__
  *
@@ -1427,9 +1425,9 @@ PUMAS_API enum pumas_return pumas_physics_property_elastic_scattering_length(
  *
  *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  */
-PUMAS_API enum pumas_return pumas_physics_property_multiple_scattering_length(
+PUMAS_API enum pumas_return pumas_physics_property_transport_path(
     const struct pumas_physics * physics, enum pumas_mode scheme, int material,
-    double energy, double * length);
+    double energy, double * path);
 
 /**
  * Get the macroscopic restricted cross-section for inelastic and radiative
@@ -1995,7 +1993,7 @@ PUMAS_API double pumas_elastic_dcs(
     double Z, double A, double m, double K, double theta);
 
 /**
- * The (transport) path length for elastic processes.
+ * The (transport) mean free path for elastic collisions.
  *
  * @param order   The order of the distribution.
  * @param Z       The charge number of the target atom.
@@ -2003,17 +2001,17 @@ PUMAS_API double pumas_elastic_dcs(
  * @param m       The projectile rest mass, in GeV
  * @param K       The projectile initial kinetic energy.
  * @param theta   The scattering angle, in rad.
- * @return The corresponding path length, in kg / m^(2).
+ * @return The corresponding path per unit mass, in kg / m^(2).
  *
- * The elastic path length is computed analytically from the DCS integral (see
- * `pumas_elastic_dcs`). If *order* is 0 then the interaction length is
- * returned. Else, if *order* is 1 then the first transport path length is
- * returned. For other values of *order* -1 is returned.
+ * The elastic m.f.p. is computed analytically from the DCS integral (see
+ * `pumas_elastic_dcs`). If *order* is 0 then the single collision m.f.p. is
+ * returned. Else, if *order* is 1 then the transport m.f.p. is returned. For
+ * other values of *order* -1 is returned.
  *
  * References:
  *      Fernandez-Varea et al. (1993), NIM B 73, 447-473
  */
-PUMAS_API double pumas_elastic_length(
+PUMAS_API double pumas_elastic_path(
     int order, double Z, double A, double mass, double kinetic);
 
 /**
