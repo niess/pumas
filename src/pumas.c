@@ -935,8 +935,13 @@ static inline dcs_function_t * dcs_get(int process);
 static inline int dcs_get_index(dcs_function_t * dcs_func);
 static double dcs_bremsstrahlung(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double q);
+static double dcs_bremsstrahlung_transport(const struct pumas_physics * physics,
+    const struct atomic_element * element, double K, double cutoff);
 static double dcs_pair_production(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double q);
+static double dcs_pair_production_transport(
+    const struct pumas_physics * physics, const struct atomic_element * element,
+    double K, double cutoff);
 static double dcs_photonuclear(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double q);
 static inline int dcs_photonuclear_check(double m, double K, double q);
@@ -10425,7 +10430,15 @@ enum pumas_return compute_msc_soft(struct pumas_physics * physics, int row,
                 struct atomic_element * element = physics->element[iel];
                 double invlb1_csda = 0., invlb1_hybrid = 0.;
 
-                /* Photonuclear contribution to the transverse transport. */
+                /* Radiative contributions to the transverse transport. */
+                invlb1_csda += dcs_bremsstrahlung_transport(
+                    physics, element, kinetic, 1.);
+                invlb1_hybrid += dcs_bremsstrahlung_transport(
+                    physics, element, kinetic, physics->cutoff);
+                invlb1_csda += dcs_pair_production_transport(
+                    physics, element, kinetic, 1.);
+                invlb1_hybrid += dcs_pair_production_transport(
+                    physics, element, kinetic, physics->cutoff);
                 invlb1_csda += dcs_photonuclear_transport(
                     physics, element, kinetic, 1.);
                 invlb1_hybrid += dcs_photonuclear_transport(
@@ -11298,16 +11311,25 @@ double polar_bremsstrahlung(const struct pumas_physics * physics,
         const double nu = ki - kf;
         const double y = nu / E;
 
-        const double tmp = m * nu / (E * (E - nu));
+        const double tmp = 0.5 * m * nu / (E * (E - nu));
         const double mu0 = tmp * tmp;
         const double c1 = (2 * (1. - y) + y * y) * mu0;
         const double c2 = 4 * (1. - y) * mu0 * mu0;
 
         const double RN = data_nuclear_radius(element->Z, element->A);
         const double tmp2 = m * RN / HBAR_C;
-        const double muni = tmp2 * tmp2 / 12.;
+        const double muni = tmp2 * tmp2 / 6.;
         const double muc = sqrt(mu0) - mu0;
         if (muc < 0) return 0;
+
+        double x0;
+        {
+                const double q = muni;
+                const double r = mu0;
+                const double qr = q * r;
+                x0 = (1. + 2 * qr) * log((1. + qr) / (r + qr)) -
+                    (1. - r) * (1 + 2 * q) / (1 + q);
+        }
 
         int i;
         for (i = 0; i < MAX_TRIALS; i++) {
@@ -11329,9 +11351,9 @@ double polar_bremsstrahlung(const struct pumas_physics * physics,
 
                 /* Second, check the nuclear screening */
                 const double l2 = mu2 / (mu0 * mu0);
-                double q = muni * l2;
-                double r = mu0 * l2;
-                double qr = q * r;
+                const double q = muni * l2;
+                const double r = mu0 * l2;
+                const double qr = q * r;
                 if (qr > 1E+05) continue; /* Above this value the nuclear
                                            * screening is close to zero and
                                            * results are numericaly
@@ -11339,11 +11361,6 @@ double polar_bremsstrahlung(const struct pumas_physics * physics,
                                            */
 
                 const double x = (1. + 2 * qr) * log((1. + qr) / (r + qr)) -
-                    (1. - r) * (1 + 2 * q) / (1 + q);
-                q = muni;
-                r = mu0;
-                qr = q * r;
-                const double x0 = (1. + 2 * qr) * log((1. + qr) / (r + qr)) -
                     (1. - r) * (1 + 2 * q) / (1 + q);
 
                 pdf *= x / x0;
@@ -12389,7 +12406,7 @@ static double math_dilog(double x)
 
         if (x == 10) {
                 return PI6;
-        } else if (x == -1.) {
+        } else if ((x == -1.) || (1. - x == 0.)) {
                 return -PI12;
         } else {
                 double T = -x;
@@ -13723,22 +13740,12 @@ static double dcs_bremsstrahlung_SSR(
         phi2 -= delta2 * (1. - 1. / Z);
 
         /* s_atomic */
-        const double square_momentum  = (energy - m) * (energy + m);
-        const double particle_momentum = (square_momentum > 0) ?
-            sqrt(square_momentum) : 0.;
-        const double maxV = ME * (energy - m) /
-            (energy * (energy - particle_momentum + ME));
-
-        double s_atomic = 0.0;
-
-        if (v < maxV) {
-                const double s_atomic_1 = log(m / delta /
-                    (m * delta / (ME * ME) + SQRTE));
-                const double s_atomic_2 = log(1. + ME /
-                    (delta * rad_log_inel * Z13 * Z13 * SQRTE));
-                s_atomic = (4. / 3. * (1. - v) + v * v) *
-                    (s_atomic_1 - s_atomic_2);
-        }
+        const double s_atomic_1 = log(m / delta /
+            (m * delta / (ME * ME) + SQRTE));
+        const double s_atomic_2 = log(1. + ME /
+            (delta * rad_log_inel * Z13 * Z13 * SQRTE));
+        const double s_atomic = (4. / 3. * (1. - v) + v * v) *
+            (s_atomic_1 - s_atomic_2);
 
         /* s_rad */
         double s_rad;
@@ -13774,6 +13781,220 @@ static double dcs_bremsstrahlung_SSR(
 #undef ME
 #undef RE
 #undef MMU
+}
+
+/* Cutoff for Tsai's Bremsstahlung DDCS. */
+static double dcs_bremsstrahlung_tsai_d2_cutoff(
+    double Z, double A, double m, double K, double nu, double * mu0_p,
+    double * muni_p)
+{
+        const double E = K + m;
+        const double tmp = 0.5 * m * nu / (E * (E - nu));
+        const double mu0 = tmp * tmp;
+        const double muc = sqrt(mu0) - mu0;
+
+        double mumax = 0., muni = 0.;
+        if (muc > 0) {
+                const double RN = data_nuclear_radius(Z, A);
+                const double tmp2 = m * RN / HBAR_C;
+                muni = tmp2 * tmp2 / 6.;
+
+                mumax = mu0 * pow(mu0 * muni * 1E-05, -0.25) - mu0;
+                /* Above this value the nuclear screening is close to zero and
+                 * results are numericaly instable using double precision.
+                 */
+                if (muc < mumax) mumax = muc;
+        }
+
+        if (mu0_p != NULL) *mu0_p = mu0;
+        if (muni_p != NULL) *muni_p = muni;
+
+        return (mumax >= 0.) ? mumax : 0.;
+}
+
+/* Bremsstahlung DDCS according to Tsai.
+ *
+ * @param Z       The charge number of the target atom.
+ * @param A       The mass number of the target atom.
+ * @param mu      The projectile rest mass, in GeV
+ * @param K       The projectile initial kinetic energy.
+ * @param nu      The kinetic energy lost to the photon.
+ * @param mu      The projectile angular parameter.
+ * @return The corresponding value of the atomic DCS, in m^2 / GeV.
+ *
+ * The projectile mu is computed from the photon scattering angle assuming
+ * zero recoil for the target. Thus: mu = nu^2 / (K - nu)^2 mu_k.
+ *
+ * References:
+ *   Y. Tsai, Rev. Mod. Phys. (1974).
+ */
+static double dcs_bremsstrahlung_tsai_d2(
+    double Z, double A, double m, double K, double nu, double mu)
+{
+        double mu0, muni;
+        const double mumax =
+            dcs_bremsstrahlung_tsai_d2_cutoff(Z, A, m, K, nu, &mu0, &muni);
+        if (mu >= mumax) return 0.;
+
+        const double E = K + m;
+        const double y = nu / E;
+        const double c1 = (2 * (1. - y) + y * y) * mu0;
+        const double c2 = 4 * (1. - y) * mu0 * mu0;
+        const double mus = mu0 + mu;
+        const double mu2 = mus * mus;
+        const double d1 = 1 / mu2;
+        const double d2 = d1 * d1;
+        double ddcs = c1 * d1 - mu * c2 * d2;
+
+        const double l2 = mu2 / (mu0 * mu0);
+        const double q = muni * l2;
+        const double r = mu0 * l2;
+        const double qr = q * r;
+        const double X = Z * Z * ((1. + 2 * qr) * log((1. + qr) / (r + qr)) -
+            (1. - r) * (1 + 2 * q) / (1 + q));
+
+        ddcs *= 2 * ALPHA_EM * ELECTRON_RADIUS * ELECTRON_RADIUS * X / nu;
+
+        return ddcs;
+}
+
+/* Integrand for transport integral using Tsai ddcs */
+static double dcs_bremsstrahlung_tsai_integrand(double Z, double A, double m,
+    double kinetic, double nu, pumas_dcs_t * dcs)
+{
+#define N_GQ 12
+
+        const double dcs_ref = dcs(Z, A, m, kinetic, nu);
+        if (dcs_ref <= 0) return 0.;
+
+        double mu0;
+        double mumax = dcs_bremsstrahlung_tsai_d2_cutoff(
+            Z, A, m, kinetic, nu, &mu0, NULL);
+        if (mumax <= 0) return 0.;
+
+        const double mumin = 1E-03 * mu0;
+
+        const double mumax0 = 1E+03 * mu0; /* Upper bound for DCS */
+        double y1 = 0., y0 = 0.;
+
+        int k;
+        for (k = 0; k < 2; k++) {
+                int j;
+                double xj[N_GQ], wj[N_GQ];
+                math_gauss_quad_initialise(
+                    N_GQ, mumin, mumax, 1, xj, wj);
+
+                for (j = 0; j < N_GQ; j++) {
+                        const double mu = xj[j];
+                        const double ddcs = dcs_bremsstrahlung_tsai_d2(
+                            Z, A, m, kinetic, nu, mu);
+                        if (ddcs <= 0) continue;
+
+                        if (k == 0) {
+                                y1 += mu * ddcs * wj[j];
+                                if (mumax0 >= mumax) {
+                                        y0 += ddcs * wj[j];
+                                }
+                        } else {
+                                y0 += ddcs * wj[j];
+                        }
+                }
+
+                if (mumax0 >= mumax) {
+                        break;
+                } else {
+                        mumax = mumax0;
+                }
+        }
+
+        return (y0 > 0.) ? y1 * dcs_ref / y0 : 0.;
+
+#undef N_GQ
+}
+
+/**
+ * Integrate bremsstrahlung or pair production transport.
+ *
+ * @param Z       The charge number of the target atom.
+ * @param A       The mass number of the target atom.
+ * @param ml      The projectile rest mass, in GeV
+ * @param kinetic The projectile initial kinetic energy.
+ * @param qlow    The lower cut on the kinetic energy lost to the photon / pair.
+ * @param qhigh   The upper cut on the kinetic energy lost to the photon / pair.
+ * @param dcs     The physics true DCS.
+ * @return The corresponding value of the transport DCS, in m^2 / kg.
+ */
+static double dcs_bremsstrahlung_transport_integrate(double Z, double A,
+    double m, double kinetic, double qlow, double qhigh, pumas_dcs_t * dcs)
+{
+        /* Set the integration range */
+        const double Z13 = pow(Z, 1. / 3.);
+        const double sqrte = 1.648721271;
+        double qmax = kinetic + m * (1. - 0.75 * sqrte * Z13);
+        if (qhigh < qmax) qmax = qhigh;
+
+        double qmin = 1E-03 * qmax;
+        if (qlow > qmin) qmin = qlow;
+
+        if ((qmin >= qmax) || (qmin <= 0)) return 0.;
+
+        int nint = 180;
+        double qmid;
+        if (qhigh >= kinetic) {
+                qmid = 0.5 * qmax;
+                nint /= 2;
+        } else {
+                qmid = qmax;
+        }
+
+        /* Integrate over the recoil energy using a logarithmic sampling. */
+        double dcsint = 0.;
+        double x0 = log(qmin), x1 = log(qmid);
+        math_gauss_quad(nint, &x0, &x1); /* Initialisation. */
+
+        double xi, wi;
+        while (math_gauss_quad(0, &xi, &wi) == 0) { /* Iterations. */
+                const double nu = exp(xi);
+                const double y = dcs_bremsstrahlung_tsai_integrand(
+                    Z, A, m, kinetic, nu, dcs);
+
+                if (y > 0.) {
+                        dcsint += y * nu * wi;
+                }
+        }
+
+        if (qmid < qmax) {
+                /* Integrate the upper part reverse log-scale due to
+                 * divergences
+                 */
+                x0 = log(1E-12 * qmax);
+                x1 = log(qmax - qmid);
+                math_gauss_quad(nint, &x0, &x1); /* Initialisation. */
+
+                while (math_gauss_quad(0, &xi, &wi) == 0) { /* Iterations. */
+                        const double nu = qmax - exp(xi);
+                        const double y = dcs_bremsstrahlung_tsai_integrand(
+                            Z, A, m, kinetic, nu, dcs);
+
+                        if (y > 0.) {
+                                dcsint += y * (qmax - nu) * wi;
+                        }
+                }
+        }
+
+        return 2 * AVOGADRO_NUMBER / (A * 1E-03) * dcsint;
+
+#undef N_GQ
+}
+
+/**
+ * Wrapper for bremsstrahlung transport integral.
+ */
+double dcs_bremsstrahlung_transport(const struct pumas_physics * physics,
+    const struct atomic_element * element, double K, double cutoff)
+{
+        return dcs_bremsstrahlung_transport_integrate(element->Z, element->A,
+            physics->mass, K, 0., K * cutoff, physics->dcs_bremsstrahlung);
 }
 
 /**
@@ -14138,6 +14359,17 @@ static double dcs_pair_production_SSR(
         return (I < 0) ? 0. : I;
 
 #undef N_GQ
+}
+
+/**
+ * Wrapper for pair_production transport integral.
+ */
+double dcs_pair_production_transport(const struct pumas_physics * physics,
+    const struct atomic_element * element, double K, double cutoff)
+{
+        const double qmin = 4 * ELECTRON_MASS;
+        return dcs_bremsstrahlung_transport_integrate(element->Z, element->A,
+            physics->mass, K, qmin, K * cutoff, physics->dcs_pair_production);
 }
 
 /** ALLM97 parameterisation of the proton structure function, F2.
