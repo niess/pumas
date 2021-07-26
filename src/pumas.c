@@ -108,17 +108,22 @@
  *
  * P is a polynomial of log(nu) while Q is in log(1-nu) with a null constant
  * term.
+ *
+ * XXX Remove and clean
  */
 #define DCS_MODEL_ORDER_P 6
 #define DCS_MODEL_ORDER_Q 2
+/** XXX Tuning parameters for the tabulation of the DCS */
+#define DCS_MODEL_N_MIN 10
+#define DCS_MODEL_PER_DECADE 15
+#define DCS_MODEL_N_REVERSE 20
+#define DCS_MODEL_X_REVERSE 0.6
+#define DCS_MODEL_DXMIN 1E-03
+#define DCS_MODEL_MAX_FRACTION 0.95
 /**
- * Minimum kinetic energy for using the DCS model.
+ * Minimum kinetic energy for using the DCS tabulation.
  */
 #define DCS_MODEL_MIN_KINETIC 10.
-/**
- * Maximum allowed energy tranfer for using the DCS model.
- */
-#define DCS_MODEL_MAX_FRACTION 0.95
 /**
  * Number of samples for the DCS tabulation.
  */
@@ -519,6 +524,8 @@ struct atomic_element {
         double A;
         /** The element Mean Excitation Energy (MEE), in eV. */
         double I;
+        /** The element tabulation index */
+        int index;
         /** The element name. */
         char * name;
         /** Tabulation for the DCS model: polynomials and precomputed values. */
@@ -672,7 +679,7 @@ struct pumas_physics {
  * Version tag for the physics data format. Increment whenever the
  * structure changes.
  */
-#define PHYSICS_BINARY_DUMP_TAG 11
+#define PHYSICS_BINARY_DUMP_TAG 12
 
         /** The total byte size of the shared data. */
         int size;
@@ -695,6 +702,8 @@ struct pumas_physics {
          * approximations.
          */
         int dcs_model_offset;
+        /** The number of tabulated dcs_values */
+        int n_table_dcs;
         /** The transported particle type. */
         enum pumas_particle particle;
         /** The transported particle decay length, in m. */
@@ -747,6 +756,9 @@ struct pumas_physics {
         /** The tabulated cross section normalisation. */
         double * table_CSn;
         double * table_CSn_dK;
+        /* The tabulated data for DCSs **/
+        float * table_DCS;
+        float * table_DCS_x;
         /** The element wise fractional threshold for DELs. */
         double * table_Xt;
         /** The total kinetic threshold for DELs. */
@@ -1163,6 +1175,8 @@ static inline double * table_get_Ms1_dK(
     const struct pumas_physics * physics, int scheme, int material, int row);
 static inline double * table_get_ms1(const struct pumas_physics * physics,
     int scheme, int element, int row, double * table);
+static inline float * table_get_dcs(const struct pumas_physics * physics,
+    int process, int element, int kinetic);
 static inline float * table_get_dcs_coeff(const struct pumas_physics * physics,
     const struct atomic_element * element, int process, int kinetic);
 static inline float * table_get_dcs_value(const struct pumas_physics * physics,
@@ -1269,6 +1283,8 @@ static void compute_MEE(struct pumas_physics * physics, int material);
 static enum pumas_return compute_dcs_model(struct pumas_physics * physics,
     dcs_function_t * dcs_func, struct atomic_element * element,
     struct error_context * error_);
+static enum pumas_return compute_dcs_table(
+    struct pumas_physics * physics, int element, struct error_context * error_);
 static enum pumas_return physics_tabulate(struct pumas_physics * physics,
     struct physics_tabulation_data * data, struct error_context * error_);
 static void physics_tabulation_clear(const struct pumas_physics * physics,
@@ -1425,7 +1441,7 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         FILE * fid_mdf = NULL;
         struct mdf_buffer * mdf = NULL;
         const int pad_size = sizeof(*((*physics_ptr)->data));
-#define N_DATA_POINTERS 50
+#define N_DATA_POINTERS 52
         int size_data[N_DATA_POINTERS];
 
         /* Check the particle type. */
@@ -1534,6 +1550,15 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         struct mdf_buffer settings;
         memcpy(&settings, mdf, sizeof(settings));
 
+        /* Compute the size of the dcs binning */
+        int n_table_dcs = DCS_MODEL_N_REVERSE;
+        if (opts.cutoff < DCS_MODEL_X_REVERSE) {
+                int n = (int)(log10(DCS_MODEL_X_REVERSE / opts.cutoff) *
+                    DCS_MODEL_PER_DECADE);
+                if (n < DCS_MODEL_N_MIN) n = DCS_MODEL_N_MIN;
+                n_table_dcs += n;
+        }
+
         /* Compute the memory mapping. */
         int imem = 0;
         /* mdf_path. */
@@ -1632,6 +1657,13 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         size_data[imem++] = memory_padded_size(sizeof(double) *
                 N_DEL_PROCESSES * settings.n_elements * settings.n_energies,
             pad_size);
+        /* table_DCS. */
+        size_data[imem++] = memory_padded_size(sizeof(float) *
+            (N_DEL_PROCESSES - 1) * settings.n_elements * settings.n_energies *
+            2 * n_table_dcs, pad_size);
+        /* table_DCS_x. */
+        size_data[imem++] = memory_padded_size(
+            n_table_dcs * sizeof(float), pad_size);
         /* table_Xt */
         size_data[imem++] = memory_padded_size(sizeof(double) *
                 N_DEL_PROCESSES * settings.n_elements * settings.n_energies,
@@ -1784,6 +1816,7 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         physics->n_composites = settings.n_composites;
         physics->n_elements = settings.n_elements;
         physics->n_components = settings.n_components;
+        physics->n_table_dcs = n_table_dcs;
         physics->max_components = settings.max_components;
         physics->n_energy_loss_header = settings.n_energy_loss_header;
         physics->dcs_model_offset = settings.dcs_model_offset;
@@ -1869,6 +1902,8 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
                                 error_) != PUMAS_RETURN_SUCCESS)
                                 goto clean_and_exit;
                 }
+                if (compute_dcs_table(physics, iel, error_) !=
+                    PUMAS_RETURN_SUCCESS) goto clean_and_exit;
         }
 
         /* Compute the cubic interp. coefficients for atomic elements
@@ -1884,6 +1919,7 @@ clean_and_exit:
         compute_msc_soft(physics, -1, NULL, error_);
         compute_cel_and_del(physics, -1);
         compute_dcs_model(physics, NULL, NULL, error_);
+        compute_dcs_table(physics, -1, error_);
         if ((error_->code != PUMAS_RETURN_SUCCESS) && (physics != NULL)) {
                 deallocate(physics);
                 *physics_ptr = NULL;
@@ -4171,6 +4207,17 @@ void table_bracket(const double * table, double value, int * p1, int * p2)
         if (*p2 - *p1 >= 2) table_bracket(table, value, p1, p2);
 }
 
+/** Float version of the index bracketing */
+static void table_bracketf(float * table, float value, int * p1, int * p2)
+{
+        int i3 = (*p1 + *p2) / 2;
+        if (value >= table[i3])
+                *p1 = i3;
+        else
+                *p2 = i3;
+        if (*p2 - *p1 >= 2) table_bracketf(table, value, p1, p2);
+}
+
 /*
  * Low level routines: inlined encapsulations of table accesses.
  *
@@ -4683,6 +4730,23 @@ float * table_get_dcs_value(const struct pumas_physics * physics,
                 kinetic) *
             (n + DCS_SAMPLING_N) +
             n;
+}
+
+/**
+ * Encapsulation of the tabulated DCS data.
+ *
+ * @param Physics Handle for physics tables.
+ * @param element The element index.
+ * @param process The process index.
+ * @param row     The kinetic energy row index.
+ * @return A pointer to the table element.
+ */
+float * table_get_dcs(const struct pumas_physics * physics,
+    int process, int element, int kinetic)
+{
+        return physics->table_DCS + physics->n_table_dcs * 2 * (
+            (process * physics->n_elements + element) * physics->n_energies +
+            kinetic);
 }
 
 /*
@@ -8656,6 +8720,7 @@ enum pumas_return mdf_parse_elements(const struct pumas_physics * physics,
                 e->I *= 1E-09;
 
                 /* Increment. */
+                e->index = iel;
                 iel++;
                 if ((node.tail == 1) && (iel >= physics->n_elements)) break;
         }
@@ -11145,65 +11210,236 @@ double dcs_evaluate(const struct pumas_physics * physics,
         /* Check if the process has a valid tabulated model. */
         if (dcs_func == dcs_ionisation)
                 return dcs_func(physics, element, K, q) * wj;
-        else if ((dcs_func == dcs_photonuclear) &&
-                  dcs_photonuclear_check(physics->mass, K, q))
-                return 0.;
 
-        /* Check if the exact computation should be used. */
-        const double min_k = physics ?
-            *table_get_K(physics, physics->dcs_model_offset) :
-            DCS_MODEL_MIN_KINETIC;
-        if (!physics || (K <= min_k) || (q < physics->cutoff * K) ||
-            (q > DCS_MODEL_MAX_FRACTION * K))
+        /* Check the kinematic range */
+        double qlow = 0;
+        if (dcs_func == dcs_photonuclear) {
+                const double M = 0.5 * (NEUTRON_MASS + PROTON_MASS);
+                const double mpi = PION_MASS;
+                const double qmin = mpi + 0.5 * mpi * mpi / M;
+                const double m = physics->mass;
+                const double qmax = K + m - 0.5 * (M + m * m / M);
+                if ((q < qmin) || (q > qmax)) return 0.;
+                else qlow = 2 * qmin;
+        }
+        else if (dcs_func == dcs_pair_production) {
+                const double qmin = 4 * ELECTRON_MASS;
+                if (q < qmin) return 0.;
+                else qlow = 4 * qmin;
+        }
+        if (q < 2 * qlow) {
                 return dcs_func(physics, element, K, q) * wj;
+        }
 
-        /* Get the coefficients of the polynomial approximation. */
-        const int index = dcs_get_index(dcs_func);
-        const int offset = physics->dcs_model_offset;
-        const int n = DCS_MODEL_ORDER_P + DCS_MODEL_ORDER_Q + 1;
-        const float * const coeff =
-            table_get_dcs_coeff(physics, element, index, 0);
+        /* Check if the exact computation should be used and prepare spline
+         * coefficients.
+         */
+        const int nx = physics->n_table_dcs;
+        const float xmin = physics->table_DCS_x[0];
+        const float xmax = physics->table_DCS_x[nx - 1];
+        const float x = logf(q / K);
+        if ((x < xmin) || (x >= xmax)) {
+                return dcs_func(physics, element, K, q) * wj;
+        }
+        int ix = 0, tmpi = nx - 1;
+        table_bracketf(physics->table_DCS_x, x, &ix, &tmpi);
+        if ((ix < 0) || (ix >= nx - 1)) {
+                return dcs_func(physics, element, K, q) * wj;
+        }
+
+        float p00, p01, m00, m01, p10, p11, m10, m11, h0, h1;
+        const int ip = dcs_get_index(dcs_func);
         const int imax = physics->n_energies - 1;
-        const float *c0, *c1;
-        int i0;
-        float h1;
         const double Kmax = *table_get_K(physics, imax);
+        int i0;
         if ((K >= Kmax) || ((i0 = table_index(physics, context,
                                  table_get_K(physics, 0), K)) >= imax)) {
-                /*  Rescale and use the last tabulated value. */
-                h1 = 0.;
-                c0 = c1 = coeff + (imax - offset) * (n + DCS_SAMPLING_N);
+                /* Use the last tabulated value. */
+                const float * data = table_get_dcs(
+                    physics, ip, element->index, imax);
+                p00 = p10 = data[2 * ix];
+                m00 = m10 = data[2 * ix + 1];
+                p01 = p11 = data[2 * ix + 2];
+                m01 = m11 = data[2 * ix + 3];
+                h0 = 1.f;
+                h1 = 0.f;
         } else {
+                const float * data =
+                    table_get_dcs(physics, ip, element->index, i0);
+                p00 = data[2 * ix];
+                m00 = data[2 * ix + 1];
+                p01 = data[2 * ix + 2];
+                m01 = data[2 * ix + 3];
+                data += 2 * nx;
+                p10 = data[2 * ix];
+                m10 = data[2 * ix + 1];
+                p11 = data[2 * ix + 2];
+                m11 = data[2 * ix + 3];
+
                 const float K0 = (float)(*table_get_K(physics, i0));
                 const float K1 = (float)(*table_get_K(physics, i0 + 1));
-                h1 = (float)((K - K0) / (K1 - K0));
-                c0 = coeff + (i0 - offset) * (n + DCS_SAMPLING_N);
-                c1 = c0 + n + DCS_SAMPLING_N;
+                h1 = logf(((float)K) / K0) / logf(K1 / K0);
+                h0 = 1.f - h1;
         }
 
-        /* Compute the polynomial approximations. */
-        const float nu = (float)(q / K);
-        float dcs0 = 0., dcs1 = 0.;
-        float u = 1.;
-        float lx = logf(nu);
+        if (((p00 == 0.f) && (m00 == 0.f)) || ((p01 == 0.f) && (m01 == 0.f)) ||
+            ((p10 == 0.f) && (m10 == 0.f)) || ((p11 == 0.f) && (m11 == 0.f))) {
+                return dcs_func(physics, element, K, q) * wj;
+        }
+
+        const float x0 = physics->table_DCS_x[ix];
+        const float x1 = physics->table_DCS_x[ix + 1];
+        const float dx = x1 - x0;
+        m00 *= dx;
+        m01 *= dx;
+        const float t = (x - x0) / dx;
+        const float c02 = -3 * (p00 - p01) - 2 * m00 - m01;
+        const float c03 = 2 * (p00 - p01) + m00 + m01;
+        float r = expf(p00 + t * (m00 + t * (c02 + t * c03))) * h0;
+        if (h1 > 0.f) {
+                m10 *= dx;
+                m11 *= dx;
+                const float c12 = -3 * (p10 - p11) - 2 * m10 - m11;
+                const float c13 = 2 * (p10 - p11) + m10 + m11;
+                r += expf(p10 + t * (m10 + t * (c12 + t * c13))) * h1;
+        }
+
+        return r * wj;
+}
+
+struct dcs_tabulate_work {
+        int imin;
+        int imax;
+        double * x;
+        double * y;
+        double * m;
+        double data[];
+};
+
+static void dcs_tabulate_row(
+    struct pumas_physics * physics, int process, int element, int row,
+    struct dcs_tabulate_work * work)
+{
+        const int n = physics->n_table_dcs;
         int i;
-        for (i = 0; i < DCS_MODEL_ORDER_P + 1; i++) {
-                dcs0 += c0[i] * u;
-                dcs1 += c1[i] * u;
-                u *= lx;
+        if (row == 0) {
+                float * data = table_get_dcs(physics, process, element, row);
+                for (i = 0; i < 2 * n; i++) {
+                        data[i] = 0.f;
+                }
+                return;
         }
-        lx = logf(1.f - nu);
-        u = lx;
-        for (i = DCS_MODEL_ORDER_P + 1; i < n; i++) {
-                dcs0 += c0[i] * u;
-                dcs1 += c1[i] * u;
-                u *= lx;
-        }
-        dcs0 = expf(dcs0);
-        dcs1 = (h1 > 0.f) ? expf(dcs1) : 0.f;
 
-        /* Return the interpolated result. */
-        return (1. - h1) * dcs0 + h1 * dcs1;
+        const double K = physics->table_K[row];
+        dcs_function_t * dcs = dcs_get(process);
+        struct atomic_element * e = physics->element[element];
+        work->imin = n;
+        work->imax = n - 1;
+        for (i = 0; i < n; i++) {
+                const double xi = work->x[i];
+                const double q = K * exp(xi);
+                const double d = dcs(physics, e, K, q);
+                if (d > 0) {
+                        if (i < work->imin) work->imin = i;
+                        work->y[i] = log(d);
+                } else if (work->imin < n) {
+                        work->imax = i - 1;
+                        break;
+                }
+        }
+
+        if (work->imin <= work->imax) {
+                /* Cubic interpolation */
+                math_pchip_initialise(
+                    0, work->imax - work->imin + 1, work->x + work->imin,
+                    work->y + work->imin, work->m + work->imin);
+        }
+
+        float * data = table_get_dcs(physics, process, element, row);
+        for (i = 0; i < n; i++) {
+                if ((i >= work->imin) && (i <= work->imax)) {
+                        data[2 * i] = (float)work->y[i];
+                        data[2 * i + 1] = (float)work->m[i];
+                } else {
+                        data[2 * i] = 0.f;
+                        data[2 * i + 1] = 0.f;
+                }
+        }
+}
+
+/**
+ * Tabulate the DCSs for radiative processes.
+ *
+ * @param physcis    The physics handle.
+ * @param element    The index of the target element.
+ * @param error_     The error stream
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise a memory
+ * error.
+ *
+ * This routines tabulates the DCS values over a fixed grid for later evaluation
+ * using monotone cubic splines.
+ */
+enum pumas_return compute_dcs_table(
+    struct pumas_physics * physics, int element, struct error_context * error_)
+{
+        static struct dcs_tabulate_work * work = NULL;
+        if (element < 0) {
+                deallocate(work);
+                work = NULL;
+                return PUMAS_RETURN_SUCCESS;
+        } else if (work == NULL) {
+                const int n = physics->n_table_dcs;
+                size_t size = sizeof(*work) + 3 * n * sizeof(*work->x);
+                work = allocate(size);
+                if (work == NULL) return ERROR_REGISTER_MEMORY();
+
+                work->x = work->data;
+                work->y = work->x + n;
+                work->m = work->y + n;
+
+                const int p = DCS_MODEL_N_REVERSE;
+                const int m = n - p;
+
+                double xrev;
+                if (m > 0) {
+                        xrev = DCS_MODEL_X_REVERSE;
+                        const double x0 = log(physics->cutoff);
+                        const double dx = log(xrev / physics->cutoff) / (m - 1);
+                        int i;
+                        for (i = 0; i < m; i++) {
+                                work->x[i] = x0 + i * dx;
+                        }
+                } else {
+                        xrev = physics->cutoff;
+                }
+
+                const double dxmin = DCS_MODEL_DXMIN;
+                const double dx = log((DCS_MODEL_MAX_FRACTION - xrev) / dxmin) /
+                    ((m > 0) ? p : p - 1);
+                int i;
+                for (i = 0; i < p; i++) {
+                        work->x[n - 1 - i] = log(DCS_MODEL_MAX_FRACTION -
+                            dxmin * exp(i * dx));
+                }
+        }
+
+        int ip;
+        for (ip = 0; ip < N_DEL_PROCESSES - 1; ip++) {
+                int row;
+                for (row = 0; row < physics->n_energies; row++) {
+                        dcs_tabulate_row(physics, ip, element, row, work);
+                }
+        }
+
+        if (element == 0) {
+                const int n = physics->n_table_dcs;
+                int i;
+                for (i = 0; i < n; i++) {
+                        physics->table_DCS_x[i] = (float)work->x[i];
+                }
+        }
+
+        return PUMAS_RETURN_SUCCESS;
 }
 
 /**
