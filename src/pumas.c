@@ -679,7 +679,7 @@ struct pumas_physics {
  * Version tag for the physics data format. Increment whenever the
  * structure changes.
  */
-#define PHYSICS_BINARY_DUMP_TAG 12
+#define PHYSICS_BINARY_DUMP_TAG 13
 
         /** The total byte size of the shared data. */
         int size;
@@ -759,6 +759,7 @@ struct pumas_physics {
         /* The tabulated data for DCSs **/
         float * table_DCS;
         float * table_DCS_x;
+        float * table_DCS_envelope;
         /** The element wise fractional threshold for DELs. */
         double * table_Xt;
         /** The total kinetic threshold for DELs. */
@@ -1183,6 +1184,9 @@ static inline float * table_get_dcs(const struct pumas_physics * physics,
     int process, int element, int kinetic);
 static inline float * table_get_dcs_coeff(const struct pumas_physics * physics,
     const struct atomic_element * element, int process, int kinetic);
+static inline float * table_get_dcs_envelope(
+    const struct pumas_physics * physics, int process, int element,
+    int kinetic);
 static inline float * table_get_dcs_value(const struct pumas_physics * physics,
     const struct atomic_element * element, int process, int kinetic);
 /**
@@ -1445,7 +1449,7 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         FILE * fid_mdf = NULL;
         struct mdf_buffer * mdf = NULL;
         const int pad_size = sizeof(*((*physics_ptr)->data));
-#define N_DATA_POINTERS 52
+#define N_DATA_POINTERS 53
         int size_data[N_DATA_POINTERS];
 
         /* Check the particle type. */
@@ -1668,6 +1672,10 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         /* table_DCS_x. */
         size_data[imem++] = memory_padded_size(
             n_table_dcs * sizeof(float), pad_size);
+        /* table_DCS_envelope. */
+        size_data[imem++] = memory_padded_size(sizeof(float) *
+            (N_DEL_PROCESSES - 1) * settings.n_elements * settings.n_energies *
+            2, pad_size);
         /* table_Xt */
         size_data[imem++] = memory_padded_size(sizeof(double) *
                 N_DEL_PROCESSES * settings.n_elements * settings.n_energies,
@@ -4749,6 +4757,23 @@ float * table_get_dcs(const struct pumas_physics * physics,
     int process, int element, int kinetic)
 {
         return physics->table_DCS + physics->n_table_dcs * 2 * (
+            (process * physics->n_elements + element) * physics->n_energies +
+            kinetic);
+}
+
+/**
+ * Encapsulation of the tabulated DCS envelope.
+ *
+ * @param Physics Handle for physics tables.
+ * @param element The element index.
+ * @param process The process index.
+ * @param row     The kinetic energy row index.
+ * @return A pointer to the table element.
+ */
+float * table_get_dcs_envelope(const struct pumas_physics * physics,
+    int process, int element, int kinetic)
+{
+        return physics->table_DCS_envelope + 2 * (
             (process * physics->n_elements + element) * physics->n_energies +
             kinetic);
 }
@@ -11240,10 +11265,11 @@ double dcs_evaluate(const struct pumas_physics * physics,
                 double qmin, qmax;
                 dcs_pair_production_range(
                     element->Z, physics->mass, K, &qmin, &qmax);
+                if (dcs_func == dcs_pair_production) qlow = 4 * qmin;
+                else qmin = 0.;
                 if ((q < qmin) || (q > qmax)) return 0.;
-                else if (dcs_func == dcs_pair_production) qlow = 4 * qmin;
         }
-        if (q < 2 * qlow) {
+        if (q < qlow) {
                 return dcs_func(physics, element, K, q) * wj;
         }
 
@@ -11337,8 +11363,9 @@ static void dcs_tabulate_row(
     struct dcs_tabulate_work * work)
 {
         const int n = physics->n_table_dcs;
+        const double cs = *table_get_CSn(physics, process, element, row);
         int i;
-        if (row == 0) {
+        if (cs <= 0.) {
                 float * data = table_get_dcs(physics, process, element, row);
                 for (i = 0; i < 2 * n; i++) {
                         data[i] = 0.f;
@@ -11371,16 +11398,167 @@ static void dcs_tabulate_row(
                     work->y + work->imin, work->m + work->imin);
         }
 
+        /* Kinematic filter for the envelope */
+        double qmin, qmax;
+        if (process == 2) {
+                dcs_photonuclear_range(physics->mass, K, &qmin, &qmax);
+                qmin += qmin;
+        } else {
+                dcs_pair_production_range(e->Z, physics->mass, K, &qmin, &qmax);
+                if (process == 0) {
+                        qmin = 0.5 * physics->cutoff * K;
+                } else {
+                        qmin *= 4;
+                }
+        }
+        const double qrev = DCS_MODEL_X_REVERSE * K;
+        qmax *= 0.5;
+        if (qmax > qrev) qmax = qrev;
+        const double xmin = log(qmin / K), xmax = log(qmax / K);
+        int ia0 = work->imax, ia1 = work->imin;
+
+        /* Set the DCS table and the envelope range */
         float * data = table_get_dcs(physics, process, element, row);
         for (i = 0; i < n; i++) {
                 if ((i >= work->imin) && (i <= work->imax)) {
                         data[2 * i] = (float)work->y[i];
                         data[2 * i + 1] = (float)work->m[i];
+                        if ((work->x[i] > xmin) && (work->x[i] < xmax)) {
+                                if (ia0 > i) ia0 = i;
+                                if (ia1 < i) ia1 = i;
+                        }
                 } else {
                         data[2 * i] = 0.f;
                         data[2 * i + 1] = 0.f;
                 }
         }
+
+        /* Set the envelope exponent */
+        float * env = table_get_dcs_envelope(physics, process, element, row);
+        if ((ia0 < ia1) && (ia0 < n - 1)) {
+                const int ia = (3 * ia0 + ia1) / 4;
+                double alpha = -work->m[ia];
+                if (fabs(alpha - 1.) <= 0.1) alpha = 1.;
+                env[0] = (float)alpha;
+        } else {
+                env[0] = 0.f;
+        }
+}
+
+struct dcs_tabulate_envelope {
+        dcs_function_t * dcs;
+        const struct atomic_element * element;
+        double K;
+        double alpha;
+};
+
+static double dcs_tabulate_envelope_objective(
+    const struct pumas_physics * physics, double lnx, void * params)
+{
+        struct dcs_tabulate_envelope * p = params;
+        const double x = exp(lnx);
+        const double q = x * p->K;
+        return -dcs_evaluate(
+            physics, NULL, p->dcs, p->element, p->K, q) * pow(x, p->alpha);
+}
+
+static void dcs_tabulate_envelope_row(
+    struct pumas_physics * physics, int process, int element, int row)
+{
+        /* Unpack data */
+        float * envelope = table_get_dcs_envelope(
+            physics, process, element, row);
+        const double cs = *table_get_CSn(physics, process, element, row);
+        if (cs <= 0.) {
+                envelope[1] = 0.f;
+                return;
+        }
+        const double K = physics->table_K[row];
+        const struct atomic_element * e = physics->element[element];
+
+        /* Get the kinematic range */
+        double qmin, qmax;
+        if (process == 2) {
+                dcs_photonuclear_range(physics->mass, K, &qmin, &qmax);
+        } else {
+                dcs_pair_production_range(e->Z, physics->mass, K, &qmin, &qmax);
+                if (process == 0) qmin = 0.;
+        }
+        double xmin = qmin / K;
+        if (xmin < physics->cutoff) xmin = physics->cutoff;
+        xmin = log(xmin);
+        double xmax = log(qmax / K);
+        if (xmin >= xmax) {
+                envelope[1] = 0.f;
+                return;
+        }
+
+        /* Set arguments for the objective */
+        struct dcs_tabulate_envelope args = {
+                .dcs = dcs_get(process),
+                .element = e,
+                .K = K,
+                .alpha = (double)envelope[0]
+        };
+
+        /* Ensure that the DCS is strictly positive at bounds */
+        double f0 = dcs_tabulate_envelope_objective(physics, xmin, &args);
+        double f1 = dcs_tabulate_envelope_objective(physics, xmax, &args);
+        if (f0 == 0.) {
+                double x0 = xmin, x1 = xmax;
+                const double res = 1E-06 * (xmax - xmin);
+                while (x1 - x0 > res) {
+                        const double x2 = 0.5 * (x0 + x1);
+                        const double f2 = dcs_tabulate_envelope_objective(
+                            physics, x2, &args);
+                        if (f2 != 0) {
+                                x1 = xmin = x2;
+                                f0 = f2;
+                        } else {
+                                x0 = x2;
+                        }
+                }
+        }
+        if (f1 == 0.) {
+                double x0 = xmin, x1 = xmax;
+                const double res = 1E-06 * (xmax - xmin);
+                while (x1 - x0 > res) {
+                        const double x2 = 0.5 * (x0 + x1);
+                        const double f2 = dcs_tabulate_envelope_objective(
+                            physics, x2, &args);
+                        if (f2 != 0) {
+                                x0 = xmax = x2;
+                                f1 = f2;
+                        } else {
+                                x1 = x2;
+                        }
+                }
+        }
+
+        /* Search for a maximum (minimum of minus f) */
+        double fopt = 0., xopt = 0.;
+        int status = math_find_minimum(dcs_tabulate_envelope_objective,
+            physics, xmin, xmax, &f0, &f1, 1E-06, 100, &args, &xopt,
+            &fopt);
+        if ((status >= 0) && (xopt > 0.5)) {
+                /* check for another solution at low x */
+                double xopt2, fopt2;
+                const int status2 = math_find_minimum(
+                    dcs_tabulate_envelope_objective, physics, xmin,
+                    0.5, &f0, NULL, 1E-06, 100, &args, &xopt2, &fopt2);
+                if (fopt2 < fopt) {
+                        status = status2;
+                        xopt = xopt2;
+                        fopt = fopt2;
+                }
+        }
+
+        fopt = -fopt;
+        if ((status < 0) || (fopt == 0.)) {
+                fopt = (f0 < f1) ? -f0 : -f1;
+        }
+
+        envelope[1] = (float)fopt;
 }
 
 /**
@@ -11400,10 +11578,12 @@ enum pumas_return compute_dcs_table(
 {
         static struct dcs_tabulate_work * work = NULL;
         if (element < 0) {
+                /* Free the temporary work data */
                 deallocate(work);
                 work = NULL;
                 return PUMAS_RETURN_SUCCESS;
         } else if (work == NULL) {
+                /* Allocate the temporary work data */
                 const int n = physics->n_table_dcs;
                 size_t size = sizeof(*work) + 3 * n * sizeof(*work->x);
                 work = allocate(size);
@@ -11413,6 +11593,7 @@ enum pumas_return compute_dcs_table(
                 work->y = work->x + n;
                 work->m = work->y + n;
 
+                /* Set the sampling range */
                 const int p = DCS_MODEL_N_REVERSE;
                 const int m = n - p;
 
@@ -11439,15 +11620,41 @@ enum pumas_return compute_dcs_table(
                 }
         }
 
+        /* Tabulate processes for different energies */
         int ip;
         for (ip = 0; ip < N_DEL_PROCESSES - 1; ip++) {
                 int row;
                 for (row = 0; row < physics->n_energies; row++) {
                         dcs_tabulate_row(physics, ip, element, row, work);
                 }
+
+                /* Set the envelope for low energy bins to a constant value */
+                int n0 = 0;
+                float alpha = 0.f;
+                for (row = 0; row < physics->n_energies; row++) {
+                        float * env = table_get_dcs_envelope(
+                            physics, ip, element, row);
+                        if (env[0] > 0.f) {
+                                n0 = row;
+                                alpha = env[0];
+                                break;
+                        }
+                }
+                for (row = 0; row < n0; row++) {
+                        float * env = table_get_dcs_envelope(
+                            physics, ip, element, row);
+                        env[0] = alpha;
+                }
+
+                /* Compute the envelope maximum */
+                for (row = 0; row < physics->n_energies; row++) {
+                        dcs_tabulate_envelope_row(
+                            physics, ip, element, row);
+                }
         }
 
         if (element == 0) {
+                /* Copy the sampling range */
                 const int n = physics->n_table_dcs;
                 int i;
                 for (i = 0; i < n; i++) {
