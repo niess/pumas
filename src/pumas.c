@@ -954,8 +954,12 @@ static double dcs_pair_production(const struct pumas_physics * physics,
 static double dcs_pair_production_transport(
     const struct pumas_physics * physics, const struct atomic_element * element,
     double K, double cutoff);
+static inline void dcs_pair_production_range(
+    double Z, double m, double K, double * qmin, double * qmax);
 static double dcs_photonuclear(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double q);
+static inline void dcs_photonuclear_range(
+    double m, double K, double * qmin, double * qmax);
 static inline int dcs_photonuclear_check(double m, double K, double q);
 static inline ddcs_t * dcs_photonuclear_ddcs(
     const struct pumas_physics * physics, pumas_dcs_t ** dcs);
@@ -11022,6 +11026,22 @@ double dcs_photonuclear(const struct pumas_physics * physics,
 }
 
 /**
+ * Utility function for getting the kinematic range for the photonuclear process
+ *
+ * @param m    The projectile rest mass.
+ * @param K    The projectile kinetic energy.
+ * @param qmin The min kinetic energy lost to the photon.
+ * @param qmax The max kinetic energy lost to the photon.
+ */
+void dcs_photonuclear_range(double m, double K, double * qmin, double * qmax)
+{
+        const double M = 0.5 * (NEUTRON_MASS + PROTON_MASS);
+        const double mpi = PION_MASS;
+        if (qmin != NULL) *qmin = mpi + 0.5 * mpi * mpi / M;
+        if (qmax != NULL) *qmax = K + m - 0.5 * (M + m * m / M);
+}
+
+/**
  * Utility function for checking the kinematic range of the Photonuclear model.
  *
  * @param m The projectile rest mass.
@@ -11031,10 +11051,8 @@ double dcs_photonuclear(const struct pumas_physics * physics,
  */
 int dcs_photonuclear_check(double m, double K, double q)
 {
-        const double M = 0.5 * (NEUTRON_MASS + PROTON_MASS);
-        const double mpi = PION_MASS;
-        const double qmin = mpi + 0.5 * mpi * mpi / M;
-        const double qmax = K + m - 0.5 * (M + m * m / M);
+        double qmin, qmax;
+        dcs_photonuclear_range(m, K, &qmin, &qmax);
         return (q < qmin) || (q > qmax);
 }
 
@@ -11214,18 +11232,16 @@ double dcs_evaluate(const struct pumas_physics * physics,
         /* Check the kinematic range */
         double qlow = 0;
         if (dcs_func == dcs_photonuclear) {
-                const double M = 0.5 * (NEUTRON_MASS + PROTON_MASS);
-                const double mpi = PION_MASS;
-                const double qmin = mpi + 0.5 * mpi * mpi / M;
-                const double m = physics->mass;
-                const double qmax = K + m - 0.5 * (M + m * m / M);
+                double qmin, qmax;
+                dcs_photonuclear_range(physics->mass, K, &qmin, &qmax);
                 if ((q < qmin) || (q > qmax)) return 0.;
                 else qlow = 2 * qmin;
-        }
-        else if (dcs_func == dcs_pair_production) {
-                const double qmin = 4 * ELECTRON_MASS;
-                if (q < qmin) return 0.;
-                else qlow = 4 * qmin;
+        } else {
+                double qmin, qmax;
+                dcs_pair_production_range(
+                    element->Z, physics->mass, K, &qmin, &qmax);
+                if ((q < qmin) || (q > qmax)) return 0.;
+                else if (dcs_func == dcs_pair_production) qlow = 4 * qmin;
         }
         if (q < 2 * qlow) {
                 return dcs_func(physics, element, K, q) * wj;
@@ -14234,6 +14250,26 @@ double dcs_bremsstrahlung_transport(const struct pumas_physics * physics,
 }
 
 /**
+ * Utility function for getting the kinematic range for pair production
+ *
+ * @param Z    The charge number of the target atom.
+ * @param m    The projectile rest mass.
+ * @param K    The projectile kinetic energy.
+ * @param qmin The min kinetic energy lost to the photon.
+ * @param qmax The max kinetic energy lost to the photon.
+ */
+void dcs_pair_production_range(
+    double Z, double m, double K, double * qmin, double * qmax)
+{
+        if (qmax != NULL) {
+                const double sqrte = 1.6487212707;
+                const double Z13 = pow(Z, 1. / 3.);
+                *qmax = K + m * (1. - 0.75 * sqrte * Z13);
+        }
+        if (qmin != NULL) *qmin = 4. * ELECTRON_MASS;
+}
+
+/**
  * The e+e- pair production differential cross section according to Kelner,
  * Kokoulin & Petrukhin.
  *
@@ -14254,10 +14290,9 @@ static double dcs_pair_production_KKP(
                 return 0.;
 
         /*  Check the bounds of the energy transfer. */
-        if (q <= 4. * ELECTRON_MASS) return 0.;
-        const double sqrte = 1.6487212707;
-        const double Z13 = pow(Z, 1. / 3.);
-        if (q >= K + mass * (1. - 0.75 * sqrte * Z13)) return 0.;
+        double qmin, qmax;
+        dcs_pair_production_range(Z, mass, K, &qmin, &qmax);
+        if ((q < qmin) || (q > qmax)) return 0.;
 
         /*  Precompute some constant factors for the integration. */
         const double nu = q / (K + mass);
@@ -14265,7 +14300,9 @@ static double dcs_pair_production_KKP(
         const double beta = 0.5 * nu * nu / (1. - nu);
         const double xi_factor = 0.5 * r * r * beta;
         const double A = radiation_logarithm(Z);
+        const double Z13 = pow(Z, 1. / 3.);
         const double AZ13 = A / Z13;
+        const double sqrte = 1.6487212707;
         const double cL = 2. * sqrte * ELECTRON_MASS * AZ13;
         const double cLe = 2.25 * Z13 * Z13 / (r * r);
 
@@ -14396,9 +14433,9 @@ static inline double dcs_pair_production_d2_SSR(
                 return 0.;
 
         /*  Check the bounds of the energy transfer. */
-        if (q <= 4. * ELECTRON_MASS) return 0.;
-        const double z13 = pow(Z, 1. / 3.);
-        if (q >= K + m * (1. - 0.75 * SQRTE * z13)) return 0.;
+        double qmin, qmax;
+        dcs_pair_production_range(Z, m, K, &qmin, &qmax);
+        if ((q < qmin) || (q > qmax)) return 0.;
 
         /* Change units and variables */
         const double energy = (K + m) * 1E+03;
@@ -14408,7 +14445,7 @@ static inline double dcs_pair_production_d2_SSR(
 
         const double const_prefactor = 4. / (3. * M_PI) * Z *
             pow(ALPHA_EM * RE, 2.);
-        const double Z13 = 1. / z13;
+        const double Z13 = pow(Z, -1. / 3.);
         const double d_n = 1.54 * pow(A, 0.27);
 
         rho = 1 - rho;
