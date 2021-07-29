@@ -946,6 +946,8 @@ static double ehs_kinetic_from_interaction_length(
  */
 static inline dcs_function_t * dcs_get(int process);
 static inline int dcs_get_index(dcs_function_t * dcs_func);
+static inline void dcs_get_range(int process, double Z, double mass,
+    double energy, double * qmin, double * qmax);
 static double dcs_bremsstrahlung(const struct pumas_physics * physics,
     const struct atomic_element * element, double K, double q);
 static double dcs_bremsstrahlung_transport(const struct pumas_physics * physics,
@@ -1042,10 +1044,6 @@ static polar_function_t * del_randomise_reverse(
     const struct atomic_element ** element);
 static void del_randomise_power_law(struct pumas_context * context,
     double alpha, double xmin, double xmax, double * p_r, double * p_w);
-static void del_randomise_ziggurat(const struct pumas_physics * physics,
-    struct pumas_context * context, struct pumas_state * state,
-    dcs_function_t * dcs_func, const struct atomic_element * element,
-    double xmin, double xmax, float * cdf_sampling);
 static void del_randomise_target(const struct pumas_physics * physics,
     struct pumas_context * context, struct pumas_state * state, int material,
     struct del_info * info);
@@ -1322,11 +1320,21 @@ static int math_find_root(
     const struct pumas_physics * physics, double xa, double xb,
     const double * fa_p, const double * fb_p, double xtol, double rtol,
     int iter, void * params, double * x0);
-static int math_find_minimum(
+static int math_find_minimum(int algo,
     double (*f)(const struct pumas_physics * physics, double x, void * params),
     const struct pumas_physics * physics, double xa, double xc,
     const double * fa_p, const double * fc_p, double tol, int max_iter,
     void * params, double * x0, double * f0);
+static int math_find_minimum_brent(
+    double (*f)(const struct pumas_physics * physics, double x, void * params),
+    const struct pumas_physics * physics, double xa, double xb, double xc,
+    const double * fb_p, double tol, int max_iter, void * params, double * x0,
+    double * f0);
+static int math_find_minimum_bisection(
+    double (*f)(const struct pumas_physics * physics, double x, void * params),
+    const struct pumas_physics * physics, double xa, double xb, double xc,
+    const double * fb_p, double tol, int max_iter, void * params, double * x0,
+    double * f0);
 static int math_gauss_quad(int n, double * p1, double * p2);
 static void math_gauss_quad_coefficients(
     int n, const double ** xGQ, const double ** wGQ);
@@ -2285,6 +2293,7 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_physics_table_value)
         TOSTRING(pumas_physics_table_index)
         TOSTRING(pumas_dcs_get)
+        TOSTRING(pumas_dcs_range)
         TOSTRING(pumas_dcs_register)
 
         /* Other library functions. */
@@ -5891,6 +5900,15 @@ void transport_do_ehs(const struct pumas_physics * physics,
         step_rotate_direction(context, state, mu);
 }
 
+static inline double envelope_norm(double a, double xmin, double xmax)
+{
+        if (a == 1) {
+                return log(xmax / xmin);
+        } else {
+                return (pow(xmin, 1. - a) - pow(xmax, 1. - a)) / (a - 1.);
+        }
+}
+
 /**
  * Randomise an inelastic DEL in forward MC.
  *
@@ -5911,6 +5929,8 @@ polar_function_t * del_randomise_forward(const struct pumas_physics * physics,
     struct pumas_context * context, struct pumas_state * state, int material,
     int * process, const struct atomic_element ** target)
 {
+#define MAX_TRIALS 100
+
         /* Check for a *do nothing* process. */
         if (state->energy <= *table_get_Kt(physics, material)) return NULL;
 
@@ -5920,94 +5940,96 @@ polar_function_t * del_randomise_forward(const struct pumas_physics * physics,
         dcs_function_t * const dcs_func = dcs_get(info.process);
         const struct atomic_element * element = physics->element[info.element];
         *target = element;
+        *process = info.process;
 
         if (info.process == 3) {
                 state->energy = dcs_ionisation_randomise(physics,
                     context, element, state->energy, physics->cutoff);
-                *process = info.process;
                 return polar_get(info.process);
         }
 
-        /* Interpolate the lower fractional threshold. */
-        int row;
-        double xmin, hK;
+        /* Get the kinematic range */
+        double qmin, qmax;
+        dcs_get_range(info.process, element->Z, physics->mass, state->energy,
+            &qmin, &qmax);
+        double xmin = qmin / state->energy;
+        if (xmin < physics->cutoff) xmin = physics->cutoff;
+        const double xmax = qmax / state->energy;
+        if (xmin >= xmax) {
+                return NULL;
+        }
+
+        /* Get the envelopes */
+        double a0, a1, b0, b1, p0;
         if (state->energy >= *table_get_K(physics, physics->n_energies - 1)) {
-                row = physics->n_energies - 1;
-                hK = 0.;
-                xmin = *table_get_Xt(physics, info.process, info.element, row);
+                const float * envelope = table_get_dcs_envelope(physics,
+                    info.process, element->index, physics->n_energies - 1);
+                a0 = (double)envelope[0];
+                b0 = (double)envelope[1];
+                p0 = 1.;
+                a1 = b1 = 0.;
         } else {
-                row = table_index(
+                const int row = table_index(
                     physics, context, table_get_K(physics, 0), state->energy);
-                if (row <= 0) {
-                        row = 0;
-                        hK = 0.;
-                        xmin = *table_get_Xt(
-                            physics, info.process, info.element, row);
+                const float * envelope0 = table_get_dcs_envelope(physics,
+                    info.process, element->index, row);
+                const float * envelope1 = table_get_dcs_envelope(physics,
+                    info.process, element->index, row + 1);
+
+                a0 = (double)envelope0[0];
+                b0 = (double)envelope0[1];
+                a1 = (double)envelope1[0];
+                b1 = (double)envelope1[1];
+
+                const double k0 = physics->table_K[row];
+                const double k1 = physics->table_K[row + 1];
+                const double h1 = (state->energy - k0) / (k1 - k0);
+                const double h0 = 1. - h1;
+                b0 *= h0;
+                b1 *= h1;
+
+                p0 = envelope_norm(a0, xmin, xmax) * b0;
+                const double p1 = envelope_norm(a1, xmin, xmax) * b1;
+                p0 /= p0 + p1;
+        }
+
+        /* Randomise using rejection sampling */
+        double x = 0.;
+        int i;
+        for (i = 0; i < MAX_TRIALS; i++) {
+                double u = context->random(context);
+                double a;
+                if (u < p0) {
+                        a = a0;
+                        u = u / p0;
                 } else {
-                        const double * const k = table_get_K(physics, row);
-                        const double * const y = table_get_Xt(
-                            physics, info.process, info.element, row);
-                        hK = (state->energy - k[0]) / (k[1] - k[0]);
-                        xmin = hK * y[1] + (1. - hK) * y[0];
+                        a = a1;
+                        u = (u - p0) / (1. - p0);
                 }
-        }
+                if (a == 1) {
+                        x = xmin * exp(u * log(xmax / xmin));
+                } else {
+                        const double am = a - 1.;
+                        const double pmin = pow(xmin, -am);
+                        const double pmax = pow(xmax, -am);
+                        x = pow(pmin - u * (pmin - pmax), -1. / am);
+                }
 
-        /* Set the upper fractionnal threshold. */
-        double xmax = 1.;
-        if (info.process == 3) {
-                /* Ionisation case with upper kinematic threshold. */
-                const double P2 =
-                    state->energy * (state->energy + 2. * physics->mass);
-                const double E = state->energy + physics->mass;
-                const double Wmax =
-                    2. * ELECTRON_MASS * P2 /
-                    (physics->mass * physics->mass +
-                        ELECTRON_MASS * (ELECTRON_MASS + 2. * E));
-                xmax = Wmax / state->energy;
-                if (xmax > 1.) xmax = 1.;
-        }
-        if (xmin >= xmax) return NULL;
-
-        if (state->energy <= 1.E+01) {
-                /* Randomise the final energy with a bias model. */
-                const double alpha[N_DEL_PROCESSES] = { 1.5, 3., 1.6, 2.3 };
-                double r, w_bias;
-                del_randomise_power_law(
-                    context, alpha[info.process], xmin, xmax, &r, &w_bias);
-
-                /* Update the kinetic energy and the Monte-Carlo weight. */
+                const double penv = b0 * pow(x, -a0) + b1 * pow(x, -a1);
                 const double d = dcs_evaluate(physics, context, dcs_func,
-                    element, state->energy, state->energy * (1 - r));
-                state->energy *= r;
-                state->weight *= info.reverse.weight * d * w_bias;
-        } else {
-                /* Above 10 GeV rely on a direct sampling. */
-                float tmp[DCS_SAMPLING_N], *dcs_samples = NULL;
-                if ((info.process < N_DEL_PROCESSES - 1) &&
-                    (state->energy >= DCS_MODEL_MIN_KINETIC)) {
-                        /*  Interpolate the tabulated values and pass them
-                         * to the sampling routine.
-                         */
-                        dcs_samples = tmp;
-                        const int n = DCS_MODEL_ORDER_P + DCS_MODEL_ORDER_Q +
-                            1 + DCS_SAMPLING_N;
-                        const float * y = table_get_dcs_value(physics, element,
-                            info.process, row - physics->dcs_model_offset);
-                        memcpy(tmp, y, DCS_SAMPLING_N * sizeof(float));
-                        if (hK > 0.) {
-                                y += n;
-                                int i;
-                                for (i = 0; i < DCS_SAMPLING_N; i++)
-                                        tmp[i] = tmp[i] * (float)(1. - hK) +
-                                            (float)(hK * y[i]);
-                        }
-                }
-                del_randomise_ziggurat(physics, context, state, dcs_func,
-                    element, xmin, xmax, dcs_samples);
+                    element, state->energy, state->energy * x);
+
+                if (context->random(context) * penv <= d) break;
         }
 
-        *process = info.process;
-        return polar_get(info.process);
+        if (i == MAX_TRIALS) {
+                return NULL;
+        } else {
+                state->energy *= (1. - x);
+                return polar_get(info.process);
+        }
+
+#undef MAX_TRIALS
 }
 
 /**
@@ -6126,83 +6148,6 @@ void del_randomise_power_law(struct pumas_context * context, double alpha,
 
         *p_r = 1. - r;
         *p_w = w_bias;
-}
-
-/**
- * Randomise the DEL using a ziggurat like algorithm.
- *
- * @param Physics Handle for physics tables.
- * @param context The simulation context.
- * @param alpha   The power law exponent.
- * @param xmin    The minimum fractional energy transfer.
- * @param xmax    The maximum fractional energy transfer.
- *
- * Randomise the initial energy using a rejection sampling method. The DCS must
- * be a decreasing function of the energy loss. It is bounded by a piecewise
- * uniform pdf.
- */
-void del_randomise_ziggurat(const struct pumas_physics * physics,
-    struct pumas_context * context, struct pumas_state * state,
-    dcs_function_t * dcs_func, const struct atomic_element * element,
-    double xmin, double xmax, float * dcs_sampling)
-{
-        double x_b[DCS_SAMPLING_N + 1], dcs_b[DCS_SAMPLING_N];
-        int n_b = DCS_SAMPLING_N, ib;
-        if (dcs_sampling == NULL) {
-                /* The DCS is uniformly sampled. */
-                const double dx =
-                    state->energy * (xmax - xmin) / DCS_SAMPLING_N;
-                x_b[0] = xmin * state->energy;
-                dcs_b[0] = dcs_evaluate(physics, context, dcs_func, element,
-                    state->energy, x_b[0]);
-                for (ib = 1; ib < DCS_SAMPLING_N; ib++) {
-                        x_b[ib] = x_b[ib - 1] + dx;
-                        dcs_b[ib] = dcs_evaluate(physics, context, dcs_func,
-                            element, state->energy, x_b[ib]);
-                        if ((dcs_b[ib] <= 0.) || (dcs_b[ib] > dcs_b[ib - 1])) {
-                                /* Protect against numeric errors. */
-                                x_b[ib] = xmax * state->energy;
-                                dcs_b[ib] = 0.;
-                                n_b = ib;
-                                break;
-                        }
-                }
-                if (n_b == DCS_SAMPLING_N)
-                        x_b[DCS_SAMPLING_N] = x_b[DCS_SAMPLING_N - 1] + dx;
-        } else {
-                /* Use the pre-computed values if provided. */
-                const double dnu = (1. - xmin) / DCS_SAMPLING_N;
-                double nu;
-                for (ib = 0, nu = xmin; ib < DCS_SAMPLING_N; ib++, nu += dnu) {
-                        x_b[ib] = nu * state->energy;
-                        dcs_b[ib] = (double)dcs_sampling[ib];
-                }
-                x_b[DCS_SAMPLING_N] =
-                    x_b[DCS_SAMPLING_N - 1] + dnu * state->energy;
-        }
-
-        /* Build the CDF of the piecewise enveloppe. */
-        double cdf_b[DCS_SAMPLING_N];
-        cdf_b[0] = dcs_b[0] * (x_b[1] - x_b[0]);
-        for (ib = 1; ib < n_b; ib++)
-                cdf_b[ib] = cdf_b[ib - 1] + dcs_b[ib] * (x_b[ib + 1] - x_b[ib]);
-
-        /* Randomise the energy transfer. */
-        double xsol;
-        for (;;) {
-                const double zeta = context->random(context) * cdf_b[n_b - 1];
-                int i;
-                for (i = 0; i < n_b - 1; i++)
-                        if (zeta <= cdf_b[i]) break;
-                xsol =
-                    (x_b[i + 1] - x_b[i]) * context->random(context) + x_b[i];
-                const double dd = dcs_evaluate(
-                    physics, context, dcs_func, element, state->energy, xsol);
-                if (context->random(context) * dcs_b[i] <= dd) break;
-        }
-
-        /* Update the kinetic energy. */
-        state->energy -= xsol;
 }
 
 /**
@@ -10995,6 +10940,20 @@ int dcs_get_index(dcs_function_t * dcs_func)
 }
 
 /**
+ * Get the kinematic range for a given process.
+ */
+void dcs_get_range(int process, double Z, double mass,
+    double energy, double * qmin, double * qmax)
+{
+        if (process == 2) {
+                dcs_photonuclear_range(mass, energy, qmin, qmax);
+        } else {
+                dcs_pair_production_range(Z, mass, energy, qmin, qmax);
+                if (process == 0) *qmin = 0.;
+        }
+}
+
+/**
  * Wrapper for the Bremsstrahlung differential cross section.
  *
  * @param Physics Handle for physics tables.
@@ -11349,6 +11308,16 @@ double dcs_evaluate(const struct pumas_physics * physics,
         return r * wj;
 }
 
+/* XXX DEBUG
+double pumas_dcs_evaluate(const struct pumas_physics * physics,
+    int dcs, int element, double K, double q)
+{
+        dcs_function_t * dcs_func = dcs_get(dcs);
+        return dcs_evaluate(physics, NULL, dcs_func,
+            physics->element[element], K, q);
+}
+*/
+
 struct dcs_tabulate_work {
         int imin;
         int imax;
@@ -11465,6 +11434,8 @@ static double dcs_tabulate_envelope_objective(
 static void dcs_tabulate_envelope_row(
     struct pumas_physics * physics, int process, int element, int row)
 {
+#define RESOLUTION 1E-10
+
         /* Unpack data */
         float * envelope = table_get_dcs_envelope(
             physics, process, element, row);
@@ -11478,12 +11449,7 @@ static void dcs_tabulate_envelope_row(
 
         /* Get the kinematic range */
         double qmin, qmax;
-        if (process == 2) {
-                dcs_photonuclear_range(physics->mass, K, &qmin, &qmax);
-        } else {
-                dcs_pair_production_range(e->Z, physics->mass, K, &qmin, &qmax);
-                if (process == 0) qmin = 0.;
-        }
+        dcs_get_range(process, e->Z, physics->mass, K, &qmin, &qmax);
         double xmin = qmin / K;
         if (xmin < physics->cutoff) xmin = physics->cutoff;
         xmin = log(xmin);
@@ -11506,8 +11472,7 @@ static void dcs_tabulate_envelope_row(
         double f1 = dcs_tabulate_envelope_objective(physics, xmax, &args);
         if (f0 == 0.) {
                 double x0 = xmin, x1 = xmax;
-                const double res = 1E-06 * (xmax - xmin);
-                while (x1 - x0 > res) {
+                while (x1 - x0 > RESOLUTION) {
                         const double x2 = 0.5 * (x0 + x1);
                         const double f2 = dcs_tabulate_envelope_objective(
                             physics, x2, &args);
@@ -11520,12 +11485,32 @@ static void dcs_tabulate_envelope_row(
                 }
         }
         if (f1 == 0.) {
-                double x0 = xmin, x1 = xmax;
-                const double res = 1E-06 * (xmax - xmin);
-                while (x1 - x0 > res) {
+                double x0, x1;
+                if (K >= 1E+01) {
+                        /* Apply an exponential decrement */
+                        const double xm = exp(xmax);
+                        double delta = RESOLUTION, x = xmax, f = f1;
+                        while (xm > delta) {
+                                x = log(xm - delta);
+                                f = dcs_tabulate_envelope_objective(
+                                    physics, x, &args);
+                                if (f != 0.) break;
+                                else delta += delta;
+                        }
+                        f1 = f;
+                        x0 = xmax = x;
+                        x1 = log(xm - delta / 2);
+                } else {
+                        x0 = xmin;
+                        x1 = xmax;
+                }
+
+                /* Do a bisection */
+                while (x1 - x0 > RESOLUTION) {
                         const double x2 = 0.5 * (x0 + x1);
-                        const double f2 = dcs_tabulate_envelope_objective(
-                            physics, x2, &args);
+                        const double f2 =
+                            dcs_tabulate_envelope_objective(
+                                physics, x2, &args);
                         if (f2 != 0) {
                                 x0 = xmax = x2;
                                 f1 = f2;
@@ -11535,30 +11520,70 @@ static void dcs_tabulate_envelope_row(
                 }
         }
 
-        /* Search for a maximum (minimum of minus f) */
-        double fopt = 0., xopt = 0.;
-        int status = math_find_minimum(dcs_tabulate_envelope_objective,
-            physics, xmin, xmax, &f0, &f1, 1E-06, 100, &args, &xopt,
-            &fopt);
-        if ((status >= 0) && (xopt > 0.5)) {
-                /* check for another solution at low x */
-                double xopt2, fopt2;
-                const int status2 = math_find_minimum(
-                    dcs_tabulate_envelope_objective, physics, xmin,
-                    0.5, &f0, NULL, 1E-06, 100, &args, &xopt2, &fopt2);
-                if (fopt2 < fopt) {
-                        status = status2;
-                        xopt = xopt2;
-                        fopt = fopt2;
+        /* Search for a maximum (i.e. a minimum of minus f) */
+        const double xm = 0.5 * (xmin + xmax);
+        const double fm = dcs_tabulate_envelope_objective(physics, xm, &args);
+
+        double fopt0 = 0.;
+        math_find_minimum(0, dcs_tabulate_envelope_objective,
+            physics, xmin, xm, &f0, &fm, RESOLUTION, 100, &args, NULL,
+            &fopt0);
+
+        double fopt1 = 0.;
+        math_find_minimum(0, dcs_tabulate_envelope_objective,
+            physics, xm, xmax, &fm, &f1, RESOLUTION, 100, &args, NULL,
+            &fopt1);
+
+        if ((process == 1) && (K >= 1E+07)) {
+                /* There is a very sharp peak close to xmax hard to locate
+                 * with standard minimizations partly due to rounding errors.
+                 * Let us search a bracketing with a brute force logarithmic
+                 * scan.
+                 */
+#define N_SCAN 7
+                double xs[N_SCAN], fs[N_SCAN], fmin = 0.;
+                int i, imin = -1;
+                for (i = 0; i < N_SCAN; i++) {
+                        xs[i] = xmax + log(1. - pow(10, -(i + 1)));
+                        fs[i] = dcs_tabulate_envelope_objective(
+                            physics, xs[i], &args);
+                        if(fs[i] < fmin) {
+                                imin = i;
+                                fmin = fs[i];
+                        }
                 }
+
+                if ((imin > 0) && (imin < N_SCAN - 1)) {
+                        /* Refine the scan bracketing with a bisection */
+                        double fopt2 = 0., xopt2 = 0.;
+                        math_find_minimum_bisection(
+                            dcs_tabulate_envelope_objective, physics,
+                            xs[imin - 1], xs[imin], xs[imin + 1], fs + imin,
+                            RESOLUTION, 100, &args, &xopt2, &fopt2);
+
+                        if (fopt2 < fopt1) {
+                                fopt1 = fopt2;
+                        }
+                }
+#undef N_SCAN
         }
 
-        fopt = -fopt;
-        if ((status < 0) || (fopt == 0.)) {
-                fopt = (f0 < f1) ? -f0 : -f1;
+        double fopt;
+        if (fopt0 < fopt1) {
+                fopt = fopt0;
+        } else {
+                fopt = fopt1;
+        }
+        if (f0 < fopt) {
+                fopt = f0;
+        }
+        if (f1 < fopt) {
+                fopt = f1;
         }
 
-        envelope[1] = (float)fopt;
+        envelope[1] = (float)(-fopt);
+
+#undef RESOLUTION
 }
 
 /**
@@ -11897,7 +11922,7 @@ double polar_photonuclear(const struct pumas_physics * physics,
         double fopt = 0., xopt = 0.;
         const double lnQ2min = log(Q2min);
         const double lnQ2max = log(Q2max);
-        const int status = math_find_minimum(photonuclear_polar_objective,
+        const int status = math_find_minimum(1, photonuclear_polar_objective,
             physics, lnQ2min, lnQ2max, NULL, NULL, 1E-06, 100, &args, &xopt,
             &fopt);
         fopt = -fopt;
@@ -11908,7 +11933,7 @@ double polar_photonuclear(const struct pumas_physics * physics,
         if ((x <= 0.04) && (xopt + lne < lnQ2max)) {
                 /* Look for a second maxima above */
                 double f2, x2;
-                const int status2 = math_find_minimum(
+                const int status2 = math_find_minimum(1,
                     photonuclear_polar_objective, physics, xopt + lne, lnQ2max,
                     NULL, NULL, 1E-06, 100, &args, &x2, &f2);
                 if (status2 >= 0) {
@@ -12080,6 +12105,7 @@ int math_find_root(
  * Locate the minimum for a function of a scalar variable.
  *
  * @param Physics Handle for physics tables.
+ * @param algo    The algorithm to use for the refined search.
  * @param f       The objective function to resolve.
  * @param xa      The lower bound of the search interval.
  * @param xc      The upper bound of the search interval.
@@ -12092,24 +12118,24 @@ int math_find_root(
  * @param xopt    An estimate of the function minimum over `[xa; xc]` or `NULL`.
  * @return On success `0` or more is returned. Otherwise a negative number.
  *
- * The minimum is searched for over `[xa, xc]` using Brent's method
- * (https://en.wikipedia.org/wiki/Brent%27s_method). If initial values of the
- * objective have already been computed they can be passed over as *fa_p* or
- * *fb_p*. Otherwise these values must be `NULL`. The relative tolerance is
- * relative to `xc - xa`.
+ * The minimum is searched for over `[xa, xc]` using an initial bisection
+ * followed with a refined method as defined by *algo* (see below).
+ * If initial values of the objective have already been computed they can be
+ * passed over as *fa_p* or *fb_p*. Otherwise these values must be `NULL`. The
+ * relative tolerance is relative to `xc - xa`.
+ *
+ * If algo is `1` then Brent's algorithm is used else a 3 points bisection is
+ * used.
  *
  * Warning: A local minimum is found. The algorithm assumes that the objective
  * function has a single minimum over `[xa, xc]`.
  */
-int math_find_minimum(
+int math_find_minimum(int algo,
     double (*f)(const struct pumas_physics * physics, double x, void * params),
     const struct pumas_physics * physics, double xa, double xc,
     const double * fa_p, const double * fc_p, double tol, int max_iter,
     void * params, double * xopt, double * fopt)
 {
-#define EPS 1E-10
-#define GOLD 0.3819660
-#define SIGN(a,b) ((b) >= 0.0 ? fabs(a) : -fabs(a))
 
         double fa, fc;
         if (fa_p == NULL)
@@ -12121,7 +12147,7 @@ int math_find_minimum(
         else
                 fc = *fc_p;
 
-        tol *= fabs(xc - xa);
+        const double atol = tol * fabs(xc - xa);
 
         /* Initial bracketing using a bisection */
         double xb = 0, fb = 0;
@@ -12131,7 +12157,7 @@ int math_find_minimum(
                 fb = (*f)(physics, xb, params);
                 if ((fb < fa) && (fb < fc)) break;
 
-                if (fabs(xc - xa) <= tol) {
+                if (fabs(xc - xa) <= atol) {
                         if (xopt != NULL) *xopt = xb;
                         if (fopt != NULL) *fopt = fb;
                         return i;
@@ -12161,10 +12187,101 @@ int math_find_minimum(
         }
 
         /* Minimum search using Brent's algorithm */
+        int status;
+        if (algo == 1) {
+                status = math_find_minimum_brent(f, physics, xa, xb, xc,
+                    &fb, tol, max_iter - i, params, xopt, fopt);
+        } else {
+                status = math_find_minimum_bisection(f, physics, xa, xb, xc,
+                    &fb, tol, max_iter - i, params, xopt, fopt);
+        }
+        if (status < 0) {
+                return -2;
+        } else {
+                return status + i;
+        }
+
+        /*
+        while ((xc - xa > atol) && (i < max_iter)) {
+                if (xb - xa > xc - xb) {
+                        const double x = 0.5 * (xa + xb);
+                        const double fi = (*f)(physics, x, params);
+                        if (fi < fb) {
+                                xc = xb;
+                                xb = x;
+                                fb = fi;
+                        } else {
+                                xa = x;
+                        }
+                } else {
+                        const double x = 0.5 * (xb + xc);
+                        const double fi = (*f)(physics, x, params);
+                        if (fi < fb) {
+                                xa = xb;
+                                xb = x;
+                                fb = fi;
+                        } else {
+                                xc = x;
+                        }
+                }
+                i++;
+        }
+
+        if (xopt != NULL) *xopt = xb;
+        if (fopt != NULL) *fopt = fb;
+        return (i <= max_iter) ? i : -2;
+        */
+}
+
+/**
+ * Locate the minimum for a function of a scalar variable using Brent's method.
+ *
+ * @param Physics Handle for physics tables.
+ * @param f       The objective function to resolve.
+ * @param xa      The lower bound of the search interval.
+ * @param xb      The initial minimizer.
+ * @param xc      The upper bound of the search interval.
+ * @param fb_p    The initial value at *xb* if already computed.
+ * @param  tol    The relative tolerance on the minimizer.
+ * @param params  A handle for passing additional parameters to the
+ *                objective function.
+ * @param xopt    An estimate of the minimizer over `[xa, xc]` or `NULL`.
+ * @param xopt    An estimate of the function minimum over `[xa; xc]` or `NULL`.
+ * @return On success `0` or more is returned. Otherwise a negative number.
+ *
+ * The minimum is searched for over `[xa, xc]` using Brent's method
+ * (https://en.wikipedia.org/wiki/Brent%27s_method). If the initial value of the
+ * objective have already been computed they can be passed over as *fb_p*.
+ * Otherwise this value must be `NULL`. The relative tolerance is relative to
+ * `xc - xa`.
+ *
+ * Warning: A local minimum is found. The algorithm assumes that the objective
+ * function has a single minimum over `[xa, xc]`.
+ */
+int math_find_minimum_brent(
+    double (*f)(const struct pumas_physics * physics, double x, void * params),
+    const struct pumas_physics * physics, double xa, double xb, double xc,
+    const double * fb_p, double tol, int max_iter, void * params, double * xopt,
+    double * fopt)
+{
+#define EPS 1E-15
+#define GOLD 0.3819660
+#define SIGN(a,b) ((b) >= 0.0 ? fabs(a) : -fabs(a))
+
+        double fb;
+        if (fb_p == NULL)
+                fb = (*f)(physics, xb, params);
+        else
+                fb = *fb_p;
+
+        tol *= fabs(xc - xa);
+
+        /* Minimum search using Brent's algorithm */
         double x = xb, w = xb, v = xb;
         double fw = fb, fv = fb, fx = fb;
         double d = 0., e = 0.;
-        for (; i < max_iter; i++) {
+        int i;
+        for (i = 0; i < max_iter; i++) {
                 const double xm = 0.5 * (xa + xb);
                 const double tol1 = tol * fabs(x) + EPS;
                 const double tol2 = 2 * tol1;
@@ -12228,11 +12345,81 @@ int math_find_minimum(
         if (xopt != NULL) *xopt = x;
         if (fopt != NULL) *fopt = fx;
 
-        return (i < max_iter) ? i : -2;
+        return (i < max_iter) ? i : -1;
 
 #undef EPS
 #undef GOLD
 #undef SIGN
+}
+
+/**
+ * Locate the minimum for a function of a scalar variable using a bisection.
+ *
+ * @param Physics Handle for physics tables.
+ * @param f       The objective function to resolve.
+ * @param xa      The lower bound of the search interval.
+ * @param xb      The initial minimizer.
+ * @param xc      The upper bound of the search interval.
+ * @param fb_p    The initial value at *xb* if already computed.
+ * @param  tol    The relative tolerance on the minimizer.
+ * @param params  A handle for passing additional parameters to the
+ *                objective function.
+ * @param xopt    An estimate of the minimizer over `[xa, xc]` or `NULL`.
+ * @param xopt    An estimate of the function minimum over `[xa; xc]` or `NULL`.
+ * @return On success `0` or more is returned. Otherwise a negative number.
+ *
+ * The minimum is searched for over `[xa, xc]` using Brent's method
+ * (https://en.wikipedia.org/wiki/Brent%27s_method). If the initial value of the
+ * objective have already been computed they can be passed over as *fb_p*.
+ * Otherwise this value must be `NULL`. The relative tolerance is relative to
+ * `xc - xa`.
+ *
+ * Warning: A local minimum is found. The algorithm assumes that the objective
+ * function has a single minimum over `[xa, xc]`.
+ */
+int math_find_minimum_bisection(
+    double (*f)(const struct pumas_physics * physics, double x, void * params),
+    const struct pumas_physics * physics, double xa, double xb, double xc,
+    const double * fb_p, double tol, int max_iter, void * params, double * xopt,
+    double * fopt)
+{
+        double fb;
+        if (fb_p == NULL)
+                fb = (*f)(physics, xb, params);
+        else
+                fb = *fb_p;
+
+        tol *= fabs(xc - xa);
+
+        int i = 0;
+        while ((xc - xa > tol) && (i < max_iter)) {
+                if (xb - xa > xc - xb) {
+                        const double x = 0.5 * (xa + xb);
+                        const double fi = (*f)(physics, x, params);
+                        if (fi < fb) {
+                                xc = xb;
+                                xb = x;
+                                fb = fi;
+                        } else {
+                                xa = x;
+                        }
+                } else {
+                        const double x = 0.5 * (xb + xc);
+                        const double fi = (*f)(physics, x, params);
+                        if (fi < fb) {
+                                xa = xb;
+                                xb = x;
+                                fb = fi;
+                        } else {
+                                xc = x;
+                        }
+                }
+                i++;
+        }
+
+        if (xopt != NULL) *xopt = xb;
+        if (fopt != NULL) *fopt = fb;
+        return (i <= max_iter) ? i : -1;
 }
 
 /**
@@ -15740,6 +15927,30 @@ enum pumas_return pumas_dcs_get(
         return ERROR_FORMAT(PUMAS_RETURN_MODEL_ERROR,
             "model %s not found for %s process",
             model, process_name[process]);
+}
+
+/* API function for getting the kinematic range of a DCS model */
+enum pumas_return pumas_dcs_range(enum pumas_process process, double Z,
+    double mass, double energy, double * min, double * max)
+{
+        ERROR_INITIALISE(pumas_dcs_range);
+
+        /* Check the process index */
+        if (dcs_check_process(process, error_) != PUMAS_RETURN_SUCCESS) {
+                return ERROR_RAISE();
+        }
+
+        if (process == PUMAS_PROCESS_PHOTONUCLEAR) {
+                dcs_photonuclear_range(mass, energy, min, max);
+        } else {
+                dcs_pair_production_range(Z, mass, energy, min, max);
+                if ((process == PUMAS_PROCESS_BREMSSTRAHLUNG) &&
+                    (min != NULL)) {
+                        *min = 0.;
+                }
+        }
+
+        return PUMAS_RETURN_SUCCESS;
 }
 
 /* API function for getting the name of the default DCS model */

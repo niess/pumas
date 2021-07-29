@@ -1969,6 +1969,28 @@ PUMAS_API enum pumas_return pumas_dcs_get(
 PUMAS_API const char * pumas_dcs_default(enum pumas_process process);
 
 /**
+ * Get the DCS kinematic range for a given radiative process.
+ *
+ * @param process   The physics process index.
+ * @param Z         The target atomic number.
+ * @param mass      The projectile rest mass, in GeV.
+ * @param energy    The projectile kinetic energy, in GeV.
+ * @param min       The minimum allowed energy transfer, in GeV, or `NULL`.
+ * @param min       The maximum allowed energy transfer, in GeV, or `NULL`.
+ * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+ * code is returned as detailed below.
+ *
+ * This function provides the kinematic range of energy transfers for the
+ * Differential Cross Section (DCS) of a given radiative process.
+ *
+ * __Error codes__
+ *
+ *     PUMAS_RETURN_INDEX_ERROR             The process index is not a valid.
+ */
+PUMAS_API enum pumas_return pumas_dcs_range(enum pumas_process process,
+    double Z, double mass, double energy, double * min, double * max);
+
+/**
  * The elastic scattering differential cross section.
  *
  * @param Z       The charge number of the target atom.
