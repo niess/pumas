@@ -104,31 +104,24 @@
  */
 #define STEP_MIN 1E-07
 /**
- * Order of the polynomials for the Differential Cross-Section (DCS) model.
- *
- * P is a polynomial of log(nu) while Q is in log(1-nu) with a null constant
- * term.
- *
- * XXX Remove and clean
+ * Tuning parameters for the tabulation of the DCS
  */
-#define DCS_MODEL_ORDER_P 6
-#define DCS_MODEL_ORDER_Q 2
-/** XXX Tuning parameters for the tabulation of the DCS */
+/* Minimum number of nodes on the low side */
 #define DCS_MODEL_N_MIN 10
+/* Nodes density per decade on the low side */
 #define DCS_MODEL_PER_DECADE 15
+/* Constant number of nodes on the high side */
 #define DCS_MODEL_N_REVERSE 20
+/* Cut value between low and high sides */
 #define DCS_MODEL_X_REVERSE 0.6
+/* Resolution for the high side sampling */
 #define DCS_MODEL_DXMIN 1E-03
+/* Upper cut for the tabulation */
 #define DCS_MODEL_MAX_FRACTION 0.95
 /**
  * Minimum kinetic energy for using the DCS tabulation.
  */
 #define DCS_MODEL_MIN_KINETIC 10.
-/**
- * Number of samples for the DCS tabulation.
- */
-#define DCS_SAMPLING_N 11
-
 /* Some constants, as macros. */
 /**
  * Fine-structure constant
@@ -528,8 +521,6 @@ struct atomic_element {
         int index;
         /** The element name. */
         char * name;
-        /** Tabulation for the DCS model: polynomials and precomputed values. */
-        float * dcs_data;
         /** Placeholder for user data with -double- memory alignment. */
         double data[];
 };
@@ -606,11 +597,6 @@ struct mdf_buffer {
         int size_elements_names;
         /** The total size of materials names. */
         int size_materials_names;
-        /**
-         * The offset for the tabulations of DCS and of the coefficients of the
-         * polynomial approximations.
-         */
-        int dcs_model_offset;
         /** Placeholder for the read buffer. */
         char data[];
 };
@@ -979,8 +965,6 @@ static double dcs_ionisation_randomise(const struct pumas_physics * physics,
 static double dcs_evaluate(const struct pumas_physics * physics,
     struct pumas_context * context, dcs_function_t * dcs_func,
     const struct atomic_element * element, double K, double q);
-static void dcs_model_fit(int m, int n, const double * x, const double * y,
-    const double * w, double * c);
 
 /**
  * Implementations of polar angle distributions and accessor.
@@ -1180,13 +1164,9 @@ static inline double * table_get_ms1(const struct pumas_physics * physics,
     int scheme, int element, int row, double * table);
 static inline float * table_get_dcs(const struct pumas_physics * physics,
     int process, int element, int kinetic);
-static inline float * table_get_dcs_coeff(const struct pumas_physics * physics,
-    const struct atomic_element * element, int process, int kinetic);
 static inline float * table_get_dcs_envelope(
     const struct pumas_physics * physics, int process, int element,
     int kinetic);
-static inline float * table_get_dcs_value(const struct pumas_physics * physics,
-    const struct atomic_element * element, int process, int kinetic);
 /**
  * Routine(s) wrapping static data
  */
@@ -1286,9 +1266,6 @@ static double compute_dcs_integral(struct pumas_physics * physics, int mode,
     double xlow, double xhigh, int nint);
 static void compute_ZoA(struct pumas_physics * physics, int material);
 static void compute_MEE(struct pumas_physics * physics, int material);
-static enum pumas_return compute_dcs_model(struct pumas_physics * physics,
-    dcs_function_t * dcs_func, struct atomic_element * element,
-    struct error_context * error_);
 static enum pumas_return compute_dcs_table(
     struct pumas_physics * physics, int element, struct error_context * error_);
 static enum pumas_return physics_tabulate(struct pumas_physics * physics,
@@ -1340,11 +1317,6 @@ static void math_gauss_quad_coefficients(
     int n, const double ** xGQ, const double ** wGQ);
 static void math_gauss_quad_initialise(
    int n, double xmin, double xmax, int log, double * xGQ, double * wGQ);
-static int math_svd(
-    int m, int n, double * a, double * w, double * v, double * work);
-static void math_svdsol(int m, int n, double * b, double * u, double * w,
-    double * v, double * work, double * x);
-static double math_rms(double a, double b);
 static double math_diff3(
     double x0, double x1, double x2, double y1, double y2, double y3);
 static void math_pchip_initialise(
@@ -1747,14 +1719,9 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         size_data[imem++] =
             memory_padded_size(sizeof(double) * settings.n_materials, pad_size);
         /* element. */
-        const int n_dcs = (N_DEL_PROCESSES - 1) *
-            (DCS_MODEL_ORDER_P + DCS_MODEL_ORDER_Q + 1 + DCS_SAMPLING_N) *
-            (settings.n_energies - settings.dcs_model_offset);
         size_data[imem++] = memory_padded_size(sizeof(struct atomic_element *) *
-                                    settings.n_elements,
-                                pad_size) +
-            (sizeof(struct atomic_element) +
-                memory_padded_size(n_dcs * sizeof(float), pad_size)) *
+                settings.n_elements, pad_size) +
+            memory_padded_size(sizeof(struct atomic_element), pad_size) *
                 settings.n_elements +
             settings.size_elements_names;
         /* Atomic composition. */
@@ -1839,7 +1806,6 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         physics->n_table_dcs = n_table_dcs;
         physics->max_components = settings.max_components;
         physics->n_energy_loss_header = settings.n_energy_loss_header;
-        physics->dcs_model_offset = settings.dcs_model_offset;
         strcpy(physics->mdf_path, file_mdf);
 
         /* Set the cutoff and elastic ratio */
@@ -1912,16 +1878,9 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
                         goto clean_and_exit;
         }
 
-        /* Tabulate and fit the DCS for atomic elements. */
+        /* Tabulate the DCS for atomic elements. */
         int iel;
         for (iel = 0; iel < physics->n_elements; iel++) {
-                int ip;
-                for (ip = 0; ip < N_DEL_PROCESSES - 1; ip++) {
-                        if (compute_dcs_model(physics, dcs_get(ip),
-                                physics->element[iel],
-                                error_) != PUMAS_RETURN_SUCCESS)
-                                goto clean_and_exit;
-                }
                 if (compute_dcs_table(physics, iel, error_) !=
                     PUMAS_RETURN_SUCCESS) goto clean_and_exit;
         }
@@ -1938,7 +1897,6 @@ clean_and_exit:
         compute_scattering_parameters(physics, -1, -1, error_);
         compute_msc_soft(physics, -1, NULL, error_);
         compute_cel_and_del(physics, -1);
-        compute_dcs_model(physics, NULL, NULL, error_);
         compute_dcs_table(physics, -1, error_);
         if ((error_->code != PUMAS_RETURN_SUCCESS) && (physics != NULL)) {
                 deallocate(physics);
@@ -2139,8 +2097,6 @@ enum pumas_return pumas_physics_load(
                 element[i] =
                     (struct atomic_element *)(((char *)element[i]) + delta);
                 element[i]->name += delta;
-                element[i]->dcs_data =
-                    (float *)(((char *)(element[i]->dcs_data)) + delta);
         }
 
         struct material_component ** composition = physics->composition;
@@ -4711,46 +4667,6 @@ double * table_get_ms1(const struct pumas_physics * physics, int scheme,
         scheme = (scheme > PUMAS_MODE_MIXED) ? PUMAS_MODE_MIXED : scheme;
         return table + (scheme * physics->n_elements + element) *
             physics->n_energies + row;
-}
-
-/**
- * Encapsulation of the polynomial coefficients of the DCS model.
- *
- * @param Physics Handle for physics tables.
- * @param element The element index.
- * @param process The process index.
- * @param row     The kinetic energy row index.
- * @return A pointer to the table element.
- */
-float * table_get_dcs_coeff(const struct pumas_physics * physics,
-    const struct atomic_element * element, int process, int kinetic)
-{
-        const int n =
-            DCS_MODEL_ORDER_P + DCS_MODEL_ORDER_Q + 1 + DCS_SAMPLING_N;
-        return element->dcs_data +
-            (process * (physics->n_energies - physics->dcs_model_offset) +
-                kinetic) *
-            n;
-}
-
-/**
- * Encapsulation of the tabulated DCS values.
- *
- * @param Physics Handle for physics tables.
- * @param element The element index.
- * @param process The process index.
- * @param row     The kinetic energy row index.
- * @return A pointer to the table element.
- */
-float * table_get_dcs_value(const struct pumas_physics * physics,
-    const struct atomic_element * element, int process, int kinetic)
-{
-        const int n = DCS_MODEL_ORDER_P + DCS_MODEL_ORDER_Q + 1;
-        return element->dcs_data +
-            (process * (physics->n_energies - physics->dcs_model_offset) +
-                kinetic) *
-            (n + DCS_SAMPLING_N) +
-            n;
 }
 
 /**
@@ -8161,7 +8077,6 @@ enum pumas_return mdf_parse_settings(const struct pumas_physics * physics,
 {
         /* Initialisation of settings. */
         mdf->n_energies = 0;
-        mdf->dcs_model_offset = 0;
         mdf->n_energy_loss_header = -1;
         mdf->n_materials = 0;
         mdf->n_composites = 0;
@@ -8539,7 +8454,6 @@ enum pumas_return mdf_parse_kinetic(struct mdf_buffer * mdf, const char * path,
 {
         /* Initialise the settings. */
         mdf->n_energies = 0;
-        mdf->dcs_model_offset = 0;
         mdf->line = 0;
 
         /* Open the dedx file. */
@@ -8565,7 +8479,7 @@ enum pumas_return mdf_parse_kinetic(struct mdf_buffer * mdf, const char * path,
         }
 
         /* Scan the table. */
-        int nk = 1, offset = 1;
+        int nk = 1;
         for (;;) {
                 /* Check for a comment. */
                 if (strstr(buffer, "Minimum ionization") != NULL)
@@ -8590,7 +8504,6 @@ enum pumas_return mdf_parse_kinetic(struct mdf_buffer * mdf, const char * path,
                         }
                 }
                 nk++;
-                if (k < DCS_MODEL_MIN_KINETIC) offset++;
 
         next_line:
                 /* Check for a new line. */
@@ -8609,7 +8522,6 @@ enum pumas_return mdf_parse_kinetic(struct mdf_buffer * mdf, const char * path,
         /*  Update the settings. */
         if (error_->code == PUMAS_RETURN_SUCCESS) mdf->line = 0;
         mdf->n_energies = nk;
-        mdf->dcs_model_offset = offset;
 
         fclose(fid);
         return error_->code;
@@ -8627,17 +8539,12 @@ enum pumas_return mdf_parse_elements(const struct pumas_physics * physics,
     struct mdf_buffer * mdf, struct error_context * error_)
 {
         /* Loop on the XML nodes. */
-        const int m = physics->n_energies - physics->dcs_model_offset;
-        const int n =
-            DCS_MODEL_ORDER_P + DCS_MODEL_ORDER_Q + 1 + DCS_SAMPLING_N;
-        const int pad_size = sizeof(*(physics->data));
-        const int c_mem = memory_padded_size(
-            m * n * (N_DEL_PROCESSES - 1) * sizeof(float), pad_size);
         rewind(mdf->fid);
         mdf->left = 0;
         mdf->line = 1;
         mdf->depth = MDF_DEPTH_EXTERN;
         struct mdf_node node;
+        const int pad_size = sizeof(*(physics->data));
 
         int iel = 0;
         for (;;) {
@@ -8666,14 +8573,12 @@ enum pumas_return mdf_parse_elements(const struct pumas_physics * physics,
                             physics->element[iel - 1];
                         physics->element[iel] =
                             (struct atomic_element *)((char *)(e) +
-                                sizeof(struct atomic_element) + c_mem +
+                                sizeof(*e) +
                                 memory_padded_size(strlen(e->name) + 1,
                                                           pad_size));
                 }
                 struct atomic_element * e = physics->element[iel];
-                e->dcs_data = (float *)e->data;
-                e->name = (char *)(e->data) + c_mem;
-                memset(e->dcs_data, 0x0, c_mem);
+                e->name = (char *)(e->data);
                 strcpy(e->name, node.at1.name);
                 if ((sscanf(node.at2.Z, "%lf", &(e->Z)) != 1) || (e->Z <= 0.)) {
                         ERROR_VREGISTER(PUMAS_RETURN_VALUE_ERROR,
@@ -10793,108 +10698,6 @@ void compute_MEE(struct pumas_physics * physics, int material)
         physics->material_I[material] = exp(lnI / Z);
 }
 
-/**
- * Compute the coefficients of the polynomial approximation to an
- * inelastic DCS.
- *
- * @param Physics  Handle for physics tables.
- * @param dcs_func The DCS function.
- * @param element  The target atomic element.
- * @param error_   The error data.
- *
- * The DCS is also tabulated at specific values for the ziggurat algorithm.
- */
-enum pumas_return compute_dcs_model(struct pumas_physics * physics,
-    dcs_function_t * dcs_func, struct atomic_element * element,
-    struct error_context * error_)
-{
-        /* Manage temporary storage. */
-        static int m = 0;
-        static double * tmp;
-        const int n = DCS_MODEL_ORDER_P + DCS_MODEL_ORDER_Q + 1;
-
-        if (dcs_func == NULL) {
-                deallocate(tmp);
-                tmp = NULL;
-                m = 0;
-                dcs_model_fit(0, 0, NULL, NULL, NULL, NULL);
-                return PUMAS_RETURN_SUCCESS;
-        } else if (m <= 0) {
-                m = (int)(100. * log10(DCS_MODEL_MAX_FRACTION /
-                    physics->cutoff)) + 1 + DCS_SAMPLING_N;
-                if (m < 0) return PUMAS_RETURN_INTERNAL_ERROR;
-                tmp = allocate((3 * m + n + DCS_SAMPLING_N) * sizeof(double));
-                if (tmp == NULL) return ERROR_REGISTER_MEMORY();
-        }
-        double * x = tmp;
-        double * y = x + m;
-        double * w = y + m;
-        double * c_ = w + m;
-
-        /*  Loop over the kinetic energy values. */
-        const int index = dcs_get_index(dcs_func);
-        const int nkeff = physics->n_energies - physics->dcs_model_offset;
-        float * const coeff = table_get_dcs_coeff(physics, element, index, 0);
-        const double x0 = log(physics->cutoff);
-        const double dx = log(DCS_MODEL_MAX_FRACTION / physics->cutoff) /
-            (m - 1 - DCS_SAMPLING_N);
-        int i;
-        float * c;
-        for (i = 0, c = coeff; i < nkeff; i++, c += n + DCS_SAMPLING_N) {
-                /* Prepare the fit values using a log sampling. */
-                const double K =
-                    *table_get_K(physics, i + physics->dcs_model_offset);
-                int j, first = 1, j0 = -1, j1 = -1;
-                for (j = 0; j < m - DCS_SAMPLING_N; j++) {
-                        const double nu = exp(x0 + j * dx);
-                        x[j] = nu;
-                        const double dcs =
-                            dcs_func(physics, element, K, nu * K) * K /
-                            (K + physics->mass);
-                        if (dcs > 0.) {
-                                y[j] = dcs;
-                                if (first) {
-                                        first = 0;
-                                        j0 = j;
-                                } else
-                                        j1 = j;
-                                w[j] = 1.;
-                        } else {
-                                y[j] = w[j] = 0.;
-                        }
-                }
-                if ((j0 < 0) || (j1 < 0))
-                        return ERROR_REGISTER(PUMAS_RETURN_INTERNAL_ERROR,
-                            "failed to fit the DCS");
-
-                /* Add the tabulated values in linear scale. */
-                const double dnu = (1. - x[j0]) / DCS_SAMPLING_N;
-                double nu;
-                for (j = m - DCS_SAMPLING_N, nu = x[j0]; j - m < 0;
-                     j++, nu += dnu)
-                /* Patch a gcc warning here. With -O2 j < m != j-m < 0 ... */
-                {
-                        x[j] = nu;
-                        const double tmp =
-                            dcs_func(physics, element, K, nu * K) * K /
-                            (K + physics->mass);
-                        c[j + n + DCS_SAMPLING_N - m] = (float)tmp;
-                        if (nu <= x[j1]) {
-                                y[j] = tmp;
-                                w[j] = 1.;
-                        } else {
-                                y[j] = w[j] = 0.;
-                        }
-                }
-
-                w[j0] = w[j1] = 1E+06; /*  Constrain the end points. */
-                dcs_model_fit(m - DCS_SAMPLING_N, n, x, y, w, c_);
-                for (j = 0; j < n; j++) c[j] = (float)c_[j];
-        }
-
-        return PUMAS_RETURN_SUCCESS;
-}
-
 /*
  * Low level routines: Models for the differential cross-sections and helper
  * functions.
@@ -11308,16 +11111,6 @@ double dcs_evaluate(const struct pumas_physics * physics,
         return r * wj;
 }
 
-/* XXX DEBUG
-double pumas_dcs_evaluate(const struct pumas_physics * physics,
-    int dcs, int element, double K, double q)
-{
-        dcs_function_t * dcs_func = dcs_get(dcs);
-        return dcs_evaluate(physics, NULL, dcs_func,
-            physics->element[element], K, q);
-}
-*/
-
 struct dcs_tabulate_work {
         int imin;
         int imax;
@@ -11688,62 +11481,6 @@ enum pumas_return compute_dcs_table(
         }
 
         return PUMAS_RETURN_SUCCESS;
-}
-
-/**
- * Fit the DCS model.
- *
- * @param m The number of constraints.
- * @param n The number of parameters.
- * @param x The fractional energy transfer.
- * @param y The DCS values.
- * @param w The fit weights.
- * @param c The model coefficients.
- *
- * This routines fits the log of the DCS with a polynomial model in log(nu)
- * and log(1-nu).
- */
-void dcs_model_fit(int m, int n, const double * x, const double * y,
-    const double * w, double * c)
-{
-        /* Memory management. */
-        static int size = 0;
-        static double * memory = NULL;
-        const int size_ = m * n;
-        if (size != size_) {
-                memory =
-                    reallocate(memory, (n * (m + n + 2) + m) * sizeof(double));
-                size = size_;
-        }
-        if ((m <= 0) || (n <= 0)) return;
-
-        double * A = memory;
-        double * B = A + m * n;
-        double * W = B + m;
-        double * V = W + n;
-        double * work = V + n * n;
-
-        /* Prepare the linear system. */
-        int i, j, ij;
-        for (i = 0, ij = 0; i < m; i++) {
-                double xi = 1.;
-                double lxi = log(x[i]);
-                for (j = 0; j < DCS_MODEL_ORDER_P + 1; j++, ij++) {
-                        A[ij] = w[i] * xi;
-                        xi *= lxi;
-                }
-                lxi = log(1. - x[i]);
-                xi = lxi;
-                for (j = 0; j < DCS_MODEL_ORDER_Q; j++, ij++) {
-                        A[ij] = w[i] * xi;
-                        xi *= lxi;
-                }
-                B[i] = (w[i] > 0.) ? log(y[i]) * w[i] : 0.;
-        }
-
-        /* Solve using SVD. */
-        if (math_svd(m, n, A, W, V, work) != 0) return;
-        math_svdsol(m, n, B, A, W, V, work, c);
 }
 
 /*
@@ -12626,407 +12363,6 @@ void math_gauss_quad_initialise(
                         xGQ[i] = xmin + dx * xGQ[i];
                         wGQ[i] *= dx;
                 }
-        }
-}
-
-/*
- * Low level routines: Pseudo inverse from Singular Value Decomposition (SVD).
- *
- * The routines below are adapted from SLALIB/C (Copyright P.T.Wallace) which
- * is distributed under the LGPL license.
- */
-/**
- * Singular value decomposition of a matrix as A = U x W x V^t.
- *
- * @param m     The number of rows in A.
- * @param n     The number of columns in A.
- * @param a     The A matrix to decompose or the U matrix at output.
- * @param w     The W matrix.
- * @param v     The V matrix, **not** its tranpose.
- * @param work  A length *n* temporary array.
- * @return On success, `0` is returned. Otherwise an error occured.
- *
- * This routine expresses a given matrix *A* as the product of three matrices
- * *U*, *W*, *V*, as `A = U x W x V^t`, with U, V orthogonal and W diagonal.
- * The algorithm is an adaptation of the routine SVD in the EISPACK library
- * (Garbow et al 1977, Eispack guide extension, Springer Verlag), which is a
- * Fortran 66 implementation of the Algol routine SVD of Wilkinson & Reinsch
- * 1971 (Handbook for Automatic Computation, vol 2, Ed Bauer et al, Springer
- * Verlag). For the non-specialist, probably the clearest general account of
- * the use of SVD in least squares problems is given in Numerical Recipes
- * (Press et al 1986, Cambridge University Press).
- *
- * **Warning** the *A* matrix is ovewritten at output.
- */
-int math_svd(int m, int n, double * a, double * w, double * v, double * work)
-{
-#define dsign(A, B) ((B) < 0.0 ? -(A) : (A))
-#define gmax(A, B) ((A) > (B) ? (A) : (B))
-/* Maximum number of iterations in QR phase. */
-#define ITMAX 30
-
-        int i, k, l = 0, j, k1, its, l1 = 0, i1, cancel;
-        double g, scale, an, s, x, f, h, cn, c, y, z;
-        double *ai, *aj, *ak;
-        double *vi, *vj, *vk;
-
-        /* Check that the matrix is the right size. */
-        if (m < n) return -1;
-
-        /* Householder reduction to bidiagonal form. */
-        int jstat = 0;
-        g = 0.0;
-        scale = 0.0;
-        an = 0.0;
-        for (i = 0, ai = a; i < n; i++, ai += n) {
-                l = i + 1;
-                work[i] = scale * g;
-                g = 0.0;
-                s = 0.0;
-                scale = 0.0;
-                if (i < m) {
-                        for (k = i, ak = ai; k < m; k++, ak += n) {
-                                scale += fabs(ak[i]);
-                        }
-                        if (scale != 0.0) {
-                                for (k = i, ak = ai; k < m; k++, ak += n) {
-                                        x = ak[i] / scale;
-                                        ak[i] = x;
-                                        s += x * x;
-                                }
-                                f = ai[i];
-                                g = -dsign(sqrt(s), f);
-                                h = f * g - s;
-                                ai[i] = f - g;
-                                if (i != n - 1) {
-                                        for (j = l; j < n; j++) {
-                                                s = 0.0;
-                                                for (k = i, ak = ai; k < m;
-                                                     k++, ak += n) {
-                                                        s += ak[i] * ak[j];
-                                                }
-                                                f = s / h;
-                                                for (k = i, ak = ai; k < m;
-                                                     k++, ak += n) {
-                                                        ak[j] += f * ak[i];
-                                                }
-                                        }
-                                }
-                                for (k = i, ak = ai; k < m; k++, ak += n) {
-                                        ak[i] *= scale;
-                                }
-                        }
-                }
-                w[i] = scale * g;
-                g = 0.0;
-                s = 0.0;
-                scale = 0.0;
-                if (i < m && i != n - 1) {
-                        for (k = l; k < n; k++) {
-                                scale += fabs(ai[k]);
-                        }
-                        if (scale != 0.0) {
-                                for (k = l; k < n; k++) {
-                                        x = ai[k] / scale;
-                                        ai[k] = x;
-                                        s += x * x;
-                                }
-                                f = ai[l];
-                                g = -dsign(sqrt(s), f);
-                                h = f * g - s;
-                                ai[l] = f - g;
-                                for (k = l; k < n; k++) {
-                                        work[k] = ai[k] / h;
-                                }
-                                if (i != m - 1) {
-                                        for (j = l, aj = a + l * n; j < m;
-                                             j++, aj += n) {
-                                                s = 0.0;
-                                                for (k = l; k < n; k++) {
-                                                        s += aj[k] * ai[k];
-                                                }
-                                                for (k = l; k < n; k++) {
-                                                        aj[k] += s * work[k];
-                                                }
-                                        }
-                                }
-                                for (k = l; k < n; k++) {
-                                        ai[k] *= scale;
-                                }
-                        }
-                }
-
-                /* Overestimate of largest column norm for convergence test. */
-                cn = fabs(w[i]) + fabs(work[i]);
-                an = gmax(an, cn);
-        }
-
-        /* Accumulation of right-hand transformations. */
-        for (i = n - 1, ai = a + (n - 1) * n, vi = v + (n - 1) * n; i >= 0;
-             i--, ai -= n, vi -= n) {
-                if (i != n - 1) {
-                        if (g != 0.0) {
-                                for (j = l, vj = v + l * n; j < n;
-                                     j++, vj += n) {
-                                        vj[i] = (ai[j] / ai[l]) / g;
-                                }
-                                for (j = l; j < n; j++) {
-                                        s = 0.0;
-                                        for (k = l, vk = v + l * n; k < n;
-                                             k++, vk += n) {
-                                                s += ai[k] * vk[j];
-                                        }
-                                        for (k = l, vk = v + l * n; k < n;
-                                             k++, vk += n) {
-                                                vk[j] += s * vk[i];
-                                        }
-                                }
-                        }
-                        for (j = l, vj = v + l * n; j < n; j++, vj += n) {
-                                vi[j] = 0.0;
-                                vj[i] = 0.0;
-                        }
-                }
-                vi[i] = 1.0;
-                g = work[i];
-                l = i;
-        }
-
-        /* Accumulation of left-hand transformations. */
-        for (i = n - 1, ai = a + i * n; i >= 0; i--, ai -= n) {
-                l = i + 1;
-                g = w[i];
-                if (i != n - 1) {
-                        for (j = l; j < n; j++) {
-                                ai[j] = 0.0;
-                        }
-                }
-                if (g != 0.0) {
-                        if (i != n - 1) {
-                                for (j = l; j < n; j++) {
-                                        s = 0.0;
-                                        for (k = l, ak = a + l * n; k < m;
-                                             k++, ak += n) {
-                                                s += ak[i] * ak[j];
-                                        }
-                                        f = (s / ai[i]) / g;
-                                        for (k = i, ak = a + i * n; k < m;
-                                             k++, ak += n) {
-                                                ak[j] += f * ak[i];
-                                        }
-                                }
-                        }
-                        for (j = i, aj = ai; j < m; j++, aj += n) {
-                                aj[i] /= g;
-                        }
-                } else {
-                        for (j = i, aj = ai; j < m; j++, aj += n) {
-                                aj[i] = 0.0;
-                        }
-                }
-                ai[i] += 1.0;
-        }
-
-        /* Diagonalization of the bidiagonal form. */
-        for (k = n - 1; k >= 0; k--) {
-                k1 = k - 1;
-
-                /* Iterate until converged. */
-                for (its = 1; its <= ITMAX; its++) {
-
-                        /* Test for splitting into submatrices. */
-                        cancel = 1;
-                        for (l = k; l >= 0; l--) {
-                                l1 = l - 1;
-                                if (an + fabs(work[l]) == an) {
-                                        cancel = 0;
-                                        break;
-                                }
-                                /* (Following never attempted for l=0 because
-                                 * work[0] is zero).
-                                 */
-                                if (an + fabs(w[l1]) == an) {
-                                        break;
-                                }
-                        }
-
-                        /* Cancellation of work[l] if l>0. */
-                        if (cancel) {
-                                c = 0.0;
-                                s = 1.0;
-                                for (i = l; i <= k; i++) {
-                                        f = s * work[i];
-                                        if (an + fabs(f) == an) {
-                                                break;
-                                        }
-                                        g = w[i];
-                                        h = math_rms(f, g);
-                                        w[i] = h;
-                                        c = g / h;
-                                        s = -f / h;
-                                        for (j = 0, aj = a; j < m;
-                                             j++, aj += n) {
-                                                y = aj[l1];
-                                                z = aj[i];
-                                                aj[l1] = y * c + z * s;
-                                                aj[i] = -y * s + z * c;
-                                        }
-                                }
-                        }
-
-                        /* Converged? */
-                        z = w[k];
-                        if (l == k) {
-
-                                /* Yes: ensure singular values non-negative. */
-                                if (z < 0.0) {
-                                        w[k] = -z;
-                                        for (j = 0, vj = v; j < n;
-                                             j++, vj += n) {
-                                                vj[k] = -vj[k];
-                                        }
-                                }
-
-                                /* Stop iterating. */
-                                break;
-
-                        } else {
-
-                                /* Not converged yet: set status if iteration
-                                 * limit reached.
-                                 */
-                                if (its >= ITMAX) {
-                                        jstat = k + 1;
-                                }
-
-                                /* Shift from bottom 2 x 2 minor. */
-                                x = w[l];
-                                y = w[k1];
-                                g = work[k1];
-                                h = work[k];
-                                f = ((y - z) * (y + z) + (g - h) * (g + h)) /
-                                    (2.0 * h * y);
-                                g = (fabs(f) <= 1e15) ? math_rms(f, 1.0) :
-                                                        fabs(f);
-                                f = ((x - z) * (x + z) +
-                                        h * (y / (f + dsign(g, f)) - h)) /
-                                    x;
-
-                                /* Next QR transformation. */
-                                c = 1.0;
-                                s = 1.0;
-                                for (i1 = l; i1 <= k1; i1++) {
-                                        i = i1 + 1;
-                                        g = work[i];
-                                        y = w[i];
-                                        h = s * g;
-                                        g = c * g;
-                                        z = math_rms(f, h);
-                                        work[i1] = z;
-                                        if (z != 0.0) {
-                                                c = f / z;
-                                                s = h / z;
-                                        } else {
-                                                c = 1.0;
-                                                s = 0.0;
-                                        }
-                                        f = x * c + g * s;
-                                        g = -x * s + g * c;
-                                        h = y * s;
-                                        y = y * c;
-                                        for (j = 0, vj = v; j < n;
-                                             j++, vj += n) {
-                                                x = vj[i1];
-                                                z = vj[i];
-                                                vj[i1] = x * c + z * s;
-                                                vj[i] = -x * s + z * c;
-                                        }
-                                        z = math_rms(f, h);
-                                        w[i1] = z;
-                                        if (z != 0.0) {
-                                                c = f / z;
-                                                s = h / z;
-                                        }
-                                        f = c * g + s * y;
-                                        x = -s * g + c * y;
-                                        for (j = 0, aj = a; j < m;
-                                             j++, aj += n) {
-                                                y = aj[i1];
-                                                z = aj[i];
-                                                aj[i1] = y * c + z * s;
-                                                aj[i] = -y * s + z * c;
-                                        }
-                                }
-                                work[l] = 0.0;
-                                work[k] = f;
-                                w[k] = x;
-                        }
-                }
-        }
-
-        /* Return the status flag. */
-        return jstat;
-
-#undef dsign
-#undef gmax
-#undef ITMAX
-}
-
-/**
- * Compute sqrt(a*a+b*b) with protection against under/overflow.
- */
-double math_rms(double a, double b)
-{
-        double wa = fabs(a);
-        double wb = fabs(b);
-        if (wa > wb) {
-                const double tmp = wa;
-                wa = wb;
-                wb = tmp;
-        }
-
-        if (wb == 0.) return 0.;
-        const double w = wa / wb;
-        return wb * sqrt(1.0 + w * w);
-}
-
-/**
- * Solve a linear problem `A X = B` using a pseudo-inverse from SVD.
- *
- * @param m     The number of rows in A.
- * @param n     The number of columns in A.
- * @param a     The B array.
- * @param a     The U matrix from the SVD decomposition of A.
- * @param w     The W matrix from the SVD decomposition of A.
- * @param v     The V matrix from the SVD decomposition of A.
- * @param work  A length *n* temporary array.
- * @param X     The computed pseudo inverse.
- */
-void math_svdsol(int m, int n, double * b, double * u, double * w, double * v,
-    double * work, double * x)
-{
-        /* Calculate [diag(1/Wj)] . U^T . B (or zero for zero Wj). */
-        int j, i, jj;
-        const double * ui;
-        for (j = 0; j < n; j++) {
-                double s = 0.0;
-                if (w[j] != 0.0) {
-                        for (i = 0, ui = u; i < m; i++, ui += n) {
-                                s += ui[j] * b[i];
-                        }
-                        s /= w[j];
-                }
-                work[j] = s;
-        }
-
-        /* Multiply by matrix V to get result. */
-        const double * vj;
-        for (j = 0, vj = v; j < n; j++, vj += n) {
-                double s = 0.0;
-                for (jj = 0; jj < n; jj++) {
-                        s += vj[jj] * work[jj];
-                }
-                x[j] = s;
         }
 }
 

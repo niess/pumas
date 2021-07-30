@@ -4780,8 +4780,9 @@ START_TEST(test_detailed_straight)
 
         /* Check the backward transport with a time limit */
         context->limit.time = t0 - t1;
+        context->limit.energy = 1E+05;
         context->limit.distance = 0.5 * (d - d1); /* Not activated  */
-        context->event = PUMAS_EVENT_LIMIT_TIME;
+        context->event = PUMAS_EVENT_LIMIT_TIME | PUMAS_EVENT_LIMIT_ENERGY;
 
         for (i = 0; i < 2; i++) {
                 if (i == 0)
@@ -4796,7 +4797,10 @@ START_TEST(test_detailed_straight)
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_eq(state->charge, -1.);
                 ck_assert_double_gt(state->energy, k1);
-                ck_assert_double_eq_tol(state->time, t0 - t1, FLT_EPSILON);
+                if ((i == 1) && (*event == PUMAS_EVENT_LIMIT_TIME)) {
+                        ck_assert_double_eq_tol(state->time, t0 - t1,
+                            FLT_EPSILON);
+                }
                 ck_assert_double_eq(state->position[0], 0.);
                 ck_assert_double_eq(state->position[1], 0.);
                 ck_assert_double_lt(state->position[2], 0.);
@@ -4809,7 +4813,8 @@ START_TEST(test_detailed_straight)
                         ck_assert_ptr_null(event);
                         ck_assert_ptr_null(media);
                 } else {
-                        ck_assert_int_eq(*event, PUMAS_EVENT_LIMIT_TIME);
+                        ck_assert((*event == PUMAS_EVENT_LIMIT_TIME) ||
+                                  (*event == PUMAS_EVENT_LIMIT_ENERGY));
                         ck_assert_ptr_eq(media[0], rock);
                         ck_assert_ptr_eq(media[0], media[1]);
                 }
@@ -5071,12 +5076,12 @@ START_TEST(test_detailed_scattering)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq(state->charge, -1.);
         ck_assert_double_eq(state->energy, 0.);
-        ck_assert_double_le(state->distance, d);
-        ck_assert_double_le(state->grammage, X);
-        ck_assert_double_le(state->time, t0);
+        ck_assert_double_eq_tol(state->distance, d, d * 0.1);
+        ck_assert_double_eq_tol(state->grammage, X, X * 0.1);
+        ck_assert_double_eq_tol(state->time, t0, t0 * 0.1);
         ck_assert_double_eq_tol(
             state->weight, exp(-state->time / ctau), FLT_EPSILON);
-        ck_assert_double_le(state->position[2], d + FLT_EPSILON);
+        ck_assert_double_eq_tol(state->position[2], d, d * 0.1);
         ck_assert_int_eq(state->decayed, 0);
 
         double norm2 = u[0] * u[0] + u[1] * u[1] + u[2] * u[2];
