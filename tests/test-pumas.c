@@ -4716,7 +4716,7 @@ START_TEST(test_detailed_straight)
                 ck_assert_double_gt(state->energy, k1);
                 ck_assert_double_eq_tol(state->distance, d - d1, FLT_EPSILON);
                 ck_assert_double_eq(state->grammage, X - X1);
-                ck_assert_double_le(state->time, t0 - t1 + FLT_EPSILON);
+                ck_assert_double_eq_tol(state->time, t0 - t1, 0.1 * (t0 * t1));
                 ck_assert_double_eq(state->position[0], 0.);
                 ck_assert_double_eq(state->position[1], 0.);
                 ck_assert_double_eq_tol(
@@ -5076,12 +5076,12 @@ START_TEST(test_detailed_scattering)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_eq(state->charge, -1.);
         ck_assert_double_eq(state->energy, 0.);
-        ck_assert_double_eq_tol(state->distance, d, d * 0.1);
-        ck_assert_double_eq_tol(state->grammage, X, X * 0.1);
-        ck_assert_double_eq_tol(state->time, t0, t0 * 0.1);
+        ck_assert_double_eq_tol(state->distance, d, d * 0.5);
+        ck_assert_double_eq_tol(state->grammage, X, X * 0.5);
+        ck_assert_double_eq_tol(state->time, t0, t0 * 0.5);
         ck_assert_double_eq_tol(
             state->weight, exp(-state->time / ctau), FLT_EPSILON);
-        ck_assert_double_eq_tol(state->position[2], d, d * 0.1);
+        ck_assert_double_eq_tol(state->position[2], d, d * 0.5);
         ck_assert_int_eq(state->decayed, 0);
 
         double norm2 = u[0] * u[0] + u[1] * u[1] + u[2] * u[2];

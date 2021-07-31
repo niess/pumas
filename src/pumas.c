@@ -5319,8 +5319,10 @@ enum pumas_event transport_with_stepping(const struct pumas_physics * physics,
                                         }
 
                                         /* Check for any stop condition */
-                                        if (context->event &
-                                            context_->step_event)
+                                        if ((context->event &
+                                             context_->step_event) ||
+                                             context_->step_event ==
+                                             PUMAS_EVENT_WEIGHT)
                                                 break;
 
                                         /* Record the post step point. */
@@ -5663,13 +5665,17 @@ void transport_do_del(const struct pumas_physics * physics,
         struct simulation_context * context_ =
             (struct simulation_context *)context;
         if (process < 0) {
-                context_->step_event = PUMAS_EVENT_NONE;
+                if (state->weight > 0)
+                        context_->step_event = PUMAS_EVENT_NONE;
+                else
+                        context_->step_event = PUMAS_EVENT_WEIGHT;
         } else {
-                enum pumas_event event_for_[N_DEL_PROCESSES] = {
+                enum pumas_event event_for_[N_DEL_PROCESSES + 1] = {
                         PUMAS_EVENT_VERTEX_BREMSSTRAHLUNG,
                         PUMAS_EVENT_VERTEX_PAIR_CREATION,
                         PUMAS_EVENT_VERTEX_PHOTONUCLEAR,
-                        PUMAS_EVENT_VERTEX_DELTA_RAY
+                        PUMAS_EVENT_VERTEX_DELTA_RAY,
+                        PUMAS_EVENT_VERTEX
                 };
                 context_->step_event = event_for_[process];
         }
@@ -6005,20 +6011,23 @@ polar_function_t * del_randomise_reverse(const struct pumas_physics * physics,
         struct del_info info;
         info.reverse.Q = state->energy - kf;
         del_randomise_target(physics, context, state, material, &info);
-        dcs_function_t * const dcs_func = dcs_get(info.process);
-        const struct atomic_element * element = physics->element[info.element];
-        *target = element;
+        if (info.reverse.weight <= 0) {
+                state->weight = 0.;
+                return NULL;
+        }
 
-        /* Update the MC weight. */
-        const double f = dcs_evaluate(physics, context, dcs_func, element,
-                             state->energy, state->energy - kf) *
-            info.reverse.weight;
-        state->weight *= w_bias * f *
-            del_cross_section(physics, context, material, state->energy) /
-            (del_cross_section(physics, context, material, kf) * (1. - pCEL));
-
+        state->weight *= w_bias * info.reverse.weight /
+            (del_cross_section(physics, context, material, kf) *
+             (1. - pCEL));
         *process = info.process;
-        return polar_get(info.process);
+
+        if (context->mode.scattering == PUMAS_MODE_DISABLED) {
+                *target = NULL;
+                return NULL;
+        } else {
+                *target = physics->element[info.element];
+                return polar_get(info.process);
+        }
 }
 
 /**
@@ -6153,13 +6162,26 @@ void del_randomise_target(const struct pumas_physics * physics,
                         }
                 }
 
+                if (stot == 0.) {
+                        info->reverse.weight = 0.;
+                        return;
+                } else {
+                        info->reverse.weight = stot;
+                }
+
+                if (context->mode.scattering == PUMAS_MODE_DISABLED) {
+                        info->element = physics->n_elements;
+                        info->process = N_DEL_PROCESSES;
+                        return;
+                }
+
                 double zeta;
                 for (;;) {
                         /* Prevent rounding errors. */
                         zeta = context->random(context) * stot;
                         if ((zeta > 0.) && (zeta < stot)) break;
                 }
-                double s = 0., csf_last = 0.;
+                double s = 0.;
                 component = physics->composition[material];
                 for (ic = ic0; ic < ic0 + physics->elements_in[material];
                      ic++, component++)
@@ -6173,28 +6195,9 @@ void del_randomise_target(const struct pumas_physics * physics,
                                         info->reverse.Q) *
                                     component->fraction;
                                 s += si;
-                                const double * f =
-                                    table_get_CSf(physics, ip, ic, i1);
-                                const double * df =
-                                    table_get_CSf_dK(physics, ip, ic, i1);
-                                const double csf = math_pchip_interpolate(
-                                    h, f[0], f[1], df[0] * dk, df[1] * dk);
                                 if (!(zeta > s)) {
-                                        const double * n =
-                                            table_get_CSn(physics, ip, iel, i1);
-                                        const double * dn =
-                                            table_get_CSn_dK(
-                                                physics, ip, iel, i1);
-                                        const double csn =
-                                            math_pchip_interpolate(
-                                                h, n[0], n[1], dn[0] * dk,
-                                                dn[1] * dk);
-                                        info->reverse.weight =
-                                            (csf - csf_last) * stot /
-                                            (si * csn);
                                         goto target_found;
                                 }
-                                csf_last = csf;
                         }
                 assert(0); /* We should never reach this point ... */
         }
