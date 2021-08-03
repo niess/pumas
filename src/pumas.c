@@ -80,7 +80,7 @@
 /**
  * Default ratio for the elastic scattering.
  */
-#define DEFAULT_ELASTIC_RATIO 1E-04
+#define DEFAULT_ELASTIC_RATIO 5E-02
 /**
  * Exponents of the differential cross section approximation in Backward
  * Monte-Carlo (BMC).
@@ -1237,6 +1237,8 @@ static void compute_composite_weights(
 static void compute_composite_tables(
     struct pumas_physics * physics, int material);
 static void compute_cel_integrals(struct pumas_physics * physics, int imed);
+static enum pumas_return compute_scattering(struct pumas_physics * physics,
+    int imed, struct error_context * error_);
 static void compute_kinetic_integral(
     struct pumas_physics * physics, double * table, double * work);
 static void compute_time_integrals(
@@ -1246,6 +1248,10 @@ static void compute_cel_grammage_integral(
 static void compute_pchip_coeffs(struct pumas_physics * physics, int material);
 static void compute_pchip_elements_coeffs(struct pumas_physics * physics);
 static void compute_pchip_integral_coeffs(
+    struct pumas_physics * physics, int material);
+static void compute_pchip_scattering_coeffs(
+    struct pumas_physics * physics, int material);
+static void compute_pchip_scattering_integral_coeffs(
     struct pumas_physics * physics, int material);
 static void compute_csda_magnetic_transport(
     struct pumas_physics * physics, int imed);
@@ -1858,14 +1864,10 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
                 }
                 deallocate(shells);
 
-                int ikin;
-                for (ikin = 0; ikin < physics->n_energies; ikin++) {
-                        if (compute_scattering_parameters(physics, imat, ikin,
-                                error_) != PUMAS_RETURN_SUCCESS)
-                                goto clean_and_exit;
-                }
                 compute_cel_integrals(physics, imat);
                 compute_csda_magnetic_transport(physics, imat);
+                if (compute_scattering(physics, imat, error_) !=
+                    PUMAS_RETURN_SUCCESS) goto clean_and_exit;
         }
 
         /* Precompute the same properties for composite materials. */
@@ -2242,7 +2244,7 @@ const char * pumas_error_function(pumas_function_t * caller)
         TOSTRING(pumas_physics_property_kinetic_energy)
         TOSTRING(pumas_physics_property_stopping_power)
         TOSTRING(pumas_physics_property_energy_straggling)
-        TOSTRING(pumas_physics_property_elastic_scattering_length)
+        TOSTRING(pumas_physics_property_elastic_path)
         TOSTRING(pumas_physics_property_elastic_cutoff_angle)
         TOSTRING(pumas_physics_property_transport_path)
         TOSTRING(pumas_physics_property_cross_section)
@@ -2969,12 +2971,12 @@ enum pumas_return pumas_physics_property_elastic_cutoff_angle(
         return PUMAS_RETURN_SUCCESS;
 }
 
-/* Public library function: elastic scattering path length. */
-enum pumas_return pumas_physics_property_elastic_scattering_length(
+/* Public library function: elastic path. */
+enum pumas_return pumas_physics_property_elastic_path(
     const struct pumas_physics * physics, int material, double kinetic,
     double * length)
 {
-        ERROR_INITIALISE(pumas_physics_property_elastic_scattering_length);
+        ERROR_INITIALISE(pumas_physics_property_elastic_path);
 
         if (physics == NULL) {
                 *length = 0.;
@@ -9409,16 +9411,9 @@ enum pumas_return compute_composite(
         compute_composite_weights(physics, material);
         compute_composite_tables(physics, material);
         compute_regularise_del(physics, material);
-        int ikin;
-        for (ikin = 0; ikin < physics->n_energies; ikin++) {
-                const enum pumas_return rc =
-                    compute_scattering_parameters(
-                        physics, material, ikin, error_);
-                if (rc != PUMAS_RETURN_SUCCESS) return rc;
-        }
         compute_cel_integrals(physics, material);
         compute_csda_magnetic_transport(physics, material);
-        return PUMAS_RETURN_SUCCESS;
+        return compute_scattering(physics, material, error_);
 }
 
 /**
@@ -9434,15 +9429,35 @@ void compute_cel_integrals(struct pumas_physics * physics, int material)
         compute_cel_grammage_integral(physics, 1, material);
         compute_time_integrals(physics, material);
         compute_kinetic_integral(physics,
+            table_get_NI_in(physics, material, 0),
+            table_get_NI_in_dK(physics, material, 0));
+        compute_pchip_integral_coeffs(physics, material);
+}
+
+/**
+ * Compute various quantities related to scattering.
+ *
+ * @param Physics  Handle for physics tables.
+ * @param material The index of the material to tabulate.
+ */
+enum pumas_return compute_scattering(
+    struct pumas_physics * physics, int material, struct error_context * error_)
+{
+        int ikin;
+        for (ikin = 0; ikin < physics->n_energies; ikin++) {
+                const enum pumas_return rc = compute_scattering_parameters(
+                    physics, material, ikin, error_);
+                if (rc != PUMAS_RETURN_SUCCESS) return rc;
+        }
+        compute_pchip_scattering_coeffs(physics, material);
+        compute_kinetic_integral(physics,
             table_get_NI_el(physics, PUMAS_MODE_CSDA, material, 0),
             table_get_NI_el_dK(physics, PUMAS_MODE_CSDA, material, 0));
         compute_kinetic_integral(physics,
             table_get_NI_el(physics, PUMAS_MODE_MIXED, material, 0),
             table_get_NI_el_dK(physics, PUMAS_MODE_MIXED, material, 0));
-        compute_kinetic_integral(physics,
-            table_get_NI_in(physics, material, 0),
-            table_get_NI_in_dK(physics, material, 0));
-        compute_pchip_integral_coeffs(physics, material);
+        compute_pchip_scattering_integral_coeffs(physics, material);
+        return PUMAS_RETURN_SUCCESS;
 }
 
 /**
@@ -9907,26 +9922,11 @@ void compute_pchip_coeffs(
             table_get_CS(physics, material, 0),
             table_get_CS_dK(physics, material, 0));
 
-        math_pchip_initialise(0, n, K,
-            table_get_Mu0(physics, material, 0),
-            table_get_Mu0_dK(physics, material, 0));
-
-        math_pchip_initialise(0, n, K,
-            table_get_Lb(physics, material, 0),
-            table_get_Lb_dK(physics, material, 0));
-
         int scheme;
         for (scheme = PUMAS_MODE_CSDA; scheme <= PUMAS_MODE_MIXED; scheme++) {
                 math_pchip_initialise(0, n, K,
                     table_get_dE(physics, scheme, material, 0),
                     table_get_dE_dK(physics, scheme, material, 0));
-        }
-
-        for (scheme = PUMAS_MODE_DISABLED; scheme <= PUMAS_MODE_MIXED;
-            scheme++) {
-                math_pchip_initialise(0, n, K,
-                    table_get_Ms1(physics, scheme, material, 0),
-                    table_get_Ms1_dK(physics, scheme, material, 0));
         }
 
         int i;
@@ -10011,7 +10011,6 @@ void compute_pchip_integral_coeffs(
                 const double mass = physics->mass;
                 const double * dE =
                     table_get_dE(physics, scheme, material, 0);
-                const double * Lb = table_get_Lb(physics, material, 0);
                 double * m;
 
                 m = table_get_K_dX(physics, scheme, material, 0);
@@ -10036,6 +10035,67 @@ void compute_pchip_integral_coeffs(
                     (dE[i] * sqrt(K[i] * (K[i] + 2 * mass)));
                 math_pchip_initialise(
                     dif, n, K, table_get_T(physics, scheme, material, 0), m);
+        }
+}
+
+/**
+ * Compute the derivative PCHIP coefficients for scattering related quantities.
+ *
+ * @param Physics   Handle for physics tables.
+ *  @param scheme   The index of the simulation scheme.
+ *  @param material The index of the material to process.
+ *
+ * Between the first and second entry a linear interpolation is used instead
+ * because the function is no more monotone.
+ */
+void compute_pchip_scattering_coeffs(
+    struct pumas_physics * physics, int material)
+{
+        const int n = physics->n_energies;
+        const double * const K = table_get_K(physics, 0);
+
+        math_pchip_initialise(0, n, K,
+            table_get_Mu0(physics, material, 0),
+            table_get_Mu0_dK(physics, material, 0));
+
+        math_pchip_initialise(0, n, K,
+            table_get_Lb(physics, material, 0),
+            table_get_Lb_dK(physics, material, 0));
+
+        int scheme;
+        for (scheme = PUMAS_MODE_DISABLED; scheme <= PUMAS_MODE_MIXED;
+            scheme++) {
+                math_pchip_initialise(0, n, K,
+                    table_get_Ms1(physics, scheme, material, 0),
+                    table_get_Ms1_dK(physics, scheme, material, 0));
+        }
+}
+
+/**
+ * Compute the derivative PCHIP coefficients for scattering integral quantities.
+ *
+ * @param Physics   Handle for physics tables.
+ *  @param scheme   The index of the simulation scheme.
+ *  @param material The index of the material to process.
+ *
+ * Between the first and second entry a linear interpolation is used instead
+ * because the function is no more monotone.
+ */
+void compute_pchip_scattering_integral_coeffs(
+    struct pumas_physics * physics, int material)
+{
+        const int n = physics->n_energies;
+        const double * const K = table_get_K(physics, 0);
+        const int dif = 1;
+
+        int scheme;
+        for (scheme = PUMAS_MODE_CSDA; scheme <= PUMAS_MODE_MIXED; scheme++) {
+                int i;
+                const double mass = physics->mass;
+                const double * dE =
+                    table_get_dE(physics, scheme, material, 0);
+                const double * Lb = table_get_Lb(physics, material, 0);
+                double * m;
 
                 m = table_get_NI_el_dK(physics, scheme, material, 0);
                 m[0] = 0.;
@@ -10185,7 +10245,10 @@ enum pumas_return compute_scattering_parameters(struct pumas_physics * physics,
         cs_A /= A * (A + 1.);
 
         /* Set the hard scattering mean free path. */
-        double cs_h = cs1_m / physics->elastic_ratio;
+        const double range_i = 1. / *table_get_X(
+            physics, PUMAS_MODE_CSDA, material, row);
+        double cs_h = ((cs1_m > range_i) ? cs1_m : range_i) /
+            physics->elastic_ratio;
         if (cs_h < 1. / EHS_PATH_MAX) cs_h = 1. / EHS_PATH_MAX;
 
         /* Compute the hard scattering cutoff angle, in the CM. */

@@ -201,7 +201,7 @@ START_TEST(test_api_error)
         CHECK_STRING(pumas_physics_particle);
         CHECK_STRING(pumas_physics_print);
         CHECK_STRING(pumas_physics_property_cross_section);
-        CHECK_STRING(pumas_physics_property_elastic_scattering_length);
+        CHECK_STRING(pumas_physics_property_elastic_path);
         CHECK_STRING(pumas_physics_property_elastic_cutoff_angle);
         CHECK_STRING(pumas_physics_property_stopping_power);
         CHECK_STRING(pumas_physics_property_energy_straggling);
@@ -325,7 +325,7 @@ START_TEST(test_api_init)
             "materials/materials.xml", "materials/dedx/muon",
             &settings);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq(1E-04, pumas_physics_elastic_ratio(physics));
+        ck_assert_double_eq(5E-02, pumas_physics_elastic_ratio(physics));
         pumas_physics_destroy(&physics);
 
         /* Check the elastic ratio setter */
@@ -786,7 +786,7 @@ START_TEST(test_api_property)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
         reset_error();
-        pumas_physics_property_elastic_scattering_length(
+        pumas_physics_property_elastic_path(
             physics, 0, 0., &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_PHYSICS_ERROR);
 
@@ -857,7 +857,7 @@ START_TEST(test_api_property)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
-        pumas_physics_property_elastic_scattering_length(
+        pumas_physics_property_elastic_path(
             physics, 4, 0., &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
@@ -952,20 +952,20 @@ START_TEST(test_api_property)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
         ck_assert_double_gt(value, 8.498);
 
-        pumas_physics_property_elastic_scattering_length(
+        pumas_physics_property_elastic_path(
             physics, 0, 1E+00, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq_tol(164.2, value, 1E-02);
+        ck_assert_double_eq_tol(275.89, value, 1E-02);
 
         pumas_physics_property_elastic_cutoff_angle(
             physics, 0, 1E+00, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq_tol(0.00360, value, 1E-05);
+        ck_assert_double_eq_tol(0.00466, value, 1E-05);
 
         pumas_physics_property_transport_path(
             physics, PUMAS_MODE_MIXED, 0, 1E+00, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq_tol(2.368E+06, value, 1E+03);
+        ck_assert_double_eq_tol(2.269E+06, value, 1E+03);
 
         /* Check overflows */
         double vmax, emax;
@@ -1179,17 +1179,17 @@ START_TEST(test_api_table)
         pumas_physics_table_value(physics,
             PUMAS_PROPERTY_ELASTIC_PATH, 0, 0, 17, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq_tol(5.225E-02, value, 1E-05);
+        ck_assert_double_eq_tol(4.2501E-01, value, 1E-04);
 
         pumas_physics_table_value(physics,
             PUMAS_PROPERTY_ELASTIC_CUTOFF_ANGLE, 0, 0, 17, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq_tol(3.5163E-03, value, 1E-07);
+        ck_assert_double_eq_tol(1.0059E-02, value, 1E-06);
 
         pumas_physics_table_value(physics,
             PUMAS_PROPERTY_TRANSPORT_PATH, 0, 0, 17, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq_tol(1.715E+03, value, 1.);
+        ck_assert_double_eq_tol(1.205E+03, value, 1.);
 
         /* Check unsuported properties  */
         pumas_physics_table_index(

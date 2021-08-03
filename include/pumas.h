@@ -642,13 +642,13 @@ struct pumas_physics_settings {
          * et al., https://doi.org/10.1103/PhysRevD.64.074015).
          */
         double cutoff;
-        /** Ratio of the mean free path for hard elastic events to the transport
-         * mean free path for soft elastic events.
+        /** Ratio of the mean free path for hard elastic events to the min
+         * of the transport mean free path or CSDA range.
          *
          * The lower the ratio the more detailed the simulation of elastic
          * scattering  (see e.g. Fernandez-Varea et al.,
          * https://doi.org/10.1016/0168-583X(93)95827-R)).  Setting a null or
-         * negative value results in the default ratio to be used i.e. 1E-04.
+         * negative value results in the default ratio to be used i.e. 5E-02.
          */
         double elastic_ratio;
         /** Physics model for the Bremsstrahlung process.
@@ -1377,7 +1377,7 @@ PUMAS_API enum pumas_return pumas_physics_property_elastic_cutoff_angle(
     double * angle);
 
 /**
- * Get the restricted interaction length for elastic processes.
+ * Get the mean free path for hard elastic processes.
  *
  * @param physics     Handle for the Physics tables.
  * @param material    The material index.
@@ -1389,8 +1389,7 @@ PUMAS_API enum pumas_return pumas_physics_property_elastic_cutoff_angle(
  * The interaction length is restricted to hard elastic events with an angle
  * larger than an energy dependent cutoff value, as returned by
  * `pumas_physics_property_elastic_cutoff_angle`. Soft events are included in
- * the multiple scattering (see
- * `pumas_physics_property_multiple_scattering_length`).
+ * the multiple scattering (see `pumas_physics_property_transport_path`).
  *
  * __Error codes__
  *
@@ -1398,7 +1397,7 @@ PUMAS_API enum pumas_return pumas_physics_property_elastic_cutoff_angle(
  *
  *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
  */
-PUMAS_API enum pumas_return pumas_physics_property_elastic_scattering_length(
+PUMAS_API enum pumas_return pumas_physics_property_elastic_path(
     const struct pumas_physics * physics, int material, double energy,
     double * length);
 
