@@ -449,10 +449,6 @@ struct simulation_context {
         double step_X_limit;
         /** The scaterring 1st transport path length of the previous step. */
         double step_invlb1;
-        /** The larmor radius of the previous step. */
-        double step_rLarmor;
-        /** The magnetic transverse direction of the previous step. */
-        double step_uT[3];
         /** Data for the default PRNG. */
         struct pumas_random_data * random_data;
         /** Flag for the parity check of the Gaussian random generator.
@@ -5211,8 +5207,6 @@ enum pumas_event transport_with_stepping(const struct pumas_physics * physics,
                 material, context->limit.energy) :
             0.;
         context_->step_invlb1 = 0;
-        context_->step_rLarmor = 0.;
-        memset(context_->step_uT, 0x0, 3 * sizeof(*(context_->step_uT)));
         transport_limit(
             physics, context, state, material, Xi, Xf, &grammage_max);
         if (context_->step_event) return context_->step_event;
@@ -5337,9 +5331,6 @@ enum pumas_event transport_with_stepping(const struct pumas_physics * physics,
                                          */
                                         context_->step_first = 1;
                                         context_->step_invlb1 = 0;
-                                        context_->step_rLarmor = 0.;
-                                        memset(context_->step_uT, 0x0,
-                                            3 * sizeof(*(context_->step_uT)));
                                 } else {
                                         /* An EHS event occured. */
                                         transport_do_ehs(
@@ -5409,9 +5400,6 @@ enum pumas_event transport_with_stepping(const struct pumas_physics * physics,
                                 /* Reset the stepping data memory. */
                                 context_->step_first = 1;
                                 context_->step_invlb1 = 0;
-                                context_->step_rLarmor = 0.;
-                                memset(context_->step_uT, 0x0,
-                                    3 * sizeof(*(context_->step_uT)));
 
                                 /* Record the change of medium. */
                                 if ((record) &&
@@ -6259,7 +6247,7 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
             physics, context, tmp_scheme, material, state->energy);
 
         /* Compute the local step length. */
-        double step_loc, rLarmor = 0., uT[3];
+        double step_loc, rLarmor0 = 0., uT0[3] = {0.};
         double invlb1 = 0.;
         if (!straight) {
                 /* Compute the kinetic step length. */
@@ -6292,38 +6280,32 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
                 /* Compute the Larmor radius and the magnetic deflection
                  * direction.
                  */
-                if (context_->step_first != 0) {
-                        if (locals->magnetized == 0) {
-                                rLarmor = 0.;
-                        } else {
-                                const double * const B = locals->api.magnet;
-                                uT[0] =
-                                    direction[1] * B[2] - direction[2] * B[1];
-                                uT[1] =
-                                    direction[2] * B[0] - direction[0] * B[2];
-                                uT[2] =
-                                    direction[0] * B[1] - direction[1] * B[0];
-                                const double BT = sqrt(uT[0] * uT[0] +
-                                    uT[1] * uT[1] + uT[2] * uT[2]);
-                                if (BT == 0.) {
-                                        rLarmor = 0.;
-                                } else {
-                                        const double iBT = 1. / BT;
-                                        rLarmor =
-                                            momentum * iBT / LARMOR_FACTOR;
-                                        uT[0] *= iBT;
-                                        uT[1] *= iBT;
-                                        uT[2] *= iBT;
-                                }
-                        }
+                if (locals->magnetized == 0) {
+                        rLarmor0 = 0.;
                 } else {
-                        rLarmor = context_->step_rLarmor;
-                        memcpy(uT, context_->step_uT, 3 * sizeof(*uT));
+                        const double * const B = locals->api.magnet;
+                        uT0[0] =
+                            direction[1] * B[2] - direction[2] * B[1];
+                        uT0[1] =
+                            direction[2] * B[0] - direction[0] * B[2];
+                        uT0[2] =
+                            direction[0] * B[1] - direction[1] * B[0];
+                        const double BT = sqrt(uT0[0] * uT0[0] +
+                            uT0[1] * uT0[1] + uT0[2] * uT0[2]);
+                        if (BT == 0.) {
+                                rLarmor0 = 0.;
+                        } else {
+                                rLarmor0 = momentum / (BT * LARMOR_FACTOR);
+                                const double pinv = 1. / momentum;
+                                uT0[0] *= pinv;
+                                uT0[1] *= pinv;
+                                uT0[2] *= pinv;
+                        }
                 }
 
                 /* Update the step length. */
-                if (rLarmor > 0.) {
-                        const double stepM = context->accuracy * rLarmor;
+                if (rLarmor0 > 0.) {
+                        const double stepM = context->accuracy * rLarmor0;
                         if (stepM < step_loc) step_loc = stepM;
                 }
         } else {
@@ -6758,6 +6740,7 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
         }
 
         /* Update the end step properties. */
+        double rLarmor1 = 0., uT1[3] = {0.};
         if (locals->magnetized) {
                 /* Interpolate the end point magnetic field if needed. */
                 double B[3] = { locals->api.magnet[0], locals->api.magnet[1],
@@ -6775,65 +6758,66 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
                  * direction.
                  */
                 if (magnetized == 0) {
-                        context_->step_rLarmor = 0.;
-                        memset(context_->step_uT, 0x0, sizeof(uT));
+                        rLarmor1 = 0.;
+                        memset(uT1, 0x0, sizeof(uT1));
                 } else {
-                        double * const uT_ = context_->step_uT;
-                        uT_[0] = direction[1] * B[2] - direction[2] * B[1];
-                        uT_[1] = direction[2] * B[0] - direction[0] * B[2];
-                        uT_[2] = direction[0] * B[1] - direction[1] * B[0];
-                        const double BT = sqrt(uT_[0] * uT_[0] +
-                            uT_[1] * uT_[1] + uT_[2] * uT_[2]);
+                        uT1[0] = direction[1] * B[2] - direction[2] * B[1];
+                        uT1[1] = direction[2] * B[0] - direction[0] * B[2];
+                        uT1[2] = direction[0] * B[1] - direction[1] * B[0];
+                        const double BT = sqrt(uT1[0] * uT1[0] +
+                            uT1[1] * uT1[1] + uT1[2] * uT1[2]);
                         if (BT == 0.) {
-                                rLarmor = 0.;
+                                rLarmor1 = 0.;
                         } else {
                                 const double p = (state->energy <= 0) ?
                                     momentum :
                                     sqrt(state->energy *
                                         (state->energy + 2. * physics->mass));
-                                const double iBT = 1. / BT;
-                                context_->step_rLarmor =
-                                    p * iBT / LARMOR_FACTOR;
-                                uT_[0] *= iBT;
-                                uT_[1] *= iBT;
-                                uT_[2] *= iBT;
+                                rLarmor1 = p / (BT * LARMOR_FACTOR);
+                                const double pinv = 1. / p;
+                                uT1[0] *= pinv;
+                                uT1[1] *= pinv;
+                                uT1[2] *= pinv;
                         }
                 }
-        } else {
-                context_->step_rLarmor = rLarmor;
-                memcpy(context_->step_uT, uT, sizeof(uT));
         }
 
         /* Apply the magnetic deflection. */
-        if ((rLarmor > 0.) || (context_->step_rLarmor > 0.)) {
+        if ((rLarmor0 > 0.) || (rLarmor1 > 0.)) {
                 const double u[3] = { direction[0], direction[1],
                         direction[2] };
-                double theta_i =
-                    (rLarmor > 0.) ? state->charge * step / rLarmor : 0.;
-                double theta_f = (context_->step_rLarmor > 0.) ?
-                    state->charge * step / context_->step_rLarmor :
-                    0.;
+                const double theta0 =
+                    (rLarmor0 > 0.) ? state->charge * step / rLarmor0 : 0.;
+                const double theta1 =
+                    (rLarmor1 > 0.) ? state->charge * step / rLarmor1 : 0.;
+                double theta = 0.5 * (theta0 + theta1);
                 if (context->mode.direction == PUMAS_MODE_BACKWARD) {
-                        theta_i = -theta_i;
-                        theta_f = -theta_f;
+                        theta = -theta;
                 }
-                const double ci = cos(theta_i);
-                const double si = sin(theta_i);
-                const double cf = cos(theta_f);
-                const double sf = sin(theta_f);
-                const double c = 0.5 * (ci + cf);
-                direction[0] =
-                    c * u[0] + 0.5 * (si * uT[0] + sf * context_->step_uT[0]);
-                direction[1] =
-                    c * u[1] + 0.5 * (si * uT[1] + sf * context_->step_uT[1]);
-                direction[2] =
-                    c * u[2] + 0.5 * (si * uT[2] + sf * context_->step_uT[2]);
+                double c = cos(theta);
+                double s = sin(theta);
+                double v[3];
+                int i;
+                for (i = 0; i < 3; i++)
+                        v[i] = 0.5 * (uT0[i] + uT1[i]);
+                double nrmv =
+                    v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
+                if (nrmv > 0.) {
+                        nrmv = 1. / sqrt(nrmv);
+                        for (i = 0; i < 3; i++) v[i] *= nrmv;
+                } else {
+                        c = 1.;
+                        s = 0.;
+                }
+                for (i = 0; i < 3; i++)
+                        direction[i] = c * u[i] + s * v[i];
+
+                /* Safeguard against rounding errors */
                 const double norm = 1. / sqrt(direction[0] * direction[0] +
                                              direction[1] * direction[1] +
                                              direction[2] * direction[2]);
-                direction[0] *= norm;
-                direction[1] *= norm;
-                direction[2] *= norm;
+                for (i = 0; i < 3; i++)
+                        direction[i] *= norm;
         }
 
         /* Apply the multiple scattering. */
