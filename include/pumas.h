@@ -100,9 +100,8 @@ enum pumas_mode {
          * Monte-Carlo algorithm with a split between soft and hard collisions.
          */
         PUMAS_MODE_MIXED = 1,
-        /** In addition to the mixed algorithm, soft energy losses are
-         * straggled according to the 2nd momentum of the energy loss
-         * distribution.
+        /** In addition to the mixed algorithm, the energy loss due to soft
+         * electronic collisions is straggled.
          */
         PUMAS_MODE_STRAGGLED = 2,
         /**
@@ -1343,6 +1342,8 @@ PUMAS_API enum pumas_return pumas_physics_property_stopping_power(
  * @param straggling  The computed energy loss straggling in GeV^2/(kg/m^(2)).
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
+ *
+ * **Note** : the energy loss straggling is restricted to electronic collisions.
  *
  * __Error codes__
  *

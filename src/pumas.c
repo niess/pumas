@@ -5245,18 +5245,16 @@ enum pumas_event transport_with_stepping(const struct pumas_physics * physics,
                 /* Update the weight if a boundary or hard energy loss
                  * occured.
                  */
-                if (context->mode.energy_loss >= PUMAS_MODE_CSDA) {
-                        const double w0 =
+                if ((context->mode.direction == PUMAS_MODE_BACKWARD) &&
+                    (context->mode.energy_loss >= PUMAS_MODE_CSDA)) {
+                        const double wt =
                             (context->mode.decay == PUMAS_MODE_WEIGHTED) ?
-                            wi * exp(-fabs(state->time - ti) / physics->ctau) :
-                            wi;
-                        state->weight =
-                            (context->mode.direction == PUMAS_MODE_FORWARD) ?
-                            w0 :
-                            w0 * cel_energy_loss(physics, context, scheme,
-                                     material, state->energy) *
-                                dei;
-                } else {
+                            exp(-fabs(state->time - ti) / physics->ctau) :
+                            1.;
+                        state->weight = wi * wt * dei *
+                            cel_energy_loss(physics, context, scheme,
+                                material, state->energy);
+                } else if (context->mode.decay == PUMAS_MODE_WEIGHTED) {
                         state->weight =
                             wi * exp(-fabs(state->time - ti) / physics->ctau);
                 }
@@ -6867,13 +6865,16 @@ static void step_fluctuate(const struct pumas_physics * physics,
                 const double Omega1 = cel_straggling(
                     physics, context, material, k1);
                 double dk12 = 0.5 * dX * (Omega0 + Omega1);
-                if (dX / Xtot > 5E-02) {
+                const double tmp = dX / Xtot;
+#define X_THRESHOLD 5E-02
+                if (tmp > X_THRESHOLD) {
                         const double de1 = cel_energy_loss(
                             physics, context, scheme, material, k1);
                         const double de0 = cel_energy_loss(
                             physics, context, scheme, material, state->energy);
                         dk12 *= 1. + sgn * dX / dk0 * (de1 - de0);
                 }
+#undef X_THRESHOLD
                 const double dk1 = sqrt(dk12);
                 if (dk0 >= 3. * dk1) {
                         double u;
@@ -10543,15 +10544,17 @@ double * compute_cel_and_del(struct pumas_physics * physics, int row)
                 /* Loop over processes. */
                 int ip;
                 for (ip = 0; ip < N_DEL_PROCESSES; ip++) {
+                        dcs_function_t * dcs = dcs_get(ip);
                         *table_get_CSn(physics, ip, iel, row) =
                             compute_dcs_integral(physics, 0, element, kinetic,
-                                dcs_get(ip), physics->cutoff, 1, 180);
+                                dcs, physics->cutoff, 1, 180);
                         *table_get_cel(physics, ip, iel, row, cel_table) =
                             compute_dcs_integral(physics, 1, element, kinetic,
-                                dcs_get(ip), physics->cutoff, 1, 180);
-                        *table_get_stg(physics, ip, iel, row, cel_table) =
+                                dcs, physics->cutoff, 1, 180);
+                        const double stg = (dcs == dcs_ionisation) ?
                             compute_dcs_integral(physics, 2, element, kinetic,
-                                dcs_get(ip), 0, physics->cutoff, 180);
+                                dcs, 0, physics->cutoff, 180) : 0.;
+                        *table_get_stg(physics, ip, iel, row, cel_table) = stg;
                 }
         }
 

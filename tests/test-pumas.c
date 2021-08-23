@@ -905,7 +905,7 @@ START_TEST(test_api_property)
         pumas_physics_property_energy_straggling(
             physics, 0, 1E+03, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
-        ck_assert_double_eq_tol(value, 2.507E-03, 1E-06);
+        ck_assert_double_eq_tol(value, 3.743E-04, 1E-07);
 
         pumas_physics_property_range(
             physics, PUMAS_MODE_CSDA, 0, 1E+00, &value);
@@ -4581,7 +4581,7 @@ START_TEST(test_detailed_straight)
                 ck_assert_int_eq(error_data.rc, PUMAS_RETURN_SUCCESS);
                 ck_assert_double_le(state->distance, d - d1);
                 ck_assert_double_le(state->grammage, X - X1);
-                ck_assert_double_gt(state->time, t0 - t1);
+                ck_assert_double_eq_tol(state->time, t0 - t1, 0.5 * (t0 - t1));
                 ck_assert_double_eq_tol(
                     state->weight, exp(-state->time / ctau), FLT_EPSILON);
                 ck_assert_double_eq(state->position[0], 0.);
