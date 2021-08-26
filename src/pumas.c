@@ -5569,23 +5569,36 @@ void transport_limit(const struct pumas_physics * physics,
         enum pumas_event foreseen = PUMAS_EVENT_NONE;
         double kinetic_limit = 0.;
         if (scheme == PUMAS_MODE_MIXED) {
-                double zeta = 0;
-                while (zeta <= 0) {
-                        zeta = context->random(context);
-                }
+#define MAX_TRIALS 1000 /* Sanity check against bugs e.g. in the PRNG */
+                int i;
+                for (i = 0; i < MAX_TRIALS; i++) {
+                        const double zeta = context->random(context);
+                        if ((zeta <= 0.) || (zeta >= 1.)) continue;
 
-                const double nI = del_interaction_length(
-                    physics, context, material, state->energy) +
-                    sgn * log(zeta);
-                if (nI > 0.) {
+                        const double nI = del_interaction_length(
+                            physics, context, material, state->energy) +
+                            sgn * log(zeta);
+                        if (nI <= 0.) break;
+
                         const double k = del_kinetic_from_interaction_length(
                             physics, context, material, nI);
+
+                        /* Sanity check against rounding errors */
+                        if (context->mode.direction == PUMAS_MODE_FORWARD) {
+                                if (k >= state->energy) continue;
+                        } else {
+                                if (k <= state->energy) continue;
+                        }
+
                         if ((context->mode.direction == PUMAS_MODE_BACKWARD) ||
                             (k > *table_get_Kt(physics, material))) {
                                 kinetic_limit = k;
                                 foreseen = PUMAS_EVENT_VERTEX_DEL;
                         }
+
+                        break;
                 }
+#undef MAX_TRIALS
         }
 
         /* Check for an EHS event. */
