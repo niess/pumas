@@ -7064,8 +7064,8 @@ static enum pumas_return material_index(const struct pumas_physics * physics,
 double data_nuclear_radius(double Z, double A)
 {
         /* Nuclear r.m.s. radii, in fm. */
-        static const double rN[119] = {
-            2.098, 0.859, 1.680, 2.400, 2.518, 2.405, 2.470, 2.548, 2.734,
+        static const double rN[120] = {
+            2.098, 0.858, 1.680, 2.400, 2.518, 2.405, 2.470, 2.548, 2.734,
             2.900, 2.993, 2.940, 3.043, 3.035, 3.098, 3.187, 3.245, 3.360,
             3.413, 3.408, 3.477, 3.443, 3.595, 3.600, 3.644, 3.681, 3.748,
             3.843, 3.776, 3.943, 3.942, 4.032, 4.065, 4.078, 4.123, 4.135,
@@ -7078,16 +7078,19 @@ double data_nuclear_radius(double Z, double A)
             5.710, 5.701, 5.784, 5.825, 5.824, 5.817, 5.843, 5.843, 5.868,
             5.875, 5.906, 5.912, 5.918, 5.937, 5.967, 5.973, 5.979, 5.985,
             5.980, 6.033, 6.051, 6.056, 6.074, 6.079, 6.097, 6.097, 6.119,
-            6.125, 6.125};
+            6.125, 6.125, 2.958};
 
         int iN = (int)Z;
         const int nN = sizeof(rN) / sizeof(rN[0]);
-        if (iN >= nN) iN = nN - 1;
+        if (iN >= nN - 1) iN = nN - 2;
         else if ((iN == 1) && (A >= 1.5)) {
                 /* For hydrogen isotopes we use a different radius because
                  * it differs significantly.
                  */
                 iN = 0;
+        } else if ((iN == 11) && (A == 22.)) {
+                /* For standard rock a fictious Rockium atom is used. */
+                iN = nN - 1;
         }
         return rN[iN] * 1E-15; /* fm */
 }

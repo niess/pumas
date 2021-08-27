@@ -1710,14 +1710,14 @@ START_TEST(test_api_elastic)
         ck_assert_double_eq_tol(8.358E-22, v, 1E-25);
 
         v = pumas_elastic_dcs(Z, A, m, k, 1E+00);
-        ck_assert_double_eq_tol(9.072E-51, v, 1E-54);
+        ck_assert_double_eq_tol(2.42512e-45, v, 1E-48);
 
         /* Test some numerical values of the path length */
         v = pumas_elastic_path(0, Z, A, m, k);
         ck_assert_double_eq_tol(8.469E-04, v, 1E-07);
 
         v = pumas_elastic_path(1, Z, A, m, k);
-        ck_assert_double_eq_tol(1.642E+06, v, 1E+03);
+        ck_assert_double_eq_tol(1.643E+06, v, 1E+03);
 }
 END_TEST
 
