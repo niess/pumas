@@ -76,11 +76,23 @@ START_TEST(test_api_constant)
 {
         double value;
 
+        pumas_constant(PUMAS_CONSTANT_ALPHA_EM, &value);
+        ck_assert_double_eq(value, 7.2973525693E-03);
+
         pumas_constant(PUMAS_CONSTANT_AVOGADRO_NUMBER, &value);
         ck_assert_double_eq(value, 6.02214076E+23);
 
+        pumas_constant(PUMAS_CONSTANT_BOHR_RADIUS, &value);
+        ck_assert_double_eq(value, 0.529177210903E-10);
+
         pumas_constant(PUMAS_CONSTANT_ELECTRON_MASS, &value);
         ck_assert_double_eq(value, 0.510998910E-03);
+
+        pumas_constant(PUMAS_CONSTANT_ELECTRON_RADIUS, &value);
+        ck_assert_double_eq(value, 2.817940285E-15);
+
+        pumas_constant(PUMAS_CONSTANT_HBAR_C, &value);
+        ck_assert_double_eq(value, 1.973269804E-16);
 
         pumas_constant(PUMAS_CONSTANT_MUON_C_TAU, &value);
         ck_assert_double_eq(value, 658.654);
@@ -90,6 +102,9 @@ START_TEST(test_api_constant)
 
         pumas_constant(PUMAS_CONSTANT_NEUTRON_MASS, &value);
         ck_assert_double_eq(value, 0.939565);
+
+        pumas_constant(PUMAS_CONSTANT_PION_MASS, &value);
+        ck_assert_double_eq(value, 0.13957018);
 
         pumas_constant(PUMAS_CONSTANT_PROTON_MASS, &value);
         ck_assert_double_eq(value, 0.938272);
@@ -105,7 +120,7 @@ START_TEST(test_api_constant)
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();
-        pumas_constant(8, &value);
+        pumas_constant(13, &value);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_INDEX_ERROR);
 
         reset_error();

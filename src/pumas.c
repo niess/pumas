@@ -1345,8 +1345,9 @@ PUMAS_API enum pumas_return pumas_constant(
 {
         ERROR_INITIALISE(pumas_constant);
 
-        const double values[] = {AVOGADRO_NUMBER, ELECTRON_MASS, MUON_C_TAU,
-            MUON_MASS, NEUTRON_MASS, PROTON_MASS, TAU_C_TAU, TAU_MASS};
+        const double values[] = {ALPHA_EM, AVOGADRO_NUMBER, BOHR_RADIUS,
+            ELECTRON_MASS, ELECTRON_RADIUS, HBAR_C, MUON_C_TAU, MUON_MASS,
+            NEUTRON_MASS, PION_MASS, PROTON_MASS, TAU_C_TAU, TAU_MASS};
 
         if (value == NULL) {
                 return ERROR_MESSAGE(PUMAS_RETURN_VALUE_ERROR,

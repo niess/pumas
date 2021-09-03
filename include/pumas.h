@@ -242,21 +242,31 @@ enum pumas_process {
 
 /** Indices for PUMAS library constants. */
 enum pumas_constant {
-        /** The Avogadro number in mol. */
-        PUMAS_CONSTANT_AVOGADRO_NUMBER = 0,
-        /** The electron mass in GeV/c^2. */
+        /** The electromagnetic coupling constant, alpha. */
+        PUMAS_CONSTANT_ALPHA_EM = 0,
+        /** The Avogadro number, in mol. */
+        PUMAS_CONSTANT_AVOGADRO_NUMBER,
+        /** The electron Bohr radius, in m.  */
+        PUMAS_CONSTANT_BOHR_RADIUS,
+        /** The electron mass, in GeV/c^2. */
         PUMAS_CONSTANT_ELECTRON_MASS,
-        /** The muon decay length in m. */
+        /** The classical electron radius, in m. */
+        PUMAS_CONSTANT_ELECTRON_RADIUS,
+        /* The planck constant, in GeV m. */
+        PUMAS_CONSTANT_HBAR_C,
+        /** The muon decay length, in m. */
         PUMAS_CONSTANT_MUON_C_TAU,
-        /** The muon mass in GeV/c^2. */
+        /** The muon mass, in GeV/c^2. */
         PUMAS_CONSTANT_MUON_MASS,
-        /** The neutron mass in GeV/c^2. */
+        /** The neutron mass, in GeV/c^2. */
         PUMAS_CONSTANT_NEUTRON_MASS,
-        /** The proton mass in GeV/c^2. */
+        /** The mass of charged pions, in GeV/c^2 */
+        PUMAS_CONSTANT_PION_MASS,
+        /** The proton mass, in GeV/c^2. */
         PUMAS_CONSTANT_PROTON_MASS,
-        /** The tau decay length in m. */
+        /** The tau decay length, in m. */
         PUMAS_CONSTANT_TAU_C_TAU,
-        /** The tau mass in GeV/c^2. */
+        /** The tau mass, in GeV/c^2. */
         PUMAS_CONSTANT_TAU_MASS,
         /** The number of PUMAS constants.  */
         PUMAS_N_CONSTANTS
