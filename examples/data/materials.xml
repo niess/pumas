@@ -11,14 +11,14 @@
   <!-- PDG standard rock
        Ref: https://pdg.lbl.gov/2020/AtomicNuclearProperties/HTML/standard_rock.html
     -->
-  <material name="StandardRock" file="standard_rock.txt" density="2.65">
+  <material name="StandardRock" density="2.65">
     <component name="Rk" fraction="1" />
   </material>
 
   <!-- Liquid water
        Ref: https://pdg.lbl.gov/2020/AtomicNuclearProperties/HTML/water_liquid.html
     -->
-  <material name="Water" file="water.txt" density="1" I="79.7">
+  <material name="Water" density="1" I="79.7">
     <component name="O" fraction="0.888106" />
     <component name="H" fraction="0.111894" />
   </material>
@@ -26,7 +26,7 @@
   <!-- Dry air at sea level atmospheric pressure
        Ref: https://pdg.lbl.gov/2020/AtomicNuclearProperties/HTML/air_dry_1_atm.html
     -->
-  <material name="Air" file="air.txt" density="0.001205">
+  <material name="Air" density="0.001205">
     <component name="N"  fraction="0.755267" />
     <component name="O"  fraction="0.231781" />
     <component name="Ar" fraction="0.012827" />

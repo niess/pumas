@@ -1824,6 +1824,13 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         /* Set the path to the dE/dX files. */
         strcpy(physics->dedx_path, dedx_path);
 
+        /* Initialise dE/dX filenames */
+        int imat;
+        for (imat = 0; imat < physics->n_materials - physics->n_composites;
+             imat++) {
+                physics->dedx_filename[imat] = NULL;
+        }
+
         /* Parse the elements. */
         if ((mdf_parse_elements(physics, mdf, error_)) != PUMAS_RETURN_SUCCESS)
                 goto clean_and_exit;
@@ -1838,7 +1845,6 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
                 goto clean_and_exit;
 
         /* Compute the MEE from material's composition if not set by MDF. */
-        int imat;
         for (imat = 0; imat < physics->n_materials - physics->n_composites;
              imat++) {
                 if (physics->material_I[imat] <= 0.)
@@ -1989,8 +1995,9 @@ enum pumas_return pumas_physics_create(struct pumas_physics ** physics,
                                 if (mdf.n_energies != data.n_energies) {
                                         ERROR_VREGISTER(
                                             PUMAS_RETURN_FORMAT_ERROR,
-                                            "bad format for file `%s'",
-                                            filename);
+                                            "inconsistent number of rows (%d) "
+                                            "for file `%s'",
+                                            mdf.n_energies, filename);
                                         goto error;
                                 }
                         }
@@ -2138,6 +2145,11 @@ enum pumas_return pumas_physics_load(
                     &physics->dcs_photonuclear);
         } else {
                 goto error;
+        }
+
+        /* Erase the dE/dX filename(s) */
+        for (i = 0; i < physics->n_materials - physics->n_composites; i++) {
+                physics->dedx_filename[i] = NULL;
         }
 
         return PUMAS_RETURN_SUCCESS;
@@ -8068,6 +8080,68 @@ enum pumas_return io_read_line(FILE * fid, char ** buf, const char * filename,
         return PUMAS_RETURN_SUCCESS;
 }
 
+/* Create a default filename from the material name.
+ *
+ * The material name is expected to use camel case. The filename is a snakified
+ * version of the material name.
+ */
+static void set_dedx_filename(const char * name, char ** filename_ptr)
+{
+        /* Check the filename size */
+        const int n0 = strlen(name);
+        int i, n = n0, lower = 0;
+        for (i = 1; i < n0 - 1; i++) {
+                const char c = name[i];
+                int upper = 0;
+                if (((c >= 'A') && (c <= 'Z')) || ((c >= '0') && (c <= '9')))
+                        upper = 1;
+                if (lower && upper) n++;
+                lower = !upper;
+        }
+
+        /* Allocate memory for the filename */
+        char * filename = reallocate(*filename_ptr, n + 5);
+        *filename_ptr = filename;
+
+        /* Build the filename */
+        char c0 = name[0];
+        if ((c0 >= 'A') && (c0 <= 'Z')) {
+                c0 += 'a' - 'A';
+        }
+        filename[0] = c0;
+
+        lower = 0;
+        int j;
+        for (i = 1, j = 1; i < n0 - 1; i++, j++) {
+                char c = name[i];
+                int upper = 0;
+                if (((c >= 'A') && (c <= 'Z')) || ((c >= '0') && (c <= '9')))
+                        upper = 1;
+                if (lower && upper) {
+                        filename[j] = '_';
+                        j++;
+                }
+                lower = !upper;
+
+                if ((c >= 'A') && (c <= 'Z')) {
+                        c += 'a' - 'A';
+                }
+                filename[j] = c;
+        }
+
+        char c1 = name[n0 - 1];
+        if ((c1 >= 'A') && (c1 <= 'Z')) {
+                c1 += 'a' - 'A';
+        }
+        filename[n - 1] = c1;
+
+        filename[n + 0] = '.';
+        filename[n + 1] = 't';
+        filename[n + 2] = 'x';
+        filename[n + 3] = 't';
+        filename[n + 4] = 0x0;
+}
+
 /**
  * Parse the global settings from a MDF.
  *
@@ -8140,13 +8214,21 @@ enum pumas_return mdf_parse_settings(const struct pumas_physics * physics,
 
                                 /* Copy the filename if first. */
                                 if (filename == NULL) {
-                                        size_name = strlen(node.at2.file);
-                                        filename = allocate(size_name + 1);
-                                        if (filename == NULL) {
-                                                ERROR_REGISTER_MEMORY();
-                                                goto clean_and_exit;
+                                        if (node.at2.file == NULL) {
+                                                set_dedx_filename(node.at1.name,
+                                                    &filename);
+                                                size_name = strlen(filename);
+                                        } else {
+                                                size_name =
+                                                    strlen(node.at2.file);
+                                                filename =
+                                                    allocate(size_name + 1);
+                                                if (filename == NULL) {
+                                                        ERROR_REGISTER_MEMORY();
+                                                        goto clean_and_exit;
+                                                }
+                                                strcpy(filename, node.at2.file);
                                         }
-                                        strcpy(filename, node.at2.file);
                                 }
 
                                 /* Update the names table and book a new index
@@ -8707,6 +8789,16 @@ enum pumas_return mdf_parse_materials(struct pumas_physics * physics,
 
                         /* Format the energy loss filename. */
                         if (!mdf->dry_mode) {
+                                if (node.at2.file == NULL) {
+                                        if (physics->dedx_filename[imat] ==
+                                            NULL) {
+                                                set_dedx_filename(node.at1.name,
+                                                    physics->dedx_filename +
+                                                    imat);
+                                        }
+                                        node.at2.file =
+                                            physics->dedx_filename[imat];
+                                }
                                 const int size_new =
                                     offset_dir + strlen(node.at2.file) + 1;
                                 if (size_new > size_name) {
@@ -8722,14 +8814,27 @@ enum pumas_return mdf_parse_materials(struct pumas_physics * physics,
                                 }
                                 strcpy(filename + offset_dir, node.at2.file);
                         } else {
-                                int n = strlen(node.at2.file) + 1;
-                                physics->dedx_filename[imat] = allocate(n);
-                                if (physics->dedx_filename[imat] == NULL) {
-                                        ERROR_REGISTER_MEMORY();
-                                        break;
+                                if (node.at2.file == NULL) {
+                                        if (physics->dedx_filename[imat] ==
+                                            NULL) {
+                                                set_dedx_filename(node.at1.name,
+                                                    physics->dedx_filename +
+                                                imat);
+                                        }
+                                        node.at2.file =
+                                            physics->dedx_filename[imat];
+                                } else {
+                                        int n = strlen(node.at2.file) + 1;
+                                        physics->dedx_filename[imat] =
+                                            allocate(n);
+                                        if (physics->dedx_filename[imat] ==
+                                            NULL) {
+                                                ERROR_REGISTER_MEMORY();
+                                                break;
+                                        }
+                                        memcpy(physics->dedx_filename[imat],
+                                            node.at2.file, n);
                                 }
-                                memcpy(physics->dedx_filename[imat],
-                                    node.at2.file, n);
                         }
 
                         /* Parse the default density. */
@@ -9258,8 +9363,7 @@ consistency_check:
                             "missing attribute(s) for XML <component> [@%s:%d]",
                             mdf->mdf_path, mdf->line);
         } else if (node->key == MDF_KEY_MATERIAL) {
-                if ((node->at1.name == NULL) || (node->at2.fraction == NULL) ||
-                    (node->at3.density == NULL))
+                if ((node->at1.name == NULL) || (node->at3.density == NULL))
                         return ERROR_VREGISTER(PUMAS_RETURN_FORMAT_ERROR,
                             "missing attribute(s) for XML <component> [@%s:%d]",
                             mdf->mdf_path, mdf->line);
