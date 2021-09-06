@@ -20,7 +20,7 @@ jobs:
         include:
         - os: ubuntu-latest
           OS_TAG: Linux
-          BUILD_OPTS: -DCMAKE_BUILD_TYPE=Test -DPUMAS_BUILD_TEST=true -DPUMAS_USE_GDB=True
+          BUILD_OPTS: -DCMAKE_BUILD_TYPE=Debug -DPUMAS_BUILD_TEST=true -DPUMAS_USE_GDB=true
         - os: macos-latest
           OS_TAG: OSX
           BUILD_OPTS: -DCMAKE_BUILD_TYPE=Release -DPUMAS_BUILD_EXAMPLES=true
@@ -44,7 +44,7 @@ jobs:
       name: Test
       run: |
         cd build
-        make test
+        make coverage
 
     - if: matrix.OS_TAG == 'Linux'
       name: Coverage
@@ -59,6 +59,7 @@ jobs:
     - if: matrix.OS_TAG == 'OSX'
       name: Examples
       run: |
+        ./build/pumas-example-tabulate
         ./build/pumas-example-dump
         ./build/pumas-example-loader
         ./build/pumas-example-geometry 10 10 1
