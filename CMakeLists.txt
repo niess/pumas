@@ -33,10 +33,23 @@ else ()
         set (PUMAS_BIN "bin")
 endif ()
 
+
 # Disable extra Windows security checks when using msvc
 if (MSVC)
         add_definitions("-D_CRT_SECURE_NO_WARNINGS")
 endif ()
+
+
+# Compile executables with a relative RPATH on Linux or OSX
+if (PUMAS_BUILD_EXAMPLES)
+        if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+                set (CMAKE_INSTALL_RPATH "$ORIGIN/../lib")
+        elseif (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+                set (CMAKE_MACOSX_RPATH "ON")
+                set (CMAKE_INSTALL_RPATH "@loader_path/../lib")
+        endif ()
+endif ()
+
 
 # Build and install rules for the PUMAS library
 add_library (pumas src/pumas.c include/pumas.h)
@@ -65,10 +78,6 @@ endif ()
 
 # Build and install rules for the examples, if enabled
 if (PUMAS_BUILD_EXAMPLES)
-        if (UNIX)
-                set (CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
-        endif ()
-
         macro (pumas_example __tag __flux)
                 set (__name "example-${__tag}")
                 add_executable (${__name} "examples/pumas/${__tag}.c" ${__flux})
@@ -83,6 +92,7 @@ if (PUMAS_BUILD_EXAMPLES)
         pumas_example (straight "examples/pumas/flux.c")
         pumas_example (tabulate "")
 endif ()
+
 
 # Build the test(s), if enabled
 if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")

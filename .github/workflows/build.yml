@@ -23,7 +23,7 @@ jobs:
           BUILD_OPTS: -DCMAKE_BUILD_TYPE=Debug -DPUMAS_BUILD_TEST=true -DPUMAS_USE_GDB=true
         - os: macos-latest
           OS_TAG: OSX
-          BUILD_OPTS: -DCMAKE_BUILD_TYPE=Release -DPUMAS_BUILD_EXAMPLES=true
+          BUILD_OPTS: -DCMAKE_INSTALL_PREFIX=$(pwd)/.. -DPUMAS_BUILD_EXAMPLES=true
 
     steps:
     - uses: actions/checkout@v2
@@ -51,16 +51,16 @@ jobs:
       uses: codecov/codecov-action@v1
 
     - if: matrix.OS_TAG == 'OSX'
-      uses: actions/checkout@v2
-      with:
-        repository: niess/pumas-materials
-        path: materials
+      name: Install
+      run: |
+        cd build
+        make install
 
     - if: matrix.OS_TAG == 'OSX'
       name: Examples
       run: |
-        ./build/pumas-example-tabulate
-        ./build/pumas-example-dump
-        ./build/pumas-example-loader
-        ./build/pumas-example-geometry 10 10 1
-        ./build/pumas-example-straight 10 10 1
+        ./bin/example-tabulate
+        ./bin/example-dump
+        ./bin/example-loader
+        ./bin/example-geometry 10 10 1
+        ./bin/example-straight 10 10 1
