@@ -33,6 +33,10 @@ else ()
     set (PUMAS_BIN "bin")
 endif ()
 
+# Disable extra Windows security checks when using msvc
+if (MSVC)
+    add_definitions("-D_CRT_SECURE_NO_WARNINGS")
+endif ()
 
 # Build and install rules for the PUMAS library
 add_library (pumas src/pumas.c include/pumas.h)
@@ -42,14 +46,15 @@ set_target_properties (pumas PROPERTIES
 )
 target_include_directories (pumas PUBLIC "${PROJECT_SOURCE_DIR}/include")
 target_compile_definitions (pumas PRIVATE ${PUMAS_API} -DPUMAS_VERSION=${PUMAS_VERSION_MAJOR}.${PUMAS_VERSION_MINOR})
-target_link_libraries (pumas m)
+if (UNIX)
+        target_link_libraries (pumas m)
+endif ()
 
 if (PUMAS_USE_GDB)
         target_compile_definitions (pumas PRIVATE "-DGDB_MODE")
 endif ()
 
 if (WIN32)
-    target_compile_definitions (pumas PRIVATE "-D_CRT_SECURE_NO_WARNINGS")
     install (TARGETS pumas DESTINATION .)
     install (FILES include/pumas.h DESTINATION .)
 else ()
@@ -72,6 +77,7 @@ if (PUMAS_BUILD_EXAMPLES)
         pumas_example (geometry "examples/pumas/flux.c")
         pumas_example (loader "")
         pumas_example (straight "examples/pumas/flux.c")
+        pumas_example (tabulate "")
 endif ()
 
 # Build the test(s), if enabled
