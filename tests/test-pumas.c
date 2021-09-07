@@ -1708,6 +1708,50 @@ START_TEST(test_api_dcs)
             "materials/materials.xml", "materials/dedx/muon",
             &settings);
         ck_assert_int_eq(error_data.rc, PUMAS_RETURN_MODEL_ERROR);
+
+        /* Test parametrizations by comparing to PROPOSAL (7.0.6) */
+        pumas_dcs_t * dcss[8];
+        pumas_dcs_get(PUMAS_PROCESS_BREMSSTRAHLUNG, "ABB", dcss);
+        pumas_dcs_get(PUMAS_PROCESS_BREMSSTRAHLUNG, "KKP", dcss + 1);
+        pumas_dcs_get(PUMAS_PROCESS_BREMSSTRAHLUNG, "SSR", dcss + 2);
+        pumas_dcs_get(PUMAS_PROCESS_PAIR_PRODUCTION, "KKP", dcss + 3);
+        pumas_dcs_get(PUMAS_PROCESS_PAIR_PRODUCTION, "SSR", dcss + 4);
+        pumas_dcs_get(PUMAS_PROCESS_PHOTONUCLEAR, "BBKS", dcss + 5);
+        pumas_dcs_get(PUMAS_PROCESS_PHOTONUCLEAR, "BM", dcss + 6);
+        pumas_dcs_get(PUMAS_PROCESS_PHOTONUCLEAR, "DRSS", dcss + 7);
+
+        const double K = 1E+04;
+        const double nu[3] = {1E-03 * K, 1E-02 * K, 1E-01 * K};
+        const double points[8][3] = {
+            {8.327E-34, 8.252E-35, 7.551E-36},
+            {8.294E-34, 8.218E-35, 7.517E-36},
+            {8.269E-34, 8.206E-35, 7.583E-36},
+            {1.018E-31, 1.830E-33, 5.002E-36},
+            {1.008E-31, 1.824E-33, 5.027E-36},
+            {8.676E-34, 6.183E-35, 4.172E-36},
+            {7.582E-34, 5.297E-35, 3.387E-36},
+            {7.396E-34, 5.112E-35, 3.300E-36}
+        };
+
+        const double Z_Rk = 11., A_Rk = 22.;
+        double mu;
+        pumas_constant(PUMAS_CONSTANT_MUON_MASS, &mu);
+
+        int i, j;
+        for (i = 0; i < sizeof(dcss) / sizeof(dcss[0]); i++) {
+                for (j = 0; j < sizeof(nu) / sizeof(nu[0]); j++) {
+                        const double d0 = points[i][j];
+                        const double d1 = dcss[i](Z_Rk, A_Rk, mu, K, nu[j]);
+                        ck_assert_double_eq_tol(d0, d1, d0 * 1E-02);
+                }
+        }
+
+        /* Check the range getter */
+        double qmin, qmax;
+        pumas_dcs_range(
+             PUMAS_PROCESS_PAIR_PRODUCTION, Z_Rk, mu, K, &qmin, &qmax);
+        ck_assert_double_lt(0, qmin);
+        ck_assert_double_gt(K, qmax);
 }
 END_TEST
 
@@ -4126,7 +4170,7 @@ START_TEST(test_hybrid_scattering)
 
         reset_error();
         initialise_state();
-        state->energy = 1E+03;
+        state->energy = 1E+05;
 
         pumas_physics_property_range(
             physics, PUMAS_MODE_MIXED, 0, state->energy, &X);
@@ -4152,7 +4196,7 @@ START_TEST(test_hybrid_scattering)
 
         /* Check the backward transport with scattering */
         context->mode.direction = PUMAS_MODE_BACKWARD;
-        context->limit.energy = 1E+03;
+        context->limit.energy = 1E+05;
         context->event = PUMAS_EVENT_LIMIT_ENERGY;
 
         double k1, X1, d1, t1;
