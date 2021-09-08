@@ -971,12 +971,13 @@ PUMAS_API enum pumas_return pumas_physics_print(
 /**
  * Get the version of the PUMAS library.
  *
- * @return The library version encoded on an `int`.
+ * @param major    The major version number or `NULL`.
+ * @param minor    The minor version number or `NULL`.
  *
- * The library version is encoded on an `int` as 100*(MAJOR.MINOR). E.g.
- * PUMAS version `0.15` would yield `15`.
+ * The PUMAS library version is given as MAJOR.MINOR. If *major* or *minor* is
+ * not required the corresponding pointer can be set to `NULL`.
  */
-PUMAS_API int pumas_version();
+PUMAS_API void pumas_version(int * major, int * minor);
 
 /**
  * Get info on the transported particle.

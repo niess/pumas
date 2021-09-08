@@ -58,7 +58,10 @@ set_target_properties (pumas PROPERTIES
         SOVERSION ${PUMAS_VERSION_MAJOR}
 )
 target_include_directories (pumas PUBLIC "${PROJECT_SOURCE_DIR}/include")
-target_compile_definitions (pumas PRIVATE ${PUMAS_API} -DPUMAS_VERSION=${PUMAS_VERSION_MAJOR}.${PUMAS_VERSION_MINOR})
+target_compile_definitions (pumas PRIVATE
+        ${PUMAS_API}
+        -DPUMAS_VERSION_MAJOR=${PUMAS_VERSION_MAJOR}
+        -DPUMAS_VERSION_MINOR=${PUMAS_VERSION_MINOR})
 if (UNIX)
         target_link_libraries (pumas PUBLIC m)
 endif ()

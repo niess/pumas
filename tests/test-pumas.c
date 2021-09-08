@@ -243,8 +243,10 @@ END_TEST
 /* Test the version tag */
 START_TEST(test_api_version)
 {
-        const int tag = pumas_version();
-        ck_assert_int_eq(tag, 100 * PUMAS_VERSION);
+        int major, minor;
+        pumas_version(&major, &minor);
+        ck_assert_int_eq(major, PUMAS_VERSION_MAJOR);
+        ck_assert_int_eq(minor, PUMAS_VERSION_MINOR);
 }
 END_TEST
 

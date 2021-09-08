@@ -51,8 +51,12 @@
 #endif
 
 /* For the versioning. */
-#ifndef PUMAS_VERSION
-#define PUMAS_VERSION 1.1
+#ifndef PUMAS_VERSION_MAJOR
+#define PUMAS_VERSION_MAJOR 1
+#endif
+
+#ifndef PUMAS_VERSION_MINOR
+#define PUMAS_VERSION_MINOR 1
 #endif
 
 /* Some tuning factors as macros. */
@@ -2763,7 +2767,11 @@ error:
             PUMAS_RETURN_IO_ERROR, "could not write to stream");
 }
 
-int pumas_version() { return (int)(100. * PUMAS_VERSION); }
+void pumas_version(int * major, int * minor)
+{
+        if (major != NULL) *major = PUMAS_VERSION_MAJOR;
+        if (minor != NULL) *minor = PUMAS_VERSION_MINOR;
+}
 
 /* Public library functions: recorder handling. */
 enum pumas_return pumas_recorder_create(
@@ -13491,8 +13499,8 @@ enum pumas_return physics_tabulate(struct pumas_physics * physics,
             "photonuc = %4s\n",
             physics->model_bremsstrahlung, physics->model_pair_production,
             physics->model_photonuclear);
-        fprintf(stream, "\n *** Table generated with PUMAS v%.2f ***\n\n",
-            PUMAS_VERSION);
+        fprintf(stream, "\n *** Table generated with PUMAS v%d.%d ***\n\n",
+            PUMAS_VERSION_MAJOR, PUMAS_VERSION_MINOR);
         fprintf(stream,
             "      T         p     Ionization  brems     pair     "
             "photonuc  Radloss    dE/dx   CSDA Range  delta   beta\n");
