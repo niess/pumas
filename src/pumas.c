@@ -2656,10 +2656,35 @@ enum pumas_return pumas_physics_print(const struct pumas_physics * physics,
         /* Check the output stream */
         if (stream == NULL) goto error;
 
+        /* Print the physics info */
+        if (fprintf(stream, "{%s%s\"physics\" : {%s%s%s\"cutoff (%%)\""
+                            " : %.5lg",
+                cr, tab, cr, tab, tab, 100. * physics->cutoff) < 0)
+                goto error;
+        if (fprintf(stream, ",%s%s%s\"elastic_ratio (%%)\" : %.5lg", cr,
+                tab, tab, 100. * physics->elastic_ratio) < 0)
+                goto error;
+        if (fprintf(stream, ",%s%s%s\"bremsstrahlung\" : \"%s\"", cr,
+                tab, tab, physics->model_bremsstrahlung) < 0)
+                goto error;
+        if (fprintf(stream, ",%s%s%s\"pair_production\" : \"%s\"", cr,
+                tab, tab, physics->model_pair_production) < 0)
+                goto error;
+        if (fprintf(stream, ",%s%s%s\"photonuclear\" : \"%s\"", cr,
+                tab, tab, physics->model_photonuclear) < 0)
+                goto error;
+        if (fprintf(stream, ",%s%s%s\"n_energies\" : %d%s%s}", cr,
+                tab, tab, physics->n_energies, cr, tab) < 0)
+                goto error;
+
         /* Print the particle info */
-        if (fprintf(stream, "{%s%s\"particle\" : {%s%s%s\"mass (GeV/c^2)\""
-                            " : %.6lf",
-                cr, tab, cr, tab, tab, physics->mass) < 0)
+        const char * ptype = (physics->particle == PUMAS_PARTICLE_MUON) ?
+            "muon" : "tau";
+        if (fprintf(stream, ",%s%s\"particle\" : {%s%s%s\"type\" : \"%s\"",
+                cr, tab, cr, tab, tab, ptype) < 0)
+                goto error;
+        if (fprintf(stream, ",%s%s%s\"mass (GeV/c^2)\" : %.6lf", cr, tab,
+                tab, physics->mass) < 0)
                 goto error;
         if (fprintf(stream, ",%s%s%s\"lifetime (m/c)\" : %.3lf%s%s}", cr, tab,
                 tab, physics->ctau, cr, tab) < 0)
@@ -2684,6 +2709,7 @@ enum pumas_return pumas_physics_print(const struct pumas_physics * physics,
                         tab, tab, tab, element->I * 1E+09, cr, tab, tab) < 0)
                         goto error;
         }
+        if (fprintf(stream, "%s%s}", cr, tab) < 0) goto error;
 
         /* Print the materials */
         if (fprintf(stream, ",%s%s\"materials\" : {", cr, tab) < 0) goto error;
@@ -2742,14 +2768,10 @@ enum pumas_return pumas_physics_print(const struct pumas_physics * physics,
                         const char * head2 = (imat == 0) ? "" : ",";
                         struct composite_component * c =
                             composite->component + imat;
-                        if (fprintf(stream, "%s%s%s%s%s%s\"%s\" : {", head2, cr,
-                                tab, tab, tab, tab,
-                                physics->material_name[c->material]) < 0)
-                                goto error;
-                        if (fprintf(stream, ",%s%s%s%s%s%s\"fraction (%%)\" "
-                                            ": %.5lg%s%s%s%s%s}",
-                                cr, tab, tab, tab, tab, tab, 100. * c->fraction,
-                                cr, tab, tab, tab, tab) < 0)
+                        if (fprintf(stream, "%s%s%s%s%s%s\"%s (%%)\" : %.5lg",
+                                head2, cr, tab, tab, tab, tab,
+                                physics->material_name[c->material],
+                                100. * c->fraction) < 0)
                                 goto error;
                 }
                 if (fprintf(stream, "%s%s%s%s}%s%s%s}", cr, tab, tab, tab, cr,
@@ -13617,6 +13639,10 @@ enum pumas_return pumas_physics_dcs(
     const char ** model, pumas_dcs_t ** dcs)
 {
         ERROR_INITIALISE(pumas_physics_dcs);
+
+        if (physics == NULL) {
+                return ERROR_NOT_INITIALISED();
+        }
 
         if (process == PUMAS_PROCESS_BREMSSTRAHLUNG) {
                 if (dcs != NULL) *dcs = physics->dcs_bremsstrahlung;

@@ -35,7 +35,7 @@ extern "C" {
 #endif
 
 /**
- * Particle types managed by the PUMAS transport engine.
+ * Projectiles supported by PUMAS.
  */
 enum pumas_particle {
         /** The muon or anti-muon lepton. */
@@ -45,7 +45,7 @@ enum pumas_particle {
 };
 
 /**
- * Keys for some of the tabulated properties used by PUMAS.
+ * Physics properties tabulated by PUMAS.
  */
 enum pumas_property {
         /**
@@ -152,7 +152,7 @@ enum pumas_return {
         PUMAS_RETURN_INCOMPLETE_FILE,
         /** Some index is out of validity range. */
         PUMAS_RETURN_INDEX_ERROR,
-        /** The Physics is not initialised or a NULL pointer was provided. */
+        /** The physics is not initialised or a NULL pointer was provided. */
         PUMAS_RETURN_PHYSICS_ERROR,
         /** An internal library error occured. */
         PUMAS_RETURN_INTERNAL_ERROR,
@@ -162,7 +162,7 @@ enum pumas_return {
         PUMAS_RETURN_FORMAT_ERROR,
         /** Wrong propagation medium. */
         PUMAS_RETURN_MEDIUM_ERROR,
-        /** Some memory couldn't be allocated. */
+        /** Some memory could not be allocated. */
         PUMAS_RETURN_MEMORY_ERROR,
         /** An invalid (unknown) DCS model was requested. */
         PUMAS_RETURN_MODEL_ERROR,
@@ -170,7 +170,7 @@ enum pumas_return {
         PUMAS_RETURN_MISSING_LIMIT,
         /** The random callback is not defined. */
         PUMAS_RETURN_MISSING_RANDOM,
-        /** Some file couldn't be found. */
+        /** Some file could not be found. */
         PUMAS_RETURN_PATH_ERROR,
         /** A raise was called without any catch. */
         PUMAS_RETURN_RAISE_ERROR,
@@ -230,7 +230,7 @@ enum pumas_event {
         PUMAS_EVENT_STOP = 8192
 };
 
-/** Indices of customizable radiative processes. */
+/** Radiative processes available in PUMAS. */
 enum pumas_process {
         /** The Bremstrahlung process */
         PUMAS_PROCESS_BREMSSTRAHLUNG = 0,
@@ -240,7 +240,7 @@ enum pumas_process {
         PUMAS_PROCESS_PHOTONUCLEAR
 };
 
-/** Indices for PUMAS library constants. */
+/** Physics constants used by PUMAS. */
 enum pumas_constant {
         /** The electromagnetic coupling constant, alpha. */
         PUMAS_CONSTANT_ALPHA_EM = 0,
@@ -274,6 +274,12 @@ enum pumas_constant {
 
 /**
  * Container for a Monte-Carlo state.
+ *
+ * This structure contains data defining a particle Monte Carlo state. It must
+ * be directly instancianted by the user.
+ *
+ * __Note__: this structure might be wrapped (sub-classed) in a larger one by
+ * the user.
  */
 struct pumas_state {
         /** The particle's electric charge. Note that non physical values,
@@ -342,15 +348,18 @@ typedef double pumas_locals_cb (struct pumas_medium * medium,
  *
  * A propagation medium is fully defined by:
  *
- * - a `material` composition with a uniform relative content.
- * - `pumas_locals` properties set by a user provided `pumas_locals_cb`
- * callback or `NULL` e.g. if using the material's default density.
+ * - a *material* composition with a constant relative content.
+ *
+ * - Optionally, local properties set by a `pumas_locals_cb` callback.
+ *
+ * __Note__: this structure might be wrapped (sub-classed) in a larger one by
+ * the user.
  */
 struct pumas_medium {
         /**
-         * The material index in the Material Description File (MDF). It can
-         * be mapped to the corresponding name with the `pumas_material_`
-         * functions.
+         * The material index in the Material Description File (MDF). It can be
+         * mapped to the corresponding name with the
+         * `pumas_physics_material_name` function.
          */
         int material;
         /**
@@ -361,17 +370,20 @@ struct pumas_medium {
         pumas_locals_cb * locals;
 };
 
-/** A handle to a recorded Monte-Carlo frame.
+/** A recorded Monte-Carlo frame.
  *
- *  This structure exposes data relative to a recorded frame. It is not meant
- * to be modified by the user.
+ * This structure exposes data relative to a recorded Monte Carlo frame.  It is
+ * not meant to be modified by the user.
+ *
+ * See the `pumas_recorder` structure for more information on recording Monte
+ * Carlo steps.
  */
 struct pumas_frame {
-        /** The recorded state. */
+        /** The recorded Monte Carlo state. */
         struct pumas_state state;
-        /** The corresponding propagation medium. */
+        /** The corresponding target medium. */
         struct pumas_medium * medium;
-        /** The corresponding step event. */
+        /** The corresponding Monte Carlo event. */
         enum pumas_event event;
         /** Link to the next frame in the record. */
         struct pumas_frame * next;
@@ -394,16 +406,23 @@ typedef void pumas_recorder_cb (struct pumas_context * context,
     enum pumas_event event);
 
 /**
- * A handle for recording Monte-Carlo frames.
+ * A Monte-Carlo recorder.
  *
- * This structure is a proxy for recording Monte-Carlo states and/or accessing
+ * This structure is used for recording Monte Carlo steps and/or accessing
  * them. Although it exposes some public data that the user may alter it also
  * encloses other opaque data. Therefore, it **must** be handled with the
- * `pumas_recorder` functions.
+ * `pumas_recorder_create`, `pumas_recorder_clear` and `pumas_recorder_destroy`
+ * functions.
  *
- * **Note** : in order to enable or disable a recorder it is enough to
- * link or unlink it from the `recorder` field of any `pumas_context`. Only the
- * corresponding context will be recorded.
+ * By default a newly created recorder is configured for saving all Monte Carlo
+ * steps as `pumas_frame` objects. This behaviour can be modified by setting a
+ * `pumas_recorder_cb` callback as *record* field. Other attributes of the
+ * structure control the sampling rate of Monte Carlo steps and allow to access
+ * the sampled `pumas_frame`, as detailed herein.
+ *
+ * **Note** : A recorder is enabled (disabled) by setting (unsetting) it to
+ * (from) the *recorder* field of a `pumas_context`. Only the corresponding
+ * context is recorded.
  */
 struct pumas_recorder {
         /** Link to the 1^(st) recorded frame or `NULL` if none. This field
@@ -415,9 +434,9 @@ struct pumas_recorder {
          */
         int length;
         /**
-         * The sampling period of the recorder, If set to zero or less only
-         * medium changes are recorded. Defaults to 1, i.e. all Monte-Carlo
-         * steps are recorded.
+         * The sampling period of the recorder. If set to zero or less only
+         * medium changes and user specified events are recorded. Defaults to 1,
+         * i.e. all Monte-Carlo steps are recorded.
          */
         int period;
         /**
@@ -433,11 +452,20 @@ struct pumas_recorder {
         void * user_data;
 };
 
-/** Return codes for the `pumas_medium_cb` callback. */
+/** Return codes for the medium callback. */
 enum pumas_step {
-        /** The proposed step is cross-checked bu PUMAS */
+        /** The proposed step is cross-checked by PUMAS beforehand.
+         *
+         * This is the safest option. Use this mode if you are unsure about
+         * the compatibility of your geometry ray tracer with PUMAS.
+         */
         PUMAS_STEP_CHECK = 0,
-        /** The raw proposed step is used by PUMAS */
+        /** The proposed step is used by PUMAS as is.
+         *
+         * This mode is intended for expert usage. Depending on the geometry ray
+         * tracer used, it can save PUMAS from performing some redundant
+         * geometry checks.
+         */
         PUMAS_STEP_RAW
 };
 
@@ -521,7 +549,8 @@ typedef double pumas_random_cb (struct pumas_context * context);
 struct pumas_context_mode {
         /**
         * The mode used for the computation of energy losses. Default
-        * is `PUMAS_MODE_STRAGGLED`.
+        * is `PUMAS_MODE_STRAGGLED`. Other options are `PUMAS_MODE_DISABLED`,
+        * `PUMAS_MODE_CSDA` and `PUMAS_MODE_MIXED`.
         */
         enum pumas_mode energy_loss;
         /**
@@ -539,7 +568,7 @@ struct pumas_context_mode {
         /**
         * Algorithm for the simulation of the scattering. Default is
         * `PUMAS_MODE_MIXED`. Other option is `PUMAS_MODE_DISABLED` which
-        * neglects any transverse scattering.
+        * neglects any scattering.
         */
         enum pumas_mode scattering;
 };
@@ -560,46 +589,67 @@ struct pumas_context_limit {
 };
 
 /**
- * A handle for a simulation stream.
+ * A simulation context.
  *
- * This structure is a proxy to thread specific data for a simulation stream.
- * It exposes some public data that the user may configure or alter directly.
- * However, it also encloses other opaque data. Therefore, it **must** be
- * initialised and released with the `pumas_context` functions.
+ * This structure manages thread specific data for a PUMAS Monte Carlo
+ * simulation.  It also exposes configuration parameters for the Monte Carlo
+ * transport. The exposed parameters can be directly modified by the user.
  *
- * + The `medium` field must be set after any initialisation with
- * `pumas_context_create` and prior to any call to `pumas_context_transport`.
+ * __Warning__: since the simulation context wraps opaque data it **must** be
+ * created (destroyed) with the `pumas_context_create`
+ * (`pumas_context_destroy`) function.
  *
- * + The newly created context is configured with a default pseudo random engine
- * using the Mersenne Twister algorithm. The engine can be explictly seeded with
- * the `pumas_context_random_initialise` function. Note that two contexts seeded
- * with the same value are 100% correlated by construction. If no seed is
- * provided one is picked randomly from the OS, e.g. from `/dev/urandom` on
- * UNIX. A custom random engine can be used instead of the default one by
- * overriding the *random* callback.
+ * A context created with `pumas_context_create` is initialised with default
+ * settings. That is, the transport is configured for forward Monte Carlo with
+ * the highest level of detail available, i.e. energy straggling and scattering
+ * enabled.  This can be modified by overriding the *mode* attribute of the
+ * simulation context.
  *
- * + Note that for `energy`, `distance`, `grammage` or `time` external
- * limits to be taken into account, the corresponding events must be activated
- * as well, with the `event` flag.
+ * **Note**: in the case of a muon projectile, the default initialisation is to
+ * account for decays by weighting according to the proper time
+ * (`PUMAS_MODE_WEIGHTED`). However, for a tau projectile the default is to
+ * randomise the decay location (`PUMAS_MODE_RANDOMISE`).
+ *
+ * Each simulation context natively embeds a pseudo random engine. A Mersenne
+ * Twister algorithm is used. The random engine can be seeded with the
+ * `pumas_context_random_seed_set` function.  Note that two contexts seeded
+ * with the same value are 100% correlated. If no seed is provided then one is
+ * picked randomly from the OS, e.g.  from `/dev/urandom` on UNIX.
+ * Alternatively, a custom random engine can be used instead of the native one
+ * by overriding the *random* callback.
+ *
+ * The geometry of the simulation is specified by setting the *medium* field
+ * with a `pumas_medium_cb` callback.  By default the *medium* field is `NULL`.
+ * Note that it must be set by the user before calling
+ * `pumas_context_transport`.
+ *
+ * The *event* field of the simulation context allows to specify end conditions
+ * for the Monte Carlo transport. E.g. a lower (upper) limit can be set on the
+ * kinetic energy of the projectile in forward (backward) mode. The limit value
+ * is specified by setting the corresponding *limit* field.
  */
 struct pumas_context {
-        /** A medium callback. */
+        /** The geometry of the simulation specified as a callback. It must be
+         * provided by the user.
+         */
         pumas_medium_cb * medium;
-        /** The pseudo random generator callback. */
+        /** The pseudo random generator of the simulation context. An
+         *  alternative generator can be used by overriding this callback.
+         */
         pumas_random_cb * random;
-        /** A `pumas_frame` recorder. */
+        /** An optionnal recorder for Monte Carlo steps. */
         struct pumas_recorder * recorder;
-        /** A pointer to additional memory, if any is requested at
-         * initialisation.
+        /** A pointer to additional memory if any is requested at
+         * initialisation. Otherwise this points to `NULL`.
          */
         void * user_data;
 
-        /** Monte Carlo transport mode. */
+        /** Settings controlling the Monte Carlo transport algirithm. */
         struct pumas_context_mode mode;
         /**
-         * The events that might stop the transport. Default is
-         * `PUMAS_EVENT_NONE`, i.e. the transport stops only if the particle
-         * exits the simulation media, or if it looses all of its energy.
+         * The events that stop the transport. Default is `PUMAS_EVENT_NONE`,
+         * i.e. the transport stops only if the particle exits the simulation
+         * media, or if it looses all of its energy.
          */
         enum pumas_event event;
 
@@ -610,14 +660,35 @@ struct pumas_context {
          *
          * The Monte Carlo transport is discretized in elementary steps. This
          * parameter directly controls the length of these steps. The smaller
-         * the *accuracy* value the smaller the step length hence the longer
+         * the *accuracy* value the smaller the step length. Thus, the longer
          * the Monte Carlo simulation.
          */
         double accuracy;
 };
 
 /**
- * Opaque handle for Physics tables
+ * Physics tables for the Monte Carlo transport
+ *
+ * This is an **opaque** structure wrapping physics tables for the Monte Carlo
+ * transport.  See `pumas_physics_create` for informations on how to create a
+ * physics object.
+ *
+ * __Note__: the physics is configured during its instantiation. It cannot
+ * be modified afterwards. Only the composition of composite materials can be
+ * updated with the `pumas_physics_composite_update` function.
+ *
+ * The settings of a `pumas_physics` instance can be inspected with the
+ * `pumas_physics_cutoff`, `pumas_physics_dcs` and `pumas_physics_elastic_ratio`
+ * functions. The materials data are retrieved with the
+ * `pumas_physics_element_*`, and `pumas_physics_material_*` functions.
+ * Alternatively, the `pumas_physics_print` function can be used in order to
+ * print out a human readable summary of the physics.
+ *
+ * Physics properties are tabulated as function of the projectile kinetic
+ * energy.  The tabulated values can be retrieved with the
+ * `pumas_physics_table_value` function. In addition, the
+ * `pumas_physics_property_*` functions provide smooth interpolations of physics
+ * properties for arbitrary kinetic energy values.
  */
 struct pumas_physics;
 
@@ -643,83 +714,85 @@ typedef double pumas_dcs_t (double Z, double A, double m, double K, double q);
 /**
  */
 struct pumas_physics_settings {
-        /** Relative cutoff between continous and discrete energy.
+        /** Relative cutoff between soft and hard energy losses.
          *
          * Setting a null or negative value results in the default cutoff value
          * to be used i.e. 5% which is a good compromise between speed and
-         * accuracy for transporting a continuous spectrum (see e.g.  Sokalski
-         * et al., https://doi.org/10.1103/PhysRevD.64.074015).
+         * accuracy for transporting a continuous spectrumm, see e.g.  [Sokalski
+         * et al.](https://doi.org/10.1103/PhysRevD.64.074015)
          */
         double cutoff;
-        /** Ratio of the mean free path for hard elastic events to the min
+        /** Ratio of the mean free path for hard elastic events to the smallest
          * of the transport mean free path or CSDA range.
          *
          * The lower the ratio the more detailed the simulation of elastic
-         * scattering  (see e.g. Fernandez-Varea et al.,
-         * https://doi.org/10.1016/0168-583X(93)95827-R)).  Setting a null or
-         * negative value results in the default ratio to be used i.e. 5E-02.
+         * scattering, see e.g. [Fernandez-Varea et al. (1993)](
+         * https://doi.org/10.1016/0168-583X(93)95827-R)  Setting a null or
+         * negative value results in the default ratio to be used i.e. 5%.
          */
         double elastic_ratio;
         /** Physics model for the Bremsstrahlung process.
          *
          *  Available models are:
          *
-         *  - "KKP": Kelner, Kokoulin & Petrukhin, Moscow Engineering Physics
-         *           Inst., Moscow, 1995.
-         *
-         *  - "ABB": Andreev, Bezrukov & Bugaev, Physics of Atomic Nuclei 57
+         *  - `ABB`: Andreev, Bezrukov and Bugaev, Physics of Atomic Nuclei 57
          *           (1994) 2066.
          *
-         *  - "SSR": Sandrock, Soedingresko & Rhode, ICRC 2019
-         *           [arXiv:1910.07050].
+         *  - `KKP`: Kelner, Kokoulin and Petrukhin, Moscow Engineering Physics
+         *           Inst., Moscow, 1995.
+         *
+         *  - `SSR`: Sandrock, Soedingresko and Rhode, [ICRC 2019](
+         *           https://arxiv.org/abs/1910.07050).
          *
          * Setting a `NULL` value results in PUMAS default Bremsstrahlung model
-         * to be used, i.e. "KKP".
+         * to be used, i.e. `SSR`.
          * */
         const char * bremsstrahlung;
         /** Physics model for e^(+)e^(-) pair production.
          *
          *  Available models are:
          *
-         *  - "KKP": Kelner, Kokoulin & Petrukhin, Soviet Journal of Nuclear
+         *  - `KKP`: Kelner, Kokoulin and Petrukhin, Soviet Journal of Nuclear
          *           Physics 7 (1968) 237.
          *
-         *  - "SSR": Sandrock, Soedingresko & Rhode, ICRC 2019
-         *           [arXiv:1910.07050].
+         *  - `SSR`: Sandrock, Soedingresko and Rhode, [ICRC 2019](
+         *           https://arxiv.org/abs/1910.07050).
          *
          * Setting a `NULL` value results in PUMAS default pair production model
-         * to be used, i.e. "KKP".
+         * to be used, i.e. `SSR`.
          */
         const char * pair_production;
         /** Physics model for photonuclear interactions.
          *
          *  Available models are:
          *
-         *  - "DRSS": Dutta, Reno, Sarcevic & Seckel, Phys.Rev. D63 (2001)
-         *            094020 [arXiv:hep-ph/0012350].
-         *
-         *  - "BBKS": Bezrukov, Bugaev, Sov. J. Nucl. Phys. 33 (1981), 635.
+         *  - `BBKS`: Bezrukov, Bugaev, Sov. J. Nucl. Phys. 33 (1981), 635.
          *            with improved photon-nucleon cross-section according to
-         *            Kokoulin, Nucl. Phys. B Proc. Sup. 70 (1999) 475 and
-         *            hard component from Bugaev & Shlepin, Phys.Rev. D67
-         *            (2003) 034027.
+         *            [Kokoulin](https://doi.org/10.1016/S0920-5632(98)00475-7)
+         *            and hard component from [Bugaev and Shlepin](
+         *            https://doi.org/10.1103/PhysRevD.67.034027).
          *
-         *  - "BM"  : Butkevich & Mikheyev, Soviet Journal of Experimental and
+         *  - `BM`  : Butkevich and Mikheyev, Soviet Journal of Experimental and
          *            Theoretical Physics 95 (2002) 11.
          *
+         *  - `DRSS`: Dutta, Reno, Sarcevic and Seckel, [Phys.Rev. D63 (2001)
+         *            094020](https://arxiv.org/abs/hep-ph/0012350).
+         *
          * Setting a `NULL` value results in PUMAS default photonuclear model to
-         * be used, i.e. "DRSS".
+         * be used, i.e. `DRSS`.
          */
         const char * photonuclear;
         /** The number of kinetic energy values to tabulate. Providing a value
-         * of zero or less results in a default energy grid being used.
+         * of zero or less results in the PDG energy grid being used.
          */
         int n_energies;
         /** Array of kinetic energy values to tabulate. Providing a `NULL`
-         * value results in a default energy grid being used.
+         * value results in the PDG energy grid being used.
          */
         double * energy;
-        /** Flag to force updating existing energy loss file(s). */
+        /** Flag to force updating existing stopping power table(s). The default
+         * behaviour is to not overwrite any already existing file.
+         */
         int update;
         /** Flag to enable dry mode.
          *
@@ -727,15 +800,16 @@ struct pumas_physics_settings {
          * not created. This is usefull e.g. if only energy loss files are
          * needed as a speed up.
          *
-         * __Warning__ : in dry mode no physics (`NULL`) is returned.
+         * __Warning__: in dry mode no physics is returned, i.e. the *physics*
+         * pointer provided by `pumas_physics_create` points to `NULL`.
          */
         int dry;
 };
 
 /**
- * Initialise the Physics.
+ * Create physics tables.
  *
- * @param physics      Handle for the Physics tables.
+ * @param physics      The physics tables.
  * @param particle     The type of the particle to transport.
  * @param mdf_path     The path to a Material Description File (MDF), or `NULL`.
  * @param dedx_path    The path to the energy loss tabulation(s), or `NULL`.
@@ -743,22 +817,39 @@ struct pumas_physics_settings {
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * Initialise the Physics from a MDF and a set of energy loss tabulations. Load
- * the materials data and precompute various properties. *mdf_path* and/or
- * *dedx_path* can be set to `NULL`. If so the corresponding path is read from
- * `PUMAS_MDF` or `PUMAS_DEDX` environment variable(s). Note that an MDF file
- * *must* be provided either way. The energy loss path can however be left
- * unspecified in which case it defaults to the directory containing the MDF
- * file.
+ * Create physics tables for a set of materials and a given *particle*. These
+ * tables are looked-up by the Monte Carlo engine for fast evaluation of physics
+ * properties during the transport. Tabulated properties are cross-sections,
+ * materials stopping power, transport mean free path length, etc.
  *
- * Optionaly extra physics settings can be specified by providing a
+ * The materials to tabulate are specified in a Materials Description File (MDF)
+ * provided with the *mdf_path* argument. If a `NULL` argument is given then the
+ * path is read from the `PUMAS_MDF` environment variable. Examples of MDF are
+ * available from the [pumas-materials
+ * repository](https://github.com/niess/pumas-materials).
+ *
+ * **Note**: a MDF must be provided in any case.
+ *
+ * The physics creation generates stopping power table(s) in the Particle Data
+ * Group (PDG) format. These tables are written to the *dedx_path* directory.
+ * If the latter is `NULL` then it is read from the `PUMAS_DEDX` environment
+ * variable. If both are `NULL` then the tables are dumped beside the MDF, i.e.
+ * in the same directory.
+ *
+ * Specific physics settings can be selected by providing a
  * `pumas_physics_settings` structure. If `NULL` is provided then PUMAS default
  * physics settings are used which should perform well for most use cases.
  *
- * Call `pumas_physics_destroy` in order to unload the Physics and release the
+ * Call `pumas_physics_destroy` in order to unload the physics and release the
  * corresponding alocated memory.
  *
- * **Warnings** : this function is not thread safe.
+ * __Note__: computing the physics tables can be long, e.g. a few seconds per
+ * material defined in the MDF. The `pumas_physics_dump` and
+ * `pumas_physics_load` functions allow to save and load the tables to/from a
+ * file. This can be used in order to greatly speed up the physics
+ * initialisation.
+ *
+ * __Warning__: this function is **not** thread safe.
  *
  * __Error codes__
  *
@@ -769,13 +860,13 @@ struct pumas_physics_settings {
  *     PUMAS_RETURN_INCOMPLETE_FILE         There are missing entries in
  * the MDF.
  *
- *     PUMAS_RETURN_IO_ERROR                A file couldn't be read.
+ *     PUMAS_RETURN_IO_ERROR                A file could not be read.
  *
- *     PUMAS_RETURN_MEMORY_ERROR            Couldn't allocate memory.
+ *     PUMAS_RETURN_MEMORY_ERROR            Could not allocate memory.
  *
  *     PUMAS_RETURN_MODEL_ERROR             A requested DCS model is not valid.
  *
- *     PUMAS_RETURN_PATH_ERROR              A file couldn't be opened.
+ *     PUMAS_RETURN_PATH_ERROR              A file could not be opened.
  *
  *     PUMAS_RETURN_PHYSICS_ERROR           A `NULL` physics pointer was
  * provided.
@@ -802,70 +893,81 @@ PUMAS_API enum pumas_return pumas_physics_create(
     const struct pumas_physics_settings * settings);
 
 /**
- * Destroy a Physics instance.
+ * Destroy a physics instance.
  *
- * @param physics      Handle for the Physics tables.
+ * @param physics      The physics tables.
  *
- * Finalise the Physics and free the shared memory. Call
- * `pumas_physics_create` in order to reload the Physics.
+ * Finalise the physics and free its memory. Call `pumas_physics_create` or
+ * `pumas_physics_load` in order to reload the physics.
  *
- * **Warnings** : This function is not thread safe. Finalising the Physics
- * doesn't release the memory allocated for any `pumas_context`.
+ * __Note__: at return the *physics* pointer points to `NULL`.
+ *
+ * __Note__: finalising the physics does not release the memory allocated for
+ * related `pumas_context`. This must be done explictly with the
+ * `pumas_context_destroy` function.
+ *
+ * __Warning__: it is the user responsability to not use any simulation context
+ * whose physics would have been destroyed. Doing so would lead to
+ * unexpected results, e.g. memory corruption.
+ *
+ * __Warning__: this function is **not** thread safe.
+ *
  */
 PUMAS_API void pumas_physics_destroy(struct pumas_physics ** physics);
 
 /**
- * Dump the Physics configuration to a stream.
+ * Dump the physics tables to a file.
  *
- * @param physics   Handle for the Physics tables.
+ * @param physics   The physics tables.
  * @param stream    The stream where to dump.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * Dump the Physics tables to a stream as a binary object. Note that only
- * globally shared data are dumped, i.e. material properties and tables as read
- * from a MDF. Simulation contexts, media, recorders, ect. ... are not. This
- * binary dump allows for a fast initialisation of the Physics in subsequent
- * uses.
+ * Dump the *physics* tables to *stream* as a raw binary object.  This binary
+ * dump can be re-loaded with the `pumas_physics_load` function. This provides a
+ * fast initialisation of the physics tables for subsequent uses.
  *
- * **Warnings** : The binary dump is raw formated, hence *a priori* platform
+ * __Warning__: the binary dump is raw formated, thus *a priori* platform
  * dependent.
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The physics is not initialised.
  *
- *     PUMAS_RETURN_PATH_ERROR              The output stream in invalid (null).
+ *     PUMAS_RETURN_PATH_ERROR              The output stream in invalid (NULL).
  *
- *     PUMAS_RETURN_IO_ERROR                Couldn't write to the stream.
+ *     PUMAS_RETURN_IO_ERROR                Could not write to the stream.
  */
 PUMAS_API enum pumas_return pumas_physics_dump(
     const struct pumas_physics * physics, FILE * stream);
 
 /**
- * Load the Physics from a binary dump.
+ * Load the physics tables from a file.
  *
- * @param physics   Handle for the Physics tables.
+ * @param physics   The physics tables.
  * @param stream    The stream to load from.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * Load the Physics tables from a binary dump and initialise accordingly.
+ * Load the physics tables from a binary dump previously generated with
+ * `pumas_physics_dump`.
  *
- * **Warnings** : The binary dump is raw formated, hence *a priori* platform
- * dependent. Trying to (re-)initialise an already initialised Physics will
- * generate an error. `pumas_physics_destroy` must be called first.
+ * __Note__: loading to an already initialised physics instance generates an
+ * error. The `pumas_physics_destroy` function must be called first.
+ *
+ * __Warning__: the binary dump is raw formated, thus *a priori* platform
+ * dependent.
  *
  * __Error codes__
  *
  *     PUMAS_RETURN_FORMAT_ERROR            The binary dump is not compatible
  * with the current version.
  *
- *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The physics is not initialised.
  *
  *     PUMAS_RETURN_PATH_ERROR              The input stream in invalid (null).
  *
- *     PUMAS_RETURN_IO_ERROR                Couldn't read from the stream.
+ *     PUMAS_RETURN_IO_ERROR                Could not read from the stream.
  */
 PUMAS_API enum pumas_return pumas_physics_load(
     struct pumas_physics ** physics, FILE * stream);
@@ -873,19 +975,19 @@ PUMAS_API enum pumas_return pumas_physics_load(
 /**
  * Get the cutoff value used by the physics.
  *
- * @param context Handle for the physics tables.
+ * @param physcis   The physics tables.
  * @return The cutoff value or -1 if the physics is not properly initialised.
  *
- * The cutoff value between continuous and discrete energy losses is specified
- * during the physics initialisation with `pumas_physics_create`. It cannot be
- * modified afterwards. Instead a new physics object must be created.
+ * The cutoff value between soft and hard energy losses is specified during the
+ * physics initialisation with `pumas_physics_create`. It cannot be modified
+ * afterwards. Instead a new physics object must be created.
  */
 PUMAS_API double pumas_physics_cutoff(const struct pumas_physics * physics);
 
 /**
  * Get the elastic ratio value used by the physics.
  *
- * @param context Handle for the physics tables.
+ * @param physics    The physics tables.
  * @return The elastic ratio or -1 if the physics is not properly initialised.
  *
  * The ratio of the m.f.p. to the transport m.f.p. for elastic events is
@@ -896,23 +998,24 @@ PUMAS_API double pumas_physics_elastic_ratio(
     const struct pumas_physics * physics);
 
 /**
- * Transport a particle according to the configured `pumas_context`.
+ * Transport a Monte Carlo particle.
  *
  * @param context The simulation context.
  * @param state   The initial state or the final state at return.
- * @param event   The `pumas_event` at return, or `ǸULL`.
- * @param media   The initial and final media, or `ǸULL`.
- * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
- * code is returned as detailed below.
+ * @param event   The end event or `NULL`.
+* @param media   The initial and final media, or `NULL`.
+* @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
+* code is returned as detailed below.
+*
+* Transport a Monte Carlo *state* according to a simulation *context*.  The
+* transport algorithm and the geometry are set by the `pumas_context`
+* structure.
+*
+* At return the particle *state* is updated. If *event* is not `NULL` it is
+* filled with the transport end condition. If *media* is not `NULL` it contains
+ * the initial (index 0) and final (index 1) media seen by the particle.
  *
- * Depending on the *context* configuration the particle is transported through
- * one or more media, as provided by the *medium* callback. At return, the
- * particle *state* is updated. If *event* is not `NULL` it will be filled
- * with the end step event flag. In addition, if *media* is not `ǸULL` it will
- * contain the initial (`media[0]`) and final (`media[1]`) media crossed by the
- * particle.
- *
- * **Note**: the state direction must be a unit vector. Otherwise an error
+ * **Warning**: the state direction must be a unit vector. Otherwise an error
  * is returned (see below).
  *
  * __Error codes__
@@ -924,45 +1027,38 @@ PUMAS_API double pumas_physics_elastic_ratio(
  *
  *     PUMAS_RETURN_DIRECTION_ERROR         A non unit direction was provided.
  *
- *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initalised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The physics is not initalised.
  *
- *     PUMAS_RETURN_MEDIUM_ERROR            No propagation medium.
+ *     PUMAS_RETURN_MEDIUM_ERROR            The medium callback was not defined.
  *
  *     PUMAS_RETURN_MISSING_LIMIT           An external limit is needed.
  *
- *     PUMAS_RETURN_MISSING_RANDOM          A *random* callback is needed.
-
- *     PUMAS_RETURN_VALUE_ERROR             State or context is `NULL`.
+ *     PUMAS_RETURN_VALUE_ERROR             The State or the context is NULL.
  */
 PUMAS_API enum pumas_return pumas_context_transport(
     struct pumas_context * context, struct pumas_state * state,
     enum pumas_event * event, struct pumas_medium * media[2]);
 
 /**
- * Print a summary of the Physics configuration.
+ * Print a summary of the physics.
  *
- * @param physics       Handle for the Physics tables.
+ * @param physics       The physics tables.
  * @param stream        A stream where the summary will be formated to.
  * @param tabulation    The tabulation separator or `NULL`.
  * @param newline       The newline separator or `NULL`.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * The summary is JSON formated. It provides information on loaded materials as
- * well as some basic statistics. The *tabulation* and *newline* parameters
- * allow to control the output rendering.
- *
- * __Warnings__
- *
- * This function is **not** thread safe. A lock must be set to ensure proper
- * printout in multithreaded applications, if writing concurrently to a same
- * *stream*.
+ * The summary is JSON formated. It provides information on the physics settings
+ * as well as a summary of the tabulated materials.  The *tabulation* and
+ * *newline* parameters allow to control the output rendering. Empty strings
+ * are used if these arguments are `NULL`.
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initalised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The physics is not initalised.
  *
- *     PUMAS_RETURN_IO_ERROR                Couldn't write to *stream*.
+ *     PUMAS_RETURN_IO_ERROR                Could not write to *stream*.
  */
 PUMAS_API enum pumas_return pumas_physics_print(
     const struct pumas_physics * physics, FILE * stream,
@@ -980,21 +1076,22 @@ PUMAS_API enum pumas_return pumas_physics_print(
 PUMAS_API void pumas_version(int * major, int * minor);
 
 /**
- * Get info on the transported particle.
+ * Get information on the transported particle.
  *
- * @param physics       Handle for the Physics tables.
+ * @param physics       The physics tables.
  * @param particle      The type of the transported particle or `NULL`.
  * @param lifetime      The proper lifetime, in m/c, or `NULL`.
  * @param mass          The mass of the transported particle, in GeV, or `NULL`.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * Retrieve info on the transported particle. If not needed, an argument can
- * be set to `NULL`.
+ * This function allows to retrieve information on the transported particle.
+ *
+ * __Note__: not needed arguments can be set to `NULL`.
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_PHYSICS_ERROR    The Physics is not initalised.
+ *     PUMAS_RETURN_PHYSICS_ERROR    The physics is not initalised.
  */
 PUMAS_API enum pumas_return pumas_physics_particle(
     const struct pumas_physics * physics, enum pumas_particle * particle,
@@ -1006,8 +1103,9 @@ PUMAS_API enum pumas_return pumas_physics_particle(
  * @param function    The library function.
  * @return a static string.
  *
- * This function is meant for verbosing when handling errors. It is thread
- * safe.
+ * This function is meant for verbosing when handling errors.
+ *
+ * __Note__: this function **is** thread safe.
  */
 PUMAS_API const char * pumas_error_function(pumas_function_t * function);
 
@@ -1018,18 +1116,18 @@ PUMAS_API const char * pumas_error_function(pumas_function_t * function);
  *
  * Set the error handler callback for PUMAS library functions.  The user can
  * override the PUMAS default error handler by providing its own error handler.
- * If *handler* is set to `NULL` error callbacks are disabled.
+ * If *handler* is set to `NULL` then error callbacks are disabled.
  *
- * __Warnings__
- *
- * This function is **not** thread safe.
+ * __Warning__: this function is **not** thread safe.
  */
 PUMAS_API void pumas_error_handler_set(pumas_handler_cb * handler);
 
 /**
- * Get the current error handler. By default PUMAS is configured to printout to
- * stderr whenever an error occurs and to exit back to the OS. See
- * `pumas_error_handler_set` in order to override this behaviour.
+ * Get the current error handler.
+ *
+ * By default PUMAS is configured to printout to stderr whenever an error occurs
+ * and to exit back to the OS. See `pumas_error_handler_set` in order to
+ * override this behaviour.
  *
  * @return The current error handler or `NULL` if none.
  */
@@ -1040,15 +1138,16 @@ PUMAS_API pumas_handler_cb * pumas_error_handler_get(void);
  *
  * @param enable   A flag for enabling or disabling error catch.
  *
- * Enable or disable the catch of the next PUMAS library error. While enabled
- * library errors will **not** trigger the error handler. Note however that only
- * the first occuring error will be caught. Call `pumas_error_raise` to enable
- * the error handler again and raise any caught error.
+ * Enable or disable the catch of the next PUMAS library error. If catching is
+ * enabled then library errors do **not** trigger the error handler. Call
+ * `pumas_error_raise` to enable the error handler again and raise any caught
+ * error.
  *
- * __Warnings__
+ * __Note__: only the first error occuring is recorded. Subsequent error(s) are
+ * muted but not recorded.
  *
- * This function is not thread safe. Only a single error stream can be handled
- * at a time.
+ * __Warning__: this function is **not** thread safe. Only a single error stream
+ * can be handled at a time.
  */
 PUMAS_API void pumas_error_catch(int enable);
 
@@ -1059,45 +1158,48 @@ PUMAS_API void pumas_error_catch(int enable);
  * an error code is returned as detailed below.
  *
  * Raise any caught error. Error catching must have been enabled first with
- * `pumas_error_catch` otherwise a specfic `PUMAS_RETURN_RAISE_ERROR` is
- * returned. Note that calling this function disables further error's catching.
+ * `pumas_error_catch` otherwise a `PUMAS_RETURN_RAISE_ERROR` is returned.
  *
- * __Warnings__
+ * __Note__: calling this function disables further error's catching.
  *
- * This function is not thread safe. Only a single error stream can be handled
- * at a time.
+ * __Warning__: this function is **not** thread safe. Only a single error stream
+ * can be handled at a time.
  *
  * __Error codes__
  *
  *     PUMAS_RETURN_RAISE_ERROR    Error catching hasn't been enabled.
  *
- *     PUMAS_RETURN_*              Any caught error's code.
+ *     PUMAS_RETURN_*              Any caught error code.
  */
 PUMAS_API enum pumas_return pumas_error_raise(void);
 
 /**
  * Create a simulation context.
  *
- * @param context         A handle for the simulation context.
- * @param physics         Handle for the physics tables.
- * @param extra_memory    The size of the user extra memory, if any is claimed.
+ * @param context         The new simulation context.
+ * @param physics         A physics instance.
+ * @param extra_memory    Size of the user memory or 0 if none is requested.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * Create a new simulation context with a default configuration. Call
- * `pumas_context_destroy` in order to release all the memory allocated for
- * the context. Note that Physics tables must have been initialised / loaded
- * first.
+ * Create a new simulation *context* initialised with a default configuration.
+ * Call `pumas_context_destroy` in order to release the memory allocated for the
+ * context. 
  *
- * If `extra_memory` is strictly positive the context will be extended by
- * `extra_memory` bytes for user usage. This memory can then be accessed with
- * the `user_data` field of the returned `pumas_context` structure.
+ * **Note**: the simulation context is bound to the provided *physics* instance.
+ *
+ * If *extra_memory* is strictly positive then the context memory is extended by
+ * *extra_memory* bytes reserved to the user. This memory is accessed with the
+ * *user_data* field of the instanciated context.
+ *
+ * See the `pumas_context` structure for more detailed usage of a simulation
+ * context.
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_MEMORY_ERROR            Couldn't allocate memory.
+ *     PUMAS_RETURN_MEMORY_ERROR            Could not allocate memory.
  *
- *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_context_create(
     struct pumas_context ** context, const struct pumas_physics * physics,
@@ -1106,17 +1208,21 @@ PUMAS_API enum pumas_return pumas_context_create(
 /**
  * Set the random seed of a simulation context.
  *
- * @param context         A handle for the simulation context.
+ * @param context         The simulation context.
  * @param seed            The random seed or `NULL`.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * Set the seed for the default pseudo random engine. If `NULL` is provided
- * the seed is initialised from the OS, e.g. using `/dev/urandom` on UNIX.
+ * Set the random seed of the simulation *context* and reset the random state
+ * accordingly.  If `NULL` is provided then the seed is randomly initialised
+ * from the OS, e.g.  using `/dev/urandom` on UNIX.
+ *
+ * **Note**: each simulation context manages its own random stream.  See the
+ * `pumas_context` documentation for more detailed usage.
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_MEMORY_ERROR            Couldn't allocate memory.
+ *     PUMAS_RETURN_MEMORY_ERROR            Could not allocate memory.
  *
  *     PUMAS_RETURN_PATH_ERROR              The OS random stream could not be
  * read.
@@ -1127,18 +1233,21 @@ PUMAS_API enum pumas_return pumas_context_random_seed_set(
 /**
  * Get the random seed of a simulation context.
  *
- * @param context         A handle for the simulation context.
- * @param seed            The random seed.
+ * @param context         The simulation context.
+ * @param seed            The corresponding random seed.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * Get the seed for the default pseudo random engine. Note that if no seed
- * was explicitly provided, e.g. using `pumas_context_random_seed_set`, then
- * the seed is initialised from the OS, e.g. using `/dev/urandom` on UNIX.
+ * Get the random seed of the simulation context. If the seed has not been
+ * previously set with `pumas_context_random_seed_set` then it is randomly
+ * initialised from the OS, e.g. using `/dev/urandom` on UNIX.
+ *
+ * **Note**: each simulation context manages its own random stream.  See the
+ * `pumas_context` documentation for more detailed usage.
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_MEMORY_ERROR            Couldn't allocate memory.
+ *     PUMAS_RETURN_MEMORY_ERROR            Could not allocate memory.
  *
  *     PUMAS_RETURN_PATH_ERROR              The OS random stream could not be
  * read.
@@ -1147,50 +1256,49 @@ PUMAS_API enum pumas_return pumas_context_random_seed_get(
     struct pumas_context * context, unsigned long * seed);
 
 /**
- * Load the random engine state from a stream.
+ * Load the random state of a simulation context.
  *
- * @param context         A handle for the simulation context.
+ * @param context         The simulation context.
  * @param stream          The stream to load from.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * Restore the context default random engine state from a stream. See the
- * `pumas_context_random_dump` function for dumping the random engine state
- * to a file.
+ * Restore the random state of the simulation context from a *stream*.  See the
+ * `pumas_context_random_dump` function for the converse, i.e. dumping the
+ * random engine state to a file.
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_FORMAT_ERROR            The binary dump is not compatible
- * with the current version.
+ *     PUMAS_RETURN_FORMAT_ERROR            The dump version is invalid.
  *
- *     PUMAS_RETURN_MEMORY_ERROR            Couldn't allocate memory.
+ *     PUMAS_RETURN_MEMORY_ERROR            Could not allocate memory.
  *
- *     PUMAS_RETURN_IO_ERROR                Couldn't read from the stream.
+ *     PUMAS_RETURN_IO_ERROR                Could not read from the stream.
  *
- *     PUMAS_RETURN_PATH_ERROR              The input stream in invalid (null).
+ *     PUMAS_RETURN_PATH_ERROR              The input stream is invalid (NULL).
  */
 PUMAS_API enum pumas_return pumas_context_random_load(
     struct pumas_context * context, FILE * stream);
 
 /**
- * Dump the random engine state to a stream.
+ * Dump the random state of a simulation context.
  *
- * @param context         A handle for the simulation context.
+ * @param context         The simulation context.
  * @param stream          The stream to dump to.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * Save the context default random engine state to a stream. See the
- * `pumas_context_random_load` function for loading back the random engine
- * state from a file.
+ * Save the random state of the simulation context to a *stream*. See the
+ * `pumas_context_random_load` function for the converse, i.e. loading back the
+ * random state from a stream.
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_MEMORY_ERROR            Couldn't allocate memory.
+ *     PUMAS_RETURN_MEMORY_ERROR            Could not allocate memory.
  *
- *     PUMAS_RETURN_IO_ERROR                Couldn't write to the stream.
+ *     PUMAS_RETURN_IO_ERROR                Could not write to the stream.
  *
- *     PUMAS_RETURN_PATH_ERROR              The input stream in invalid (null).*
+ *     PUMAS_RETURN_PATH_ERROR              The input stream is invalid (NULL).
  */
 PUMAS_API enum pumas_return pumas_context_random_dump(
     struct pumas_context * context, FILE * stream);
@@ -1200,29 +1308,29 @@ PUMAS_API enum pumas_return pumas_context_random_dump(
  *
  * @param context The simulation context.
  *
- * Call on a previously created context with `pumas_context_create` in order to
- * release the corresponding dynamicaly allocated memory. On return `context`
- * is set to `NULL`.
+ * Destroy a simulation *context* previously created with
+ * `pumas_context_create`.  The corresponding allocated memory is released.
+ *
+ * **Note**: on return the *context* pointer is set to `NULL`.
  */
 PUMAS_API void pumas_context_destroy(struct pumas_context ** context);
 
 /**
- * Get the Physics used by a simulation context.
+ * Get the physics used by a simulation context.
  *
  * @param context The simulation context.
- * @return A handle for the Physics tables or `NULL`.
+ * @return The corresponding physics or `NULL`.
  *
- * The set of Physics tables used by a `pumas_context` cannot be changed.
- * Instead a new context must be created if different Physics is needed.
+ * The physics used by a simulation context cannot be changed. If an alternative
+ * physics is needed then a new `pumas_context` object must be created.
  */
 PUMAS_API const struct pumas_physics * pumas_context_physics_get(
     const struct pumas_context * context);
 
 /**
- * Get the total grammage range that a particle can travel assuming continuous
- * energy loss.
+ * The CSDA range.
  *
- * @param physics     Handle for the Physics tables.
+ * @param physics     The physics tables.
  * @param mode        The energy loss mode.
  * @param material    The material index.
  * @param energy      The initial kinetic energy, in GeV.
@@ -1230,25 +1338,31 @@ PUMAS_API const struct pumas_physics * pumas_context_physics_get(
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * The energy loss mode must be one of `PUMAS_MODE_CSDA` or `PUMAS_MODE_MIXED`.
- * For a uniform medium, divide the return value by the density in order to get
- * the corresponding total travelled distance.
+ * This function computes the CSDA range of the projectile in a given target
+ * *material*. See the `pumas_physics_property_kinetic_energy` for the converse,
+ * i.e. getting the minimum energy for a given range.
+ *
+ * __Note__: the energy loss mode must be one of `PUMAS_MODE_CSDA` or
+ * `PUMAS_MODE_MIXED`.
+ *
+ * Divide the *range* value by the target density in order to get the
+ * range in unit of distance.
  *
  * __Error codes__
  *
  *     PUMAS_RETURN_INDEX_ERROR             The mode or material index is
  * not valid.
  *
- *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_range(
     const struct pumas_physics * physics, enum pumas_mode mode,
     int material, double energy, double * range);
 
 /**
- * Get the normalised total proper time spent assuming continuous energy loss.
+ * The total proper time for continuous energy loss.
  *
- * @param physics     Handle for the Physics tables.
+ * @param physics     The physics tables.
  * @param mode        The energy loss mode.
  * @param material    The material index.
  * @param energy      The initial kinetic energy, in GeV.
@@ -1256,8 +1370,13 @@ PUMAS_API enum pumas_return pumas_physics_property_range(
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * The energy loss mode must be one of `PUMAS_MODE_CSDA` or `PUMAS_MODE_MIXED`.
- * Divide the returned value by the medium density times *c* in order to get the
+ * This function computes the ellapsed proper time of a particle over
+ * its total range. Continuous energy loss is assumed.
+ *
+ * __Note__: the energy loss mode must be one of `PUMAS_MODE_CSDA` or
+ * `PUMAS_MODE_MIXED`.
+ *
+ * Divide the *time* value by the target density times *c* in order to get the
  * proper time in unit of time.
  *
  * __Error codes__
@@ -1265,41 +1384,43 @@ PUMAS_API enum pumas_return pumas_physics_property_range(
  *     PUMAS_RETURN_INDEX_ERROR             The mode or material index is
  * not valid.
  *
- *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_proper_time(
     const struct pumas_physics * physics, enum pumas_mode mode,
     int material, double energy, double * time);
 
 /**
- * Get the normalised rotation angle due to a uniform magnetic field for
- * a CSDA particle.
+ * Magnetic rotation angle for a uniform magnetic field.
  *
- * @param physics     Handle for the Physics tables.
+ * @param physics     The physics tables.
  * @param material    The material index.
  * @param energy      The initial kinetic energy, in GeV.
  * @param angle       The normalised rotation angle in rad kg/m^(3)/T.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * Multiply the returned value by the transverse magnetic field amplitude and
- * divide by the density in order to get the rotation angle in radian.
+ * This function computes the magnetic rotation angle of a particle over
+ * its total range. A uniform magnetic field is assumed with CSDA energy loss.
+ *
+ * Multiply the returned value by the amplitude of the transverse magnetic field
+ * and divide by the target density in order to get the rotation angle in
+ * radian.
  *
  * __Error codes__
  *
  *     PUMAS_RETURN_INDEX_ERROR             The material index is not valid.
  *
- *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_magnetic_rotation(
     const struct pumas_physics * physics, int material, double energy,
     double * angle);
 
 /**
- * Get the minimum kinetic energy required for travelling over a given
- * grammage range, assuming continuous energy loss.
+ * Kinetic energy for travelling over a given CSDA range.
  *
- * @param physics     Handle for the Physics tables.
+ * @param physics     The physics tables.
  * @param mode        The energy loss mode
  * @param material    The material index.
  * @param range       The requested grammage range, in kg/m^(2).
@@ -1307,23 +1428,28 @@ PUMAS_API enum pumas_return pumas_physics_property_magnetic_rotation(
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- *  The energy loss mode must be one of `PUMAS_MODE_CSDA` or `PUMAS_MODE_MIXED`.
+ * This is the inverse of the `pumas_physics_property_range` function. It
+ * computes the minimum kinetic energy needed in order to cross a given range of
+ * material, assuming deterministic (CSDA) energy loss.
+ *
+ * __Note__: the energy loss mode must be one of `PUMAS_MODE_CSDA` or
+ * `PUMAS_MODE_MIXED`.
  *
  * __Error codes__
  *
  *     PUMAS_RETURN_INDEX_ERROR             The mode or material index is
  * not valid.
  *
- *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_kinetic_energy(
     const struct pumas_physics * physics, enum pumas_mode mode,
     int material, double range, double * energy);
 
 /**
- * Get the stopping power per unit weight of material.
+ * Stopping power per unit mass.
  *
- * @param physics     Handle for the Physics tables.
+ * @param physics     The physics tables.
  * @param mode        The energy loss mode
  * @param material    The material index.
  * @param energy      The kinetic energy, in GeV.
@@ -1331,92 +1457,118 @@ PUMAS_API enum pumas_return pumas_physics_property_kinetic_energy(
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * The energy loss mode must be one of `PUMAS_MODE_CSDA` or `PUMAS_MODE_MIXED`.
+ * This function computes the stopping power in a given *material*. See the
+ * `pumas_property_range` function in order to get the corresponding CSDA range.
+ *
+ * __Note__: the energy loss mode must be one of `PUMAS_MODE_CSDA` or
+ * `PUMAS_MODE_MIXED`. In the latter case the stopping power is restricted to
+ * soft collisions.
+ *
+ * The stopping power, *dedx*, is given per unit mass. Multiply by the target
+ * density in order to get the stopping power per unit length.
  *
  * __Error codes__
  *
  *     PUMAS_RETURN_INDEX_ERROR             The mode or material index is
  * not valid.
  *
- *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_stopping_power(
     const struct pumas_physics * physics, enum pumas_mode mode,
     int material, double energy, double * dedx);
 
 /**
- * Get the energy loss straggling per unit weight of material.
+ * Energy loss straggling parameter.
  *
- * @param physics     Handle for the Physics tables.
+ * @param physics     The physics tables.
  * @param material    The material index.
  * @param energy      The kinetic energy, in GeV.
- * @param straggling  The computed energy loss straggling in GeV^2/(kg/m^(2)).
+ * @param straggling  The computed energy loss straggling in GeV^(2)/(kg/m^(2)).
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * **Note** : the energy loss straggling is restricted to electronic collisions.
+ * The energy loss straggling parameter, &Omega;<sub>s</sub>. This parameter
+ * quantifies the fluctuations of the soft electronic energy loss in straggled
+ * mode (`PUMAS_MODE_STRAGGLED`).
+ *
+ * **Note** : the energy loss straggling is applied to electronic collisions
+ * only.
+ *
+ * The straggling per unit mass of the target is returned, in
+ * GeV^(2)/(kg/m^(2)). Multiply by the target density in order to get the
+ * straggling in unit of Gev^(2).
  *
  * __Error codes__
  *
  *     PUMAS_RETURN_INDEX_ERROR             The material index is not valid.
  *
- *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_energy_straggling(
     const struct pumas_physics * physics, int material, double energy,
-    double * dedx);
+    double * straggling);
 
 /**
- * Get the cutoff angle for hard elastic events.
+ * Cutoff angle for hard elastic collisions.
  *
- * @param physics     Handle for the Physics tables.
+ * @param physics     The physics tables.
  * @param material    The material index.
  * @param energy      The kinetic energy, in GeV.
  * @param angle       The corresponding angle, in rad.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * The cutoff angle is given in the center of mass frame of the collision.
+ * The cutoff angle is set from the physics *elastic\_ratio* following
+ * [Fernandez-Varea et al.
+ * (1993)](https://doi.org/10.1016/0168-583X(93)95827-R). It is computed at the
+ * physics creation and cannot be modified afterwards.
+ *
+ * __Note__: the returned cutoff angle is defined in the center of mass frame of
+ * the collision.
  *
  * __Error codes__
  *
  *     PUMAS_RETURN_INDEX_ERROR             The material index is not valid.
  *
- *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_elastic_cutoff_angle(
     const struct pumas_physics * physics, int material, double energy,
     double * angle);
 
 /**
- * Get the mean free path for hard elastic processes.
+ * Mean free path for hard elastic collisions.
  *
- * @param physics     Handle for the Physics tables.
+ * @param physics     The physics tables.
  * @param material    The material index.
  * @param energy      The kinetic energy, in GeV.
  * @param length      The corresponding length, in kg/m^(2).
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * The interaction length is restricted to hard elastic events with an angle
- * larger than an energy dependent cutoff value, as returned by
- * `pumas_physics_property_elastic_cutoff_angle`. Soft events are included in
- * the multiple scattering (see `pumas_physics_property_transport_path`).
+ * The mean free path is restricted to hard elastic collisions with an angle
+ * larger than a cutoff value, as returned by
+ * `pumas_physics_property_elastic_cutoff_angle`. Soft collisions are included
+ * in the multiple scattering (see `pumas_physics_property_transport_path`).
+ *
+ * The path per unit mass of the target is returned, in kg/m^(2). Divide by
+ * the target density in order to get the path in unit of distance.
  *
  * __Error codes__
  *
  *     PUMAS_RETURN_INDEX_ERROR             The material index is not valid.
  *
- *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_elastic_path(
     const struct pumas_physics * physics, int material, double energy,
     double * length);
 
 /**
- * Get the transport mean free path for soft events.
+ * Transport mean free path for soft collisions.
  *
- * @param physics     Handle for the Physics tables.
+ * @param physics     The physics tables.
  * @param mode        The energy loss mode.
  * @param material    The material index.
  * @param energy      The kinetic energy, in GeV.
@@ -1428,40 +1580,50 @@ PUMAS_API enum pumas_return pumas_physics_property_elastic_path(
  * polar multiple scattering angle's as &theta;^(2) = X/(2&lambda;), with X the
  * column depth.
  *
+ * __Note__: the transport path includes all soft collisions, not only elastic
+ * ones.
+ *
+ * The path per unit mass of the target is returned, in kg/m^(2). Divide by
+ * the target density in order to get the path in unit of distance.
+ *
  * __Error codes__
  *
  *     PUMAS_RETURN_INDEX_ERROR             The material index is not valid.
  *
- *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_transport_path(
     const struct pumas_physics * physics, enum pumas_mode mode, int material,
     double energy, double * path);
 
 /**
- * Get the macroscopic restricted cross-section for inelastic and radiative
- * processes.
+ * Cross-section for hard collisions.
  *
- * @param physics          Handle for the Physics tables.
+ * @param physics          The physics tables.
  * @param material         The material index.
  * @param energy           The kinetic energy, in GeV.
  * @param cross_section    The computed cross-section value.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * The returned cross-section is restricted to single events with fractionnal
- * energy loss larger than the physics *cutoff*. Events with smaller energy loss
- * are included in the continuous energy loss given by
+ * The returned cross-section is restricted hard collisions with fractionnal
+ * energy loss larger than the physics *cutoff*. Collisions with smaller energy
+ * loss are included in the continuous energy loss given by
  * `pumas_physics_property_stopping_power`.
  *
- * The returned value is in unit m^(2)/kg. Multiply by the density in order to
- * get the inverse of the interaction length in unit of distance.
+ * __Note__: hard elastic collisions are not included in the cross-section but
+ * in the elastic mean free path given by the 
+ * `pumas_physics_property_elastic_path` function.
+ *
+ * The macroscopic cross-section is returned in unit m^(2)/kg. Multiply by the
+ * target density in order to get the inverse of the interaction length in unit
+ * of distance.
  *
  * __Error codes__
  *
  *     PUMAS_RETURN_INDEX_ERROR             The material index is not valid.
  *
- *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_property_cross_section(
     const struct pumas_physics * physics, int material, double energy,
@@ -1470,8 +1632,8 @@ PUMAS_API enum pumas_return pumas_physics_property_cross_section(
 /**
  * The total number of atomic elements.
  *
- * @param physics    Handle for the Physics tables.
- * @return The total number of known atomic elements.
+ * @param physics    The physics tables.
+ * @return The total number of atomic elements for the physics.
  */
 PUMAS_API int pumas_physics_element_length(
     const struct pumas_physics * physics);
@@ -1479,7 +1641,7 @@ PUMAS_API int pumas_physics_element_length(
 /**
  * Get the properties of an atomic element.
  *
- * @param physics    Handle for the Physics tables.
+ * @param physics    The physics tables.
  * @param index      The element index.
  * @param Z          The element charge number.
  * @param A          The element mass number in g/mol.
@@ -1487,14 +1649,14 @@ PUMAS_API int pumas_physics_element_length(
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * Get the properties of an atomic element. `Z`, `A` or `I` can be `NULL`
- * in which case the corresponding property is not retrieved.
+ * Get the properties of an atomic element. The *Z*, *A* or *I* pointers can be
+ * `NULL` in which case the corresponding property is not retrieved.
  *
  * __Error codes__
  *
  *     PUMAS_RETURN_INDEX_ERROR               The provided index is not valid.
  *
- *     PUMAS_RETURN_PHYSICS_ERROR             The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR             The physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_element_properties(
     const struct pumas_physics * physics, int index, double * Z, double * A,
@@ -1503,7 +1665,7 @@ PUMAS_API enum pumas_return pumas_physics_element_properties(
 /**
  * The name of an atomic element given its index.
  *
- * @param physics    Handle for the Physics tables.
+ * @param physics    The physics tables.
  * @param index      The atomic element index.
  * @param element    The corresponding element name.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
@@ -1511,11 +1673,14 @@ PUMAS_API enum pumas_return pumas_physics_element_properties(
  *
  * The atomic element name is defined in the Material Description File (MDF).
  *
+ * See the `pumas_physics_element_index` for the converse function, i.e. getting
+ * an element index given its name.
+ *
  * __Error codes__
  *
  *     PUMAS_RETURN_INDEX_ERROR               The provided index is not valid.
  *
- *     PUMAS_RETURN_PHYSICS_ERROR             The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR             The physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_element_name(
     const struct pumas_physics * physics, int index, const char ** element);
@@ -1523,18 +1688,21 @@ PUMAS_API enum pumas_return pumas_physics_element_name(
 /**
  * The index of an atomic element given its name.
  *
- * @param physics     Handle for the Physics tables.
+ * @param physics     The physics tables.
  * @param element     The element name.
  * @param index       The corresponding index.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * The element index corresponds to the order of declaration specified in the
- * Material Description File (MDF).
+ * The element index is given by its order of appeareance in the Material
+ * Description File (MDF).
+ *
+ * See the `pumas_physics_element_name` for the converse function, i.e. getting
+ * an element name given its index.
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_PHYSICS_ERROR             The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR             The physics is not initialised.
  *
  *     PUMAS_RETURN_UNKNOWN_MATERIAL          The material is not defined.
  */
@@ -1544,7 +1712,7 @@ PUMAS_API enum pumas_return pumas_physics_element_index(
 /**
  * The name of a material given its index.
  *
- * @param physics    Handle for the Physics tables.
+ * @param physics    The physics tables.
  * @param index      The material index.
  * @param material   The corresponding material name.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
@@ -1552,11 +1720,17 @@ PUMAS_API enum pumas_return pumas_physics_element_index(
  *
  * The material name is defined in the Material Description File (MDF).
  *
+ * __Note__: this function can be used for both base materials and composite
+ * ones.
+ *
+ * See the `pumas_physics_material_index` for the converse function, i.e.
+ * getting a material index given its name.
+ *
  * __Error codes__
  *
  *     PUMAS_RETURN_INDEX_ERROR               The provided index is not valid.
  *
- *     PUMAS_RETURN_PHYSICS_ERROR             The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR             The physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_material_name(
     const struct pumas_physics * physics, int index, const char ** material);
@@ -1564,18 +1738,24 @@ PUMAS_API enum pumas_return pumas_physics_material_name(
 /**
  * The index of a material given its name.
  *
- * @param physics     Handle for the Physics tables.
+ * @param physics     The physics tables.
  * @param material    The material name.
  * @param index       The corresponding index.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * The material index corresponds to the order of declaration specified in the
- * Material Description File (MDF).
+ * The material index is given by its order of appeareance in the Material
+ * Description File (MDF).
+ *
+ * __Note__: this function can be used for both base materials and composite
+ * ones.
+ *
+ * See the `pumas_physics_material_name` for the converse function, i.e. getting
+ * a material name given its index.
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_PHYSICS_ERROR             The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR             The physics is not initialised.
  *
  *     PUMAS_RETURN_UNKNOWN_MATERIAL          The material is not defined.
  */
@@ -1585,7 +1765,10 @@ PUMAS_API enum pumas_return pumas_physics_material_index(
 /**
  * The total number of materials.
  *
- * @param physics    Handle for the Physics tables.
+ * __Note__: this function returns the sum of the numbers of base materials and
+ * of composite ones.
+ *
+ * @param physics    The physics tables.
  * @return The total number of known materials, base plus composite.
  */
 PUMAS_API int pumas_physics_material_length(
@@ -1594,7 +1777,7 @@ PUMAS_API int pumas_physics_material_length(
 /**
  * Get the properties of a material.
  *
- * @param physics           Handle for the Physics tables.
+ * @param physics           The physics tables.
  * @param index             The material index.
  * @param length            The number of atomic elements.
  * @param density           The material reference density in kg/m^(3).
@@ -1612,7 +1795,7 @@ PUMAS_API int pumas_physics_material_length(
  *
  *     PUMAS_RETURN_INDEX_ERROR               The provided index is not valid.
  *
- *     PUMAS_RETURN_PHYSICS_ERROR             The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR             The physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_material_properties(
     const struct pumas_physics * physics, int index, int * length,
@@ -1621,7 +1804,7 @@ PUMAS_API enum pumas_return pumas_physics_material_properties(
 /**
  * The number of composite materials.
  *
- * @param physics    Handle for the Physics tables.
+ * @param physics    The physics tables.
  * @return The number of composite materials.
  */
 PUMAS_API int pumas_physics_composite_length(
@@ -1630,25 +1813,25 @@ PUMAS_API int pumas_physics_composite_length(
 /**
  * Update the properties of a composite material.
  *
- * @param physics    Handle for the Physics tables.
+ * @param physics    The physics tables.
  * @param material   The composite material index.
- * @param fractions  The vector of mass fractions of the base materials
- *                   components.
+ * @param fractions  The mass fractions of the constitutive base materials.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * Update the composition of a composite material. **Note** that negative
- * fraction values are treated as zero.
+ * Update the composition of a composite material, i.e the mass fractions of its
+ * components.
+ *
+ * **Note**: the provided mass fraction values are normalised to one by PUMAS.
+ * Thus, they can be given e.g. in percent. Negative values are treated as zero.
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_VALUE_ERROR               The *fractions* pointer is `NULL`.
+ *     PUMAS_RETURN_VALUE_ERROR               The fractions pointer is NULL.
  *
  *     PUMAS_RETURN_INDEX_ERROR               The provided index is not valid.
  *
- *     PUMAS_RETURN_PHYSICS_ERROR             The Physics is not initialised.
- *
- *     PUMAS_RETURN_MEMORY_ERROR              Couldn't allocate memory.
+ *     PUMAS_RETURN_PHYSICS_ERROR             The physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_composite_update(
     struct pumas_physics * physics, int material, const double * fractions);
@@ -1656,46 +1839,53 @@ PUMAS_API enum pumas_return pumas_physics_composite_update(
 /**
  * Get the properties of a composite material.
  *
- * @param physics    Handle for the Physics tables.
+ * @param physics    The physics tables.
  * @param index      The composite material index.
- * @param length     The number of base material components of the composite.
- * @param components The vector of indices of the base materials.
- * @param fractions  The vector of mass fractions of the base materials
- *                   components.
+ * @param length     The number of base materials componsing the composite.
+ * @param components The indices of the base materials.
+ * @param fractions  The mass fractions of the constitutive base materials.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * Get the properties of a composite material. `length`, `components` or
- * `fractions` can be `NULL` in which case the corresponding property is not
- * retrieved.
+ * Get the properties of a composite material. The *length*, *components* or
+ * *fractions* pointers can be `NULL` in which case the corresponding property
+ * is not retrieved.
  *
  * __Error codes__
  *
  *     PUMAS_RETURN_INDEX_ERROR               The provided index is not valid.
  *
- *     PUMAS_RETURN_PHYSICS_ERROR             The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR             The physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_composite_properties(
     const struct pumas_physics * physics, int index, int * length,
     int * components, double * fractions);
 
 /**
- * Accessor to the tabulated Physics data.
+ * Get tabulated physics values.
  *
- * @param physics     Handle for the Physics tables.
+ * @param physics     The physics tables.
  * @param property    The column index of a property of interest.
- * @param mode        The energy loss mode.
+ * @param mode        The energy loss mode, i.e. `PUMAS_MODE_CSDA` or
+ *                      `PUMAS_MODE_MIXED`.
  * @param material    The material index.
- * @param row         The kinetic energy value row index in the table.
+ * @param row         The row index in the table.
  * @param value       The corresponding table value.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * For a given `material` and energy loss `mode`, this function returns the
- * tabulated data corresponding to the given `property` column and `row` index.
- * Each row of the table corresponds to a different kinetic energy value.
+ * This function returns the tabulated value for a given *property* and *row*
+ * index. See `pumas_property` for the list of tabulated physics properties. The
+ * rows of the table map to different kinetic energy values specified when
+ * creating the `pumas_physics` object.  Those can be retrieved with the
+ * `PUMAS_PROPERTY_KINETIC_ENERGY` property. The `pumas_physics_table_length`
+ * returns the number of tabulated kinetic energy values.
  *
- * **Note** that negative row index can be provided in which case it refers to
+ * Except for the kinetic energy a *material* must be selected. In addition,
+ * the energy loss *mode* must be specified for related properties, e.g. for
+ * the stopping power (`PUMAS_PROPERTY_STOPPING_POWER`).
+ *
+ * __Note__: a negative row index can be provided in which case it refers to
  * the end of the table. E.g. `row = -1` is the last entry and `row = -2` is
  * the before last one.
  *
@@ -1704,24 +1894,28 @@ PUMAS_API enum pumas_return pumas_physics_composite_properties(
  *     PUMAS_RETURN_INDEX_ERROR             Some input index is not valid
  * (property, material or mode).
  *
- *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_table_value(
     const struct pumas_physics * physics, enum pumas_property property,
     enum pumas_mode mode, int material, int row, double * value);
 
 /**
- * The depth, i.e. number of kinetic energy values, of the tabulated data.
+ * The number of rows in physics tabulations.
  *
- * @param physics    Handle for the Physics tables.
- * @return The number of rows in data tables.
+ * @param physics    The physics tables.
+ * @return The number of rows.
+ *
+ * Physics properties are tabulated as function of the projectile kinetic
+ * energy. This function returns the number of tabulated kinetic energies, i.e.
+ * the number of rows in physics tables.
  */
 PUMAS_API int pumas_physics_table_length(const struct pumas_physics * physics);
 
 /**
- * Compute the table row index for a given property and its value.
+ * Compute the table row index for a given property and value.
  *
- * @param physics     Handle for the Physics tables.
+ * @param physics     The physics tables.
  * @param property    The column index of the property.
  * @param mode        The energy loss mode.
  * @param material    The material index.
@@ -1730,20 +1924,23 @@ PUMAS_API int pumas_physics_table_length(const struct pumas_physics * physics);
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * In the case of an out of bounds value the closest index value is provided
- * and `PUMAS_RETURN_VALUE_ERROR` is returned.
+ * This function is the converse of the `pumas_physics_property_value`. It
+ * returns the row index corresponding to a given property and value.
  *
- * **Note** that only monotone properties are supported, i.e. where there is
- * at most one solution. Those are: `PUMAS_PROPERTY_GRAMMAGE`,
- * `PUMAS_PROPERTY_KINETIC_ENERGY`, `PUMAS_PROPERTY_MAGNETIC_ROTATION` and
- * `PUMAS_PROPERTY_PROPER_TIME`.
+ * __Warning__: in the case of an out of bounds value the closest index value is
+ * provided and `PUMAS_RETURN_VALUE_ERROR` is returned.
+ *
+ * __Note__: only monotone properties are supported, that is when there is at
+ * most one solution for the inverse. Supported properties are:
+ * `PUMAS_PROPERTY_RANGE`, `PUMAS_PROPERTY_KINETIC_ENERGY`,
+ * `PUMAS_PROPERTY_MAGNETIC_ROTATION` and `PUMAS_PROPERTY_PROPER_TIME`.
  *
  * __Error codes__
  *
  *     PUMAS_RETURN_INDEX_ERROR             Some input index is not valid
  * (property, material or mode).
  *
- *     PUMAS_RETURN_PHYSICS_ERROR           The Physics is not initialised.
+ *     PUMAS_RETURN_PHYSICS_ERROR           The physics is not initialised.
  *
  *     PUMAS_RETURN_VALUE_ERROR             The provided value is out of the
  * table.
@@ -1753,23 +1950,25 @@ PUMAS_API enum pumas_return pumas_physics_table_index(
     enum pumas_mode mode, int material, double value, int * index);
 
 /**
- * Create a new particle recorder.
+ * Create a new Monte Carlo recorder.
  *
- * @param recorder     A handle for the recorder.
- * @param extra_memory The size of the user extra memory, if any is claimed.
+ * @param recorder     The Monte Carlo recorder.
+ * @param extra_memory The size of the user extra memory if any is claimed.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * Create a new Monte-Carlo particle recorder. The recorder starts configured
- * with a built-in in-memory frame recorder.
+ * Create a new *recorder* object for Monte Carlo steps. The recorder starts
+ * configured with a built-in algorithm recording all Monte Carlo steps as
+ * `pumas_frame` objects. See the `pumas_recorder` structure for configuration
+ * options and usage.
  *
- * If `extra_memory` is strictly positive the recorder will be extended by
- * `extra_memory` bytes for user usage. This memory can then be accessed with
- * the `user_data` field of the returned `pumas_recorder` structure.
+ * If *extra_memory* is strictly positive the recorder is extended by
+ * *extra_memory* bytes for user usage. This memory can then be accessed with
+ * the *user_data* field of the returned `pumas_recorder` structure.
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_MEMORY_ERROR    Couldn't allocate memory.
+ *     PUMAS_RETURN_MEMORY_ERROR    Could not allocate memory.
  */
 PUMAS_API enum pumas_return pumas_recorder_create(
     struct pumas_recorder ** recorder, int extra_memory);
@@ -1779,17 +1978,24 @@ PUMAS_API enum pumas_return pumas_recorder_create(
  *
  * @param recorder The recorder handle.
  *
- * Erase all recorded states from the recorder and reset the frame count.
+ * Erase all recorded `pumas_frame` instances from the recorder and reset the
+ * frame count.
  */
 PUMAS_API void pumas_recorder_clear(struct pumas_recorder * recorder);
 
 /**
- * Destroy a particle recorder releasing all associated memory.
+ * Destroy a Monte Carlo recorder.
  *
  * @param recorder The recorder handle.
  *
- * **Note** : The recorder is cleared before beeing destroyed. At return
- * `recorder` is set to `NULL`.
+ * Destroy a Monte Carlo recorder by releasing its associated memory, i.e. the
+ * recorder is cleared before beeing destroyed.
+ *
+ * __Note__: at return `recorder` is set to `NULL`.
+ *
+ * __Warning__: if a user supplied *record* callback is used instead of the
+ * built-in `pumas_frame` recorder then it is the user responsibility to
+ * properly manage any self allocated memory.
  */
 PUMAS_API void pumas_recorder_destroy(struct pumas_recorder ** recorder);
 
@@ -1812,9 +2018,7 @@ typedef void * pumas_allocate_cb (size_t size);
  * PUMAS. Passing a `NULL` value results in PUMAS using its default allocator,
  * i.e. `malloc`.
  *
- * __Warnings__
- *
- * This function is **not** thread safe.
+ * __Warning__: this function is **not** thread safe.
  */
 PUMAS_API void pumas_memory_allocator(pumas_allocate_cb * allocator);
 
@@ -1838,9 +2042,7 @@ typedef void * pumas_reallocate_cb (void * ptr, size_t size);
  * PUMAS. Passing a `NULL` value results in PUMAS using its default
  * reallocator, i.e. `realloc`.
  *
- * __Warnings__
- *
- * This function is **not** thread safe.
+ * __Warning__: this function is **not** thread safe.
  */
 PUMAS_API void pumas_memory_reallocator(pumas_reallocate_cb * reallocator);
 
@@ -1862,32 +2064,38 @@ typedef void pumas_deallocate_cb (void * ptr);
  * PUMAS. Passing a `NULL` value results in PUMAS using its default
  * deallocator, i.e. `free`.
  *
- * __Warnings__
- *
- * This function is **not** thread safe.
+ * __Warning__: this function is **not** thread safe.
  */
 PUMAS_API void pumas_memory_deallocator(pumas_deallocate_cb * deallocator);
 
 /**
- * Get the physics Differential Cross-Section (DCS) for a given process.
+ * Get the Differential Cross-Section (DCS) used by the physics.
  *
- * @param physics      Handle for the Physics tables or `NULL`.
- * @param process      The Physics process.
+ * @param physics      The physics tables.
+ * @param process      The physics process.
  * @param model        The corresponding DCS model.
  * @param dcs          The corresponding DCS function.
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
+ * This function provides the DCSs for radiative processes used by a *physics*
+ * instance. See the `pumas_dcs_get` function in order to get the DCS for a
+ * specific model of radiative process.
+ *
+ *
  * The *dcs* and *model* return values are optionnal. If a `NULL` pointer is
  * provided then the corresponding return value is not filled.
  *
- * **Note** : the DCS model is set at the physics creation and cannot be
- * changed afterwards.
+ * **Note**: the DCS models for radiative processes are set at the physics
+ * creation and cannot be changed afterwards. Elastic and electronic collisions
+ * use fixed models. The corresponding DCSs are given by the `pumas_elastic_dcs`
+ * and `pumas_electronic_dcs` functions.
  *
  * __Error codes__
  *
- *     PUMAS_RETURN_INDEX_ERROR             The *process* index is not a valid.
+ *     PUMAS_RETURN_INDEX_ERROR             The process index is not a valid.
  *
+ *     PUMAS_RETURN_PHYSICS_ERROR           The physics is not initialised.
  */
 PUMAS_API enum pumas_return pumas_physics_dcs(
     const struct pumas_physics * physics, enum pumas_process process,
@@ -1901,11 +2109,16 @@ PUMAS_API enum pumas_return pumas_physics_dcs(
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
+ * This function allows to retrieve the numeric values of physics constants used
+ * in PUMAS. See the `pumas_constant` enum for a list of available constants.
+ *
+ * __Note__: values are returned in PUMAS system of units, i.e. GeV, m, etc.
+ *
  * __Error codes__
  *
  *     PUMAS_RETURN_INDEX_ERROR             The index is not a valid.
  *
- *     PUMAS_RETURN_VALUE_ERROR             The value pointer is `NULL`.
+ *     PUMAS_RETURN_VALUE_ERROR             The value pointer is NULL.
  */
 PUMAS_API enum pumas_return pumas_constant(
     enum pumas_constant index, double * value);
@@ -1919,15 +2132,15 @@ PUMAS_API enum pumas_return pumas_constant(
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * This function allows to register a DCS model for a physics interaction. Note
- * the model name must not be already used otherwise an error is returned.  In
- * addition, only the following radiative models can be user defined:
- * Bremsstrahlung, e^(+)e^(-) pair production or photonuclear interactions.
- * Ionisation loss & elastic scattering are built-in.
+ * This function allows to register a DCS model for a radiative *process*. Note
+ * that the *model* name must not be already used otherwise an error is
+ * returned.  Only the following processes can be user defined: Bremsstrahlung,
+ * e^(+)e^(-) pair production and photonuclear interactions.  Electronic and
+ * elastic collisions are built-in.
  *
- * **Note**: it is not possible to un-register a model.
+ * __Note__: it is not possible to un-register a model.
  *
- * **Warnings** : this function is not thread safe.
+ * __Warning__: this function is **not** thread safe.
  *
  * __Error codes__
  *
@@ -1938,13 +2151,13 @@ PUMAS_API enum pumas_return pumas_constant(
  *
  *     PUMAS_RETURN_MODEL_ERROR             The model name is already used.
  *
- *     PUMAS_RETURN_VALUE_ERROR             A `NULL` model or dcs was provided.
+ *     PUMAS_RETURN_VALUE_ERROR             A NULL model or dcs was provided.
  */
 PUMAS_API enum pumas_return pumas_dcs_register(
     enum pumas_process process, const char * model, pumas_dcs_t * dcs);
 
 /**
- * Get the Differential Cross Section (DCS) for a given model.
+ * Differential Cross Section (DCS) for a given model.
  *
  * @param process   The physics process index.
  * @param model     The model name.
@@ -1952,12 +2165,12 @@ PUMAS_API enum pumas_return pumas_dcs_register(
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * This function allows to retrieve the DCS for a given physics process and
- * model. See the `struct pumas_physics_settings` for a list of models available
- * by default. Extra models can be registered with the `pumas_dcs_register`
- * function.
+ * This function allows to retrieve the DCS for a given physics *process* and
+ * *model*. See the `pumas_physics_settings` structure for a list of models
+ * available by default. Extra models can be registered with the
+ * `pumas_dcs_register` function.
  *
- * **Warnings** : this function is not thread safe.
+ * __Warning__: this function is **not** thread safe.
  *
  * __Error codes__
  *
@@ -1969,18 +2182,19 @@ PUMAS_API enum pumas_return pumas_dcs_get(
     enum pumas_process process, const char * model, pumas_dcs_t ** dcs);
 
 /**
- * Get the default Differential Cross Section (DCS) model for a given process.
+ * Default Differential Cross Section (DCS) model.
  *
  * @param process   The physics process index.
  * @return On success the default model name is returned otherwise `NULL`.
  *
- * Get the name of the default DCS model for a given process.  If the requested
- * process index is not valid then `NULL` is returned.
+ * Get the name of the default DCS model for a given *process*.  If the
+ * requested process index is not valid then `NULL` is returned. See the
+ * `pumas_dcs_get` function in order to get the DCS for a given model.
  */
 PUMAS_API const char * pumas_dcs_default(enum pumas_process process);
 
 /**
- * Get the DCS kinematic range for a given radiative process.
+ * Energy range for a given radiative process.
  *
  * @param process   The physics process index.
  * @param Z         The target atomic number.
@@ -1991,8 +2205,8 @@ PUMAS_API const char * pumas_dcs_default(enum pumas_process process);
  * @return On success `PUMAS_RETURN_SUCCESS` is returned otherwise an error
  * code is returned as detailed below.
  *
- * This function provides the kinematic range of energy transfers for the
- * Differential Cross Section (DCS) of a given radiative process.
+ * This function provides the range of valid energy transfers for the
+ * Differential Cross Section (DCS) of a given radiative *process*.
  *
  * __Error codes__
  *
@@ -2002,7 +2216,7 @@ PUMAS_API enum pumas_return pumas_dcs_range(enum pumas_process process,
     double Z, double mass, double energy, double * min, double * max);
 
 /**
- * The elastic scattering differential cross section.
+ * The differential cross section (DCS) for elastic collisions.
  *
  * @param Z       The charge number of the target atom.
  * @param A       The mass number of the target atom.
@@ -2011,14 +2225,12 @@ PUMAS_API enum pumas_return pumas_dcs_range(enum pumas_process process,
  * @param theta   The scattering angle, in rad.
  * @return The corresponding value of the atomic DCS, in m^(2) / rad.
  *
- * The elastic DCS is computed following Boschini et al. and Salvat. The
- * first Born approximation is used with an effective mass in oder to account
- * for the recoil. A spin correction factor is applied.
- *
- * References:
- *      Boschini et al. (2011), https://arxiv.org/abs/1111.4042 &
- *                              https://arxiv.org/abs/1011.4822
- *      Salvat (2013), NIM B 316, 144-159
+ * The elastic DCS is computed following [Salvat
+ * (2013)](https://doi.org/10.1016/j.nimb.2013.08.035) and [Boschini et al.
+ * (2014)](https://arxiv.org/abs/1011.4822). The first Born approximation is
+ * used with coulomb corrections from [Kuraev et al.
+ * (2014)](https://doi.org/10.1103/PhysRevD.89.116016). The target recoil is
+ * taken into account with an effective projectile mass.
  */
 PUMAS_API double pumas_elastic_dcs(
     double Z, double A, double m, double K, double theta);
@@ -2034,13 +2246,10 @@ PUMAS_API double pumas_elastic_dcs(
  * @param theta   The scattering angle, in rad.
  * @return The corresponding path per unit mass, in kg / m^(2).
  *
- * The elastic m.f.p. is computed analytically from the DCS integral (see
+ * The m.f.p. is computed analytically by integration of the elastic DCS (see
  * `pumas_elastic_dcs`). If *order* is 0 then the single collision m.f.p. is
  * returned. Else, if *order* is 1 then the transport m.f.p. is returned. For
  * other values of *order* -1 is returned.
- *
- * References:
- *      Fernandez-Varea et al. (1993), NIM B 73, 447-473
  */
 PUMAS_API double pumas_elastic_path(
     int order, double Z, double A, double mass, double kinetic);
@@ -2056,12 +2265,10 @@ PUMAS_API double pumas_elastic_path(
  * @return The corresponding value of the atomic DCS, in m^(2) / GeV.
  *
  * The electronic DCS restricted to close collisions is computed following
- * Salvat.  An effective model is used with a cutoff set as a fraction of the
- * mean excitation energy, I. This reproduces Salvat for energy losses, q,
- * larger than the electronic ionisation energies.
- *
- * References:
- *      Salvat (2013), NIM B 316, 144-159
+ * [Salvat (2013)](https://doi.org/10.1016/j.nimb.2013.08.035). An effective
+ * model is used with a cutoff set as a fraction of the mean excitation energy,
+ * I. This reproduces Salvat for energy losses, *q*, larger than the
+ * electrons binding energies.
  */
 PUMAS_API double pumas_electronic_dcs(
     double Z, double I, double m, double K, double q);
@@ -2078,16 +2285,14 @@ PUMAS_API double pumas_electronic_dcs(
  * @param gamma         The relativistic gamma factor of the projectile.
  * @return The corresponding density effect.
  *
- * The density effect is computed following Fano (1963). Oscillators strength
- * and level have been set from atomic binding energies of individual atomic
- * elements. A global scaling factor is applied in order to match the Mean
- * Excitation Energy.
+ * The density effect is computed following [Fano
+ * (1963)](https://doi.org/10.1146/annurev.ns.13.120163.000245). Oscillators
+ * strength and level have been set from electrons binding energies of
+ * individual atomic elements. A global scaling factor is applied in order to
+ * match the Mean Excitation Energy.
  *
  * The mass fractions of the elements, *w*, can be `NULL` in wich case they are
  * assumed to be 1. The mass fractions do not need to be normalised to 1.
- *
- * Reference:
- *     U. Fano, Ann. Rev. Nucl. Sci. 13, 1 (1963)
  */
 PUMAS_API double pumas_electronic_density_effect(int n_elements,
     const double * Z, const double * A, const double * w, double I,
@@ -2106,18 +2311,15 @@ PUMAS_API double pumas_electronic_density_effect(int n_elements,
  * @param energy        The energy of the projectile, in GeV
  * @return The corresponding stopping power per unit mass, in GeV m^(2) / kg.
  *
- * The electronic stopping power is computed following Salvat (2013). The result
- * is identical to Groom et al. (2001) except for the density effect. The later
- * is computed following Fano (1963), see e.g.
+ * The electronic stopping power is computed following [Salvat
+ * (2013)](https://doi.org/10.1016/j.nimb.2013.08.035). The result is identical
+ * to [Groom et al. (2001)](https://doi.org/10.1006/adnd.2001.0861) except for
+ * the density effect. The latter is computed following [Fano
+ * (1963)](https://doi.org/10.1146/annurev.ns.13.120163.000245), see e.g.
  * `pumas_electronic_density_effect`.
  *
  * The mass fractions of the elements, *w*, can be `NULL` in wich case they are
  * assumed to be 1. The mass fractions do not need to be normalised to 1.
- *
- * Reference:
- *     F. Salvat NIMB 316 (2013)
- *     Groom et al., Atomic Data and Nuclear Data Tables, 78 (2001)
- *     U. Fano, Ann. Rev. Nucl. Sci. 13, 1 (1963)
  */
 PUMAS_API double pumas_electronic_stopping_power(int n_elements,
     const double * Z, const double * A, const double * w, double I,
