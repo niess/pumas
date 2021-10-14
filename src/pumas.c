@@ -5859,7 +5859,7 @@ void transport_do_ehs(const struct pumas_physics * physics,
                  * is numericaly unstable for small angles.
                  */
                 const double d = gamma * (1. + tau);
-                mu = mu1 * (d * d);
+                mu = mu1 / (d * d);
         }
 
         /* Apply the rotation. */
