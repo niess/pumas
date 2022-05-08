@@ -243,10 +243,11 @@ END_TEST
 /* Test the version tag */
 START_TEST(test_api_version)
 {
-        int major, minor;
-        pumas_version(&major, &minor);
+        int major, minor, patch;
+        pumas_version(&major, &minor, &patch);
         ck_assert_int_eq(major, PUMAS_VERSION_MAJOR);
         ck_assert_int_eq(minor, PUMAS_VERSION_MINOR);
+        ck_assert_int_eq(patch, PUMAS_VERSION_PATCH);
 }
 END_TEST
 

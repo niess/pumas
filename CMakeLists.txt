@@ -2,7 +2,7 @@ cmake_minimum_required (VERSION 2.8)
 project (PUMAS C)
 
 set (PUMAS_VERSION_MAJOR 1)
-set (PUMAS_VERSION_MINOR 1)
+set (PUMAS_VERSION_MINOR 2)
 set (PUMAS_VERSION_PATCH 0)
 set (PUMAS_VERSION_STRING ${PUMAS_VERSION_MAJOR}.${PUMAS_VERSION_MINOR}.${PUMAS_VERSION_PATCH})
 
@@ -61,7 +61,8 @@ target_include_directories (pumas PUBLIC "${PROJECT_SOURCE_DIR}/include")
 target_compile_definitions (pumas PRIVATE
         ${PUMAS_API}
         -DPUMAS_VERSION_MAJOR=${PUMAS_VERSION_MAJOR}
-        -DPUMAS_VERSION_MINOR=${PUMAS_VERSION_MINOR})
+        -DPUMAS_VERSION_MINOR=${PUMAS_VERSION_MINOR}
+        -DPUMAS_VERSION_PATCH=${PUMAS_VERSION_PATCH})
 if (UNIX)
         target_link_libraries (pumas PUBLIC m)
 endif ()

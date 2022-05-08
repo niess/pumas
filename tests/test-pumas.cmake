@@ -12,7 +12,8 @@ include ("tests/libcheck.cmake")
 add_executable (test-pumas EXCLUDE_FROM_ALL "tests/test-pumas.c")
 target_compile_definitions (test-pumas PRIVATE
         -DPUMAS_VERSION_MAJOR=${PUMAS_VERSION_MAJOR}
-        -DPUMAS_VERSION_MINOR=${PUMAS_VERSION_MINOR})
+        -DPUMAS_VERSION_MINOR=${PUMAS_VERSION_MINOR}
+        -DPUMAS_VERSION_PATCH=${PUMAS_VERSION_PATCH})
 add_dependencies (test-pumas LibCheck)
 target_link_libraries (test-pumas check pumas)
 
