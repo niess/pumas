@@ -3173,6 +3173,15 @@ enum pumas_return pumas_context_transport(struct pumas_context * context,
                     context->accuracy);
         }
 
+        if ((context->mode.direction == PUMAS_MODE_BACKWARD) &&
+            (context->mode.energy_loss > PUMAS_MODE_CSDA) &&
+            (physics->cutoff < 1E-02)) {
+                return ERROR_FORMAT(PUMAS_RETURN_ACCURACY_ERROR,
+                    "bad cutoff value for backward transport (expected a "
+                    "value greater than or equal to 0.01, got %g)",
+                    physics->cutoff);
+        }
+
         /* Get the start medium. */
         struct pumas_medium * medium;
         double step_max_medium;

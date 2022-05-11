@@ -720,6 +720,9 @@ struct pumas_physics_settings {
          * to be used i.e. 5% which is a good compromise between speed and
          * accuracy for transporting a continuous spectrumm, see e.g.  [Sokalski
          * et al.](https://doi.org/10.1103/PhysRevD.64.074015)
+         *
+         * __Warning__ : In backward mode, with mixed or straggled energy loss,
+         * cutoff values lower than 1% are not currently supported.
          */
         double cutoff;
         /** Ratio of the mean free path for hard elastic events to the smallest
