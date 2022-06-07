@@ -98,8 +98,30 @@ int main ()
         new G4PVPlacement(0, G4ThreeVector(0., 0., -0.25 * h), seaLogical,
             "Sea", worldLogical, false, 0);
 
+        /* Dump Geant4 geometry to a GDML file.
+         *
+         * If the output directory does not exist, then Geant4 fails with a non
+         * explicit error message. Therefore, in this example we manually check
+         * that the GDML file can indeed be created, before calling gdml.Write.
+         * Note that as a side effect, any previously existing geometry file is
+         * overwritten (removed).
+         *
+         * If you use C++17, then you might want to force the creation of the
+         * output directory instead (using std::filesystem:create_directories),
+         * in case that it does not already exist.
+         */
+        auto filename = "examples/data/geometry.gdml";
+        auto * stream = std::fopen(filename, "w");
+        if (stream != NULL) {
+                std::fclose(stream);
+                std::remove(filename);
+        } else {
+                std::fprintf(stderr, "could not create %s\n", filename);
+                exit(EXIT_FAILURE);
+        }
+
         G4GDMLParser gdml;
-        gdml.Write("examples/data/geometry.gdml", worldPhysical);
+        gdml.Write(filename, worldPhysical);
 
         exit(EXIT_SUCCESS);
 }
