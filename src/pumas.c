@@ -50,19 +50,6 @@
 #include <fenv.h>
 #endif
 
-/* For the versioning. */
-#ifndef PUMAS_VERSION_MAJOR
-#define PUMAS_VERSION_MAJOR 1
-#endif
-
-#ifndef PUMAS_VERSION_MINOR
-#define PUMAS_VERSION_MINOR 2
-#endif
-
-#ifndef PUMAS_VERSION_PATCH
-#define PUMAS_VERSION_PATCH 0
-#endif
-
 /* Some tuning factors as macros. */
 /**
  * Number of schemes to tabulate for the computation of the energy loss.

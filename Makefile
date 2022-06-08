@@ -1,60 +1,106 @@
-CFLAGS := -O3 -std=c99 -pedantic -Wall -Wfatal-errors
-INCLUDES := -Iinclude
-LIBS := -Llib -lpumas -Wl,-rpath,$(PWD)/lib -lm
-
-.PHONY: lib clean examples examples-turtle examples-geant4
+# Installation prefix
+PREFIX= $(PWD)
 
 
-lib: lib/libpumas.so
-	@rm -f *.o
+# PUMAS library
+CFLAGS= -O3 -std=c99 -pedantic -Wall -Wfatal-errors -Iinclude
+LIBS=   -lm
 
-lib/libpumas.so: src/pumas.c include/pumas.h
-	@mkdir -p lib
-	@$(CC) -o $@ $(CFLAGS) -fPIC -shared $(INCLUDES) $<
+VERSION_MAJOR= $(shell grep PUMAS_VERSION_MAJOR include/pumas.h | cut -d' ' -f3)
+VERSION_MINOR= $(shell grep PUMAS_VERSION_MINOR include/pumas.h | cut -d' ' -f3)
+VERSION_PATCH= $(shell grep PUMAS_VERSION_PATCH include/pumas.h | cut -d' ' -f3)
 
+LIB_NAME=      libpumas.so
+LIB_SHORTNAME= $(LIB_NAME).$(VERSION_MAJOR)
+LIB_FULLNAME=  $(LIB_SHORTNAME).$(VERSION_MINOR).$(VERSION_PATCH)
+
+.PHONY: lib
+lib: $(PREFIX)/lib/$(LIB_FULLNAME) \
+     $(PREFIX)/lib/$(LIB_SHORTNAME) \
+     $(PREFIX)/lib/$(LIB_NAME)
+
+$(PREFIX)/lib/$(LIB_FULLNAME): src/pumas.c include/pumas.h | $(PREFIX)/lib
+	@$(CC) -o $@ $(CFLAGS) -shared -fPIC $< $(LIBS)
+
+$(PREFIX)/lib/$(LIB_SHORTNAME): $(PREFIX)/lib/$(LIB_FULLNAME)
+	@ln -fs $(LIB_FULLNAME) $@
+
+$(PREFIX)/lib/$(LIB_NAME): $(PREFIX)/lib/$(LIB_SHORTNAME)
+	@ln -fs $(LIB_SHORTNAME) $@
+
+$(PREFIX)/lib:
+	@mkdir -p $@
+
+
+# Cleanup
 clean:
-	@rm -rf lib bin
+	@rm -rf $(PREFIX)/lib $(PREFIX)/bin
 
 
-examples: bin/example-dump bin/example-geometry bin/example-loader \
-	  bin/example-geometry bin/example-straight bin/example-tabulate
+# PUMAS examples
+LIBS_EXAMPLES= -L$(PREFIX)/lib -lpumas -Wl,-rpath,$(PREFIX)/lib $(LIBS)
 
-bin/example-geometry: examples/pumas/geometry.c examples/pumas/flux.c \
-	              examples/pumas/flux.h lib/libpumas.so
-	@mkdir -p bin
-	@$(CC) $(CFLAGS) $(INCLUDES) -o $@ examples/pumas/geometry.c \
-	    examples/pumas/flux.c $(LIBS)
+.PHONY: examples
+examples: $(PREFIX)/bin/example-dump \
+          $(PREFIX)/bin/example-geometry \
+          $(PREFIX)/bin/example-loader \
+          $(PREFIX)/bin/example-geometry \
+          $(PREFIX)/bin/example-straight \
+          $(PREFIX)/bin/example-tabulate
 
-bin/example-straight: examples/pumas/straight.c examples/pumas/flux.c \
-	              examples/pumas/flux.h lib/libpumas.so
-	@mkdir -p bin
-	@$(CC) $(CFLAGS) $(INCLUDES) -o $@ examples/pumas/straight.c \
-	    examples/pumas/flux.c $(LIBS)
+$(PREFIX)/bin/example-geometry: examples/pumas/geometry.c \
+                                examples/pumas/flux.c \
+                                examples/pumas/flux.h \
+                                $(PREFIX)/lib/libpumas.so | \
+                                $(PREFIX)/bin
+	@$(CC) $(CFLAGS) -o $@ examples/pumas/geometry.c \
+	    examples/pumas/flux.c $(LIBS_EXAMPLES)
 
-bin/example-%: examples/pumas/%.c lib/libpumas.so
-	@mkdir -p bin
-	@$(CC) $(CFLAGS) $(INCLUDES) -o $@ $< $(LIBS)
+$(PREFIX)/bin/example-straight: examples/pumas/straight.c \
+                                examples/pumas/flux.c \
+                                examples/pumas/flux.h \
+                                $(PREFIX)/lib/libpumas.so | \
+                                $(PREFIX)/bin
+	@$(CC) $(CFLAGS) -o $@ examples/pumas/straight.c \
+	    examples/pumas/flux.c $(LIBS_EXAMPLES)
+
+$(PREFIX)/bin/example-%: examples/pumas/%.c \
+                         $(PREFIX)/lib/libpumas.so | \
+                         $(PREFIX)/bin
+	@$(CC) $(CFLAGS) -o $@ $< $(LIBS_EXAMPLES)
+
+$(PREFIX)/bin:
+	@mkdir -p $@
 
 
-examples-turtle: bin/example-turtle-earth
+# TURTLE examples
+PREFIX_TURTLE= $(PREFIX)
+LIBS_TURTLE=   -L$(PREFIX_TURTLE)/lib -lturtle -Wl,-rpath,$(PREFIX_TURTLE)/lib
 
-bin/example-turtle-earth: examples/turtle/earth.c lib/libpumas.so \
-	                  lib/libturtle.so
-	@mkdir -p bin
-	@$(CC) $(CFLAGS) $(INCLUDES) -o $@ $< $(LIBS) -lturtle
+examples-turtle: $(PREFIX)/bin/example-turtle-earth
+
+$(PREFIX)/bin/example-turtle-earth: examples/turtle/earth.c \
+                                    $(PREFIX)/lib/libpumas.so \
+                                    $(PREFIX_TURTLE)/lib/libturtle.so | \
+                                    $(PREFIX)/bin
+	@$(CC) $(CFLAGS) -o $@ $< $(LIBS_TURTLE) $(LIBS_EXAMPLES)
 
 
-G4FLAGS = -O2 -Wall $(shell geant4-config --cflags) -Iexamples/geant4
-G4LIBS = $(shell geant4-config --libs) -lxerces-c
+# Geant4 examples
+CFLAGS_G4= -O2 -Wall $(shell geant4-config --cflags) -Iexamples/geant4
+LIBS_G4=   $(shell geant4-config --libs) -lxerces-c
 
-examples-geant4: bin/example-geant4-generate bin/example-geant4-run
+examples-geant4: $(PREFIX)/bin/example-geant4-generate \
+                 $(PREFIX)/bin/example-geant4-run
 
-bin/example-geant4-generate: examples/geant4/generate.cpp
-	@mkdir -p bin
-	@$(CXX) $(G4FLAGS) -o $@ examples/geant4/generate.cpp $(G4LIBS)
+$(PREFIX)/bin/example-geant4-generate: examples/geant4/generate.cpp | \
+                                       $(PREFIX)/bin
+	@$(CXX) $(CFLAGS_G4) -o $@ $< $(LIBS_G4)
 
-bin/example-geant4-run: examples/geant4/run.cpp examples/geant4/g4pumas.cpp \
-	                examples/geant4/g4pumas.h lib/libpumas.so
-	@mkdir -p bin
-	@$(CXX) $(G4FLAGS) $(INCLUDES) -o $@ examples/geant4/run.cpp \
-	    examples/geant4/g4pumas.cpp $(G4LIBS) $(LIBS)
+$(PREFIX)/bin/example-geant4-run: examples/geant4/run.cpp \
+                                  examples/geant4/g4pumas.cpp \
+                                  examples/geant4/g4pumas.h \
+                                  $(PREFIX)/lib/libpumas.so | \
+                                  $(PREFIX)/bin
+	@$(CXX) $(CFLAGS_G4) -Iinclude -o $@ examples/geant4/run.cpp \
+	    examples/geant4/g4pumas.cpp $(LIBS_G4) $(LIBS_EXAMPLES)

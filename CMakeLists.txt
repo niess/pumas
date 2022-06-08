@@ -1,9 +1,19 @@
 cmake_minimum_required (VERSION 2.8)
 project (PUMAS C)
 
-set (PUMAS_VERSION_MAJOR 1)
-set (PUMAS_VERSION_MINOR 2)
-set (PUMAS_VERSION_PATCH 0)
+
+# Parse PUMAS library version
+file(READ "include/pumas.h" _pumas_h)
+
+string(REGEX MATCH "PUMAS_VERSION_MAJOR ([0-9]*)" _ ${_pumas_h})
+set (PUMAS_VERSION_MAJOR ${CMAKE_MATCH_1})
+
+string(REGEX MATCH "PUMAS_VERSION_MINOR ([0-9]*)" _ ${_pumas_h})
+set (PUMAS_VERSION_MINOR ${CMAKE_MATCH_1})
+
+string(REGEX MATCH "PUMAS_VERSION_PATCH ([0-9]*)" _ ${_pumas_h})
+set (PUMAS_VERSION_PATCH ${CMAKE_MATCH_1})
+
 set (PUMAS_VERSION_STRING ${PUMAS_VERSION_MAJOR}.${PUMAS_VERSION_MINOR}.${PUMAS_VERSION_PATCH})
 
 
