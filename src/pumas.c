@@ -479,7 +479,7 @@ struct simulation_context {
          * Extra bytes are allocated for the workspace, the error stack and
          * any extended memory for end user usage.
          */
-        double data[];
+        long double data[];
 };
 /**
  * Handle for a stack of recorded frames.
