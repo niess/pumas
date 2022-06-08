@@ -37,7 +37,7 @@ extern "C" {
 /* PUMAS library version. */
 #define PUMAS_VERSION_MAJOR 1
 #define PUMAS_VERSION_MINOR 2
-#define PUMAS_VERSION_PATCH 0
+#define PUMAS_VERSION_PATCH 1
 
 /**
  * Projectiles supported by PUMAS.
