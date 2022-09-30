@@ -1,7 +1,6 @@
 cmake_minimum_required (VERSION 2.8)
 project (PUMAS C)
 
-
 # Parse PUMAS library version
 file(READ "include/pumas.h" _pumas_h)
 
@@ -61,13 +60,23 @@ if (PUMAS_BUILD_EXAMPLES)
 endif ()
 
 
+if(WIN32)
+	set(PUMAS_INCLUDE .)
+	set(PUMAS_LIB .)
+else()
+	set(PUMAS_INCLUDE include)
+	set(PUMAS_LIB lib)
+endif()
+
 # Build and install rules for the PUMAS library
 add_library (pumas src/pumas.c include/pumas.h)
 set_target_properties (pumas PROPERTIES
         VERSION ${PUMAS_VERSION_STRING}
         SOVERSION ${PUMAS_VERSION_MAJOR}
 )
-target_include_directories (pumas PUBLIC "${PROJECT_SOURCE_DIR}/include")
+target_include_directories (pumas PUBLIC
+	$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+	$<INSTALL_INTERFACE:${PUMAS_INCLUDE}>)
 target_compile_definitions (pumas PRIVATE
         ${PUMAS_API}
         -DPUMAS_VERSION_MAJOR=${PUMAS_VERSION_MAJOR}
@@ -81,14 +90,33 @@ if (PUMAS_USE_GDB)
         target_compile_definitions (pumas PRIVATE "-DGDB_MODE")
 endif ()
 
-if (WIN32)
-        install (TARGETS pumas DESTINATION .)
-        install (FILES include/pumas.h DESTINATION .)
-else ()
-        install (TARGETS pumas DESTINATION lib)
-        install (FILES include/pumas.h DESTINATION include)
-endif ()
+install (TARGETS pumas 
+	EXPORT pumasTarget
+	DESTINATION ${PUMAS_LIB})
+install (FILES include/pumas.h DESTINATION ${PUMAS_INCLUDE})
 
+install(EXPORT pumasTarget
+	FILE pumasTarget.cmake
+	DESTINATION "${PUMAS_LIB}/cmake/pumas")
+
+include(CMakePackageConfigHelpers)
+configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/Config.cmake.in
+	"${CMAKE_CURRENT_BINARY_DIR}/pumasConfig.cmake"
+	INSTALL_DESTINATION "${PUMAS_LIB}/cmake/pumas"
+	NO_SET_AND_CHECK_MACRO
+	NO_CHECK_REQUIRED_COMPONENTS_MACRO)
+
+write_basic_package_version_file("${CMAKE_CURRENT_BINARY_DIR}/pumasConfigVersion.cmake"
+	VERSION "${PUMAS_VERSION_MAJOR}.${PUMAS_VERSION_MINOR}.${PUMAS_VERSION_PATCH}"
+	COMPATIBILITY SameMajorVersion)
+
+install(FILES
+	${CMAKE_CURRENT_BINARY_DIR}/pumasConfig.cmake
+	${CMAKE_CURRENT_BINARY_DIR}/pumasConfigVersion.cmake
+	DESTINATION ${PUMAS_LIB}/cmake/pumas)
+
+export(EXPORT pumasTarget
+	FILE "${CMAKE_CURRENT_BINARY_DIR}/pumasTarget.cmake")
 
 # Build and install rules for the examples, if enabled
 if (PUMAS_BUILD_EXAMPLES)
