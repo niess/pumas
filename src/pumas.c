@@ -94,6 +94,13 @@
  */
 #define MAX_SOFT_ANGLE 1E+00
 /**
+ * Grammage ratio for small steps, in CSDA mode.
+ *
+ * Below this ratio, the step energy loss is computed from the stopping power,
+ * using finite differences. Above, the interpolated grammage integral is used.
+ */
+#define EPSILON_X 3E-03
+/**
  * Minimum step size.
  */
 #define STEP_MIN 1E-07
@@ -4842,8 +4849,14 @@ enum pumas_event transport_with_csda(const struct pumas_physics * physics,
         if (context->mode.direction == PUMAS_MODE_FORWARD) {
                 if (xi > xB) {
                         xf = xi - xB;
-                        kf = cel_kinetic_energy(
-                            physics, context, PUMAS_MODE_CSDA, material, xf);
+                        if (xB < EPSILON_X * xi) {
+                                kf = ki - cel_energy_loss(physics, context,
+                                    PUMAS_MODE_CSDA, material, ki) * xB;
+                                if (kf < 0.) kf = 0.;
+                        } else {
+                                kf = cel_kinetic_energy(physics, context,
+                                    PUMAS_MODE_CSDA, material, xf);
+                        }
                 } else {
                         xf = kf = 0.;
                         event = PUMAS_EVENT_LIMIT_ENERGY;
@@ -4865,8 +4878,13 @@ enum pumas_event transport_with_csda(const struct pumas_physics * physics,
                         kf = DBL_MAX;
                 } else {
                         xf = xB + xi;
-                        kf = cel_kinetic_energy(
-                            physics, context, PUMAS_MODE_CSDA, material, xf);
+                        if (xB < EPSILON_X * xi) {
+                                kf = ki + cel_energy_loss(physics, context,
+                                    PUMAS_MODE_CSDA, material, ki) * xB;
+                        } else {
+                                kf = cel_kinetic_energy(physics, context,
+                                    PUMAS_MODE_CSDA, material, xf);
+                        }
                 }
                 if (context->event & PUMAS_EVENT_LIMIT_ENERGY) {
                         if (ki >= context->limit.energy)
@@ -6521,9 +6539,27 @@ enum pumas_return step_transport(const struct pumas_physics * physics,
                                 grammage_max = grammage;
                                 event = PUMAS_EVENT_LIMIT_ENERGY;
                         }
-                } else
+                } else if (dX < EPSILON_X * Xtot) {
+                        k1 -= sgn * cel_energy_loss(physics, context, scheme,
+                            material, k1) * dX;
+                        if ((context->event & PUMAS_EVENT_LIMIT_ENERGY) &&
+                            (context->limit.energy > 0.)) {
+                                if (((context->mode.direction ==
+                                     PUMAS_MODE_FORWARD) &&
+                                     (k1 < context->limit.energy)) ||
+                                    ((context->mode.direction ==
+                                    PUMAS_MODE_BACKWARD) &&
+                                     (k1 > context->limit.energy))) {
+                                        k1 = context->limit.energy;
+                                        event = PUMAS_EVENT_LIMIT_ENERGY;
+                                }
+                        } else if (k1 < 0.) {
+                                k1 = 0.;
+                        }
+                } else {
                         k1 = cel_kinetic_energy(
                             physics, context, scheme, material, X);
+                }
         } else if (scheme == PUMAS_MODE_STRAGGLED) {
                 /* Fluctuate the CEL around its average value. */
                 double ratio;
