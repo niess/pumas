@@ -269,6 +269,9 @@
         ERROR_VREGISTER(                                                       \
             PUMAS_RETURN_DENSITY_ERROR, "negative density for `%s'", material)
 
+#define ERROR_REGISTER_INTERRUPT()                                             \
+        ERROR_REGISTER(PUMAS_RETURN_INTERRUPT, "user interrupt")
+
 /* Function prototypes for the DCS implementations. */
 /**
  * Handle for a DCS computation function.
@@ -1188,10 +1191,10 @@ static void step_rotate_direction(struct pumas_context * context,
  */
 static enum pumas_return io_parse_dedx_file(struct pumas_physics * physics,
     FILE * fid, int material, const char * filename,
-    struct error_context * error_);
+    struct error_context * error_, struct pumas_physics_notifier * notifier);
 static enum pumas_return io_parse_dedx_row(struct pumas_physics * physics,
     char * buffer, int material, int * row, const char * filename, int line,
-    struct error_context * error_);
+    struct error_context * error_, struct pumas_physics_notifier * notifier);
 static enum pumas_return io_read_line(FILE * fid, char ** buffer,
     const char * filename, int line, struct error_context * error_);
 /**
@@ -1211,7 +1214,8 @@ static enum pumas_return mdf_parse_elements(
     const struct pumas_physics * physics, struct mdf_buffer * mdf,
     struct error_context * error_);
 static enum pumas_return mdf_parse_materials(struct pumas_physics * physics,
-    struct mdf_buffer * mdf, struct error_context * error_);
+    struct mdf_buffer * mdf, struct error_context * error_,
+    struct pumas_physics_notifier * notifier);
 static enum pumas_return mdf_parse_composites(struct pumas_physics * physics,
     struct mdf_buffer * mdf, struct error_context * error_);
 static enum pumas_return mdf_get_node(struct mdf_buffer * mdf,
@@ -1235,7 +1239,8 @@ static void compute_composite_tables(
     struct pumas_physics * physics, int material);
 static void compute_cel_integrals(struct pumas_physics * physics, int imed);
 static enum pumas_return compute_scattering(struct pumas_physics * physics,
-    int imed, struct error_context * error_);
+    int imed, struct error_context * error_,
+    struct pumas_physics_notifier * notifier);
 static void compute_kinetic_integral(
     struct pumas_physics * physics, double * table, double * work);
 static void compute_time_integrals(
@@ -1254,14 +1259,17 @@ static void compute_csda_magnetic_transport(
     struct pumas_physics * physics, int imed);
 static enum pumas_return compute_scattering_parameters(
     struct pumas_physics * physics, int medium_index, int row,
-    struct error_context * error_);
+    struct error_context * error_, struct pumas_physics_notifier * notifier);
 static enum pumas_return compute_msc_soft(struct pumas_physics * physics,
-    int row, double ** data, struct error_context * error_);
+    int row, double ** data, struct error_context * error_,
+    struct pumas_physics_notifier * notifier);
 static double compute_msc_electronic(struct pumas_physics * physics,
     enum pumas_mode mode, int material, int row);
 static double compute_cutoff_objective(
     const struct pumas_physics * physics, double mu, void * workspace);
-static double * compute_cel_and_del(struct pumas_physics * physics, int row);
+static enum pumas_return compute_cel_and_del(struct pumas_physics * physics,
+    int row, double ** table, struct error_context * error_,
+    struct pumas_physics_notifier * notifier);
 static void compute_regularise_del(
     struct pumas_physics * physics, int material);
 static double compute_dcs_integral(struct pumas_physics * physics, int mode,
@@ -1270,9 +1278,11 @@ static double compute_dcs_integral(struct pumas_physics * physics, int mode,
 static void compute_ZoA(struct pumas_physics * physics, int material);
 static void compute_MEE(struct pumas_physics * physics, int material);
 static enum pumas_return compute_dcs_table(
-    struct pumas_physics * physics, int element, struct error_context * error_);
+    struct pumas_physics * physics, int element, struct error_context * error_,
+    struct pumas_physics_notifier * notifier);
 static enum pumas_return physics_tabulate(struct pumas_physics * physics,
-    struct physics_tabulation_data * data, struct error_context * error_);
+    struct physics_tabulation_data * data, struct error_context * error_,
+    struct pumas_physics_notifier * notifier);
 static void physics_tabulation_clear(const struct pumas_physics * physics,
     struct physics_tabulation_data * data);
 static struct physics_element * tabulation_element_create(
@@ -1411,7 +1421,8 @@ static enum pumas_return dcs_check_model(enum pumas_process process,
  */
 static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
     enum pumas_particle particle, const char * mdf_path, const char * dedx_path,
-    int dry_mode, const struct pumas_physics_settings * settings_)
+    int dry_mode, const struct pumas_physics_settings * settings_,
+    struct pumas_physics_notifier * notifier)
 {
         ERROR_INITIALISE(pumas_physics_create);
 
@@ -1838,7 +1849,8 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
                 goto clean_and_exit;
 
         /* Parse the base materials. */
-        if ((mdf_parse_materials(physics, mdf, error_)) != PUMAS_RETURN_SUCCESS)
+        if ((mdf_parse_materials(physics, mdf, error_, notifier)) !=
+            PUMAS_RETURN_SUCCESS)
                 goto clean_and_exit;
 
         /* Parse the composite materials. */
@@ -1856,9 +1868,19 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
         /* All done if in dry mode. */
         if (dry_mode) goto clean_and_exit;
 
+        if (notifier != NULL) {
+                int steps = physics->n_elements * (physics->n_energies - 1);
+                if (notifier->configure(
+                    notifier, "multiple-scattering", steps) ==
+                    PUMAS_RETURN_INTERRUPT) {
+                        ERROR_REGISTER_INTERRUPT();
+                        goto clean_and_exit;
+                }
+        }
+
         /* Precompute the CEL integrals and the TT parameters. */
-        for (imat = 0; imat < physics->n_materials - physics->n_composites;
-             imat++) {
+        int nmat = physics->n_materials - physics->n_composites;
+        for (imat = 0; imat < nmat; imat++) {
                 /* Set the scalling factor */
                 struct atomic_shell * shells = atomic_shell_create(
                     physics, imat, NULL, physics->material_aS + imat);
@@ -1870,8 +1892,15 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
 
                 compute_cel_integrals(physics, imat);
                 compute_csda_magnetic_transport(physics, imat);
-                if (compute_scattering(physics, imat, error_) !=
+                if (compute_scattering(physics, imat, error_, notifier) !=
                     PUMAS_RETURN_SUCCESS) goto clean_and_exit;
+        }
+
+        if ((notifier != NULL) &&
+            (notifier->configure(notifier, NULL, -1) ==
+                PUMAS_RETURN_INTERRUPT)) {
+                ERROR_REGISTER_INTERRUPT();
+                goto clean_and_exit;
         }
 
         /* Precompute the same properties for composite materials. */
@@ -1884,11 +1913,29 @@ static enum pumas_return _initialise(struct pumas_physics ** physics_ptr,
                         goto clean_and_exit;
         }
 
+        if (notifier != NULL) {
+                int steps = physics->n_elements * (physics->n_energies) *
+                    (N_DEL_PROCESSES - 1);
+                if (notifier->configure(
+                    notifier, "dcs-interpolator", steps) ==
+                    PUMAS_RETURN_INTERRUPT) {
+                        ERROR_REGISTER_INTERRUPT();
+                        goto clean_and_exit;
+                }
+        }
+
         /* Tabulate the DCS for atomic elements. */
         int iel;
         for (iel = 0; iel < physics->n_elements; iel++) {
-                if (compute_dcs_table(physics, iel, error_) !=
+                if (compute_dcs_table(physics, iel, error_, notifier) !=
                     PUMAS_RETURN_SUCCESS) goto clean_and_exit;
+        }
+
+        if ((notifier != NULL) &&
+            (notifier->configure(notifier, NULL, -1) ==
+                PUMAS_RETURN_INTERRUPT)) {
+                ERROR_REGISTER_INTERRUPT();
+                goto clean_and_exit;
         }
 
         /* Compute the cubic interp. coefficients for atomic elements
@@ -1900,10 +1947,10 @@ clean_and_exit:
         if (fid_mdf != NULL) fclose(fid_mdf);
         deallocate(mdf);
         io_read_line(NULL, NULL, NULL, 0, error_);
-        compute_scattering_parameters(physics, -1, -1, error_);
-        compute_msc_soft(physics, -1, NULL, error_);
-        compute_cel_and_del(physics, -1);
-        compute_dcs_table(physics, -1, error_);
+        compute_scattering_parameters(physics, -1, -1, error_, NULL);
+        compute_msc_soft(physics, -1, NULL, error_, NULL);
+        compute_cel_and_del(physics, -1, NULL, NULL, NULL);
+        compute_dcs_table(physics, -1, error_, NULL);
         if ((error_->code != PUMAS_RETURN_SUCCESS) && (physics != NULL)) {
                 deallocate(physics);
                 *physics_ptr = NULL;
@@ -1915,14 +1962,15 @@ clean_and_exit:
 /* The standard API initialisation. */
 enum pumas_return pumas_physics_create(struct pumas_physics ** physics,
     enum pumas_particle particle, const char * mdf_path, const char * dedx_path,
-    const struct pumas_physics_settings * settings)
+    const struct pumas_physics_settings * settings,
+    struct pumas_physics_notifier * notifier)
 {
         ERROR_INITIALISE(pumas_physics_create);
 
         /* Load the MDF in dry mode first */
         enum pumas_return rc;
         if ((rc = _initialise(physics, particle, mdf_path, dedx_path, 1,
-            settings)) != PUMAS_RETURN_SUCCESS) {
+            settings, NULL)) != PUMAS_RETURN_SUCCESS) {
                 return rc;
         }
 
@@ -2006,19 +2054,34 @@ enum pumas_return pumas_physics_create(struct pumas_physics ** physics,
                 }
         }
 
+        if (notifier != NULL) {
+                int n_energies = data.n_energies;
+                if (n_energies <= 0) {
+                        n_energies = (particle == PUMAS_PARTICLE_MUON) ?
+                            (12 * 16 + 1) : 201;
+                }
+                int steps = p->n_elements * n_energies;
+                if (notifier->configure(notifier, "stopping-power", steps) ==
+                    PUMAS_RETURN_INTERRUPT) {
+                        ERROR_REGISTER_INTERRUPT();
+                        goto error;
+                }
+        }
+
         /* Force generate (missing) tables */
         for (imat = 0; imat < nmat; imat++) {
                 strcpy(filename + offset_dir, p->dedx_filename[imat]);
                 data.material = imat;
 
                 if (data.overwrite) {
-                        if (physics_tabulate(p, &data, error_) !=
-                            PUMAS_RETURN_SUCCESS) goto error;
+                        if (physics_tabulate(p, &data, error_, notifier)
+                            != PUMAS_RETURN_SUCCESS) goto error;
                 } else {
                         FILE * stream = fopen(filename, "r");
                         if (stream == NULL) {
-                                if (physics_tabulate(p, &data, error_) !=
-                                    PUMAS_RETURN_SUCCESS) goto error;
+                                if (physics_tabulate(p, &data, error_,
+                                    notifier) != PUMAS_RETURN_SUCCESS)
+                                        goto error;
                         } else {
                                 fclose(stream);
                         }
@@ -2030,12 +2093,19 @@ enum pumas_return pumas_physics_create(struct pumas_physics ** physics,
         deallocate(filename);
         pumas_physics_destroy(physics);
 
+        if ((notifier != NULL) &&
+            (notifier->configure(notifier, NULL, -1) ==
+                PUMAS_RETURN_INTERRUPT)) {
+                ERROR_REGISTER_INTERRUPT();
+                goto error;
+        }
+
         if (settings && settings->dry) {
                 return PUMAS_RETURN_SUCCESS;
         } else {
                 /* Load the full physics */
-                return _initialise(
-                    physics, particle, mdf_path, dedx_path, 0, settings);
+                return _initialise(physics, particle, mdf_path, dedx_path, 0,
+                    settings, notifier);
         }
 
 error:
@@ -3439,7 +3509,7 @@ enum pumas_return pumas_physics_composite_update(struct pumas_physics * physics,
 
 clean_and_exit:
         /* Free temporary workspace and return. */
-        compute_scattering_parameters(physics, -1, -1, error_);
+        compute_scattering_parameters(physics, -1, -1, error_, NULL);
         return ERROR_RAISE();
 }
 
@@ -7874,7 +7944,8 @@ static enum pumas_return error_raise(struct error_context * error_)
  * Parse a dE/dX data table in PDG text file format.
  */
 enum pumas_return io_parse_dedx_file(struct pumas_physics * physics, FILE * fid,
-    int material, const char * filename, struct error_context * error_)
+    int material, const char * filename, struct error_context * error_,
+    struct pumas_physics_notifier * notifier)
 {
         char * buffer = NULL;
 
@@ -7910,8 +7981,8 @@ enum pumas_return io_parse_dedx_file(struct pumas_physics * physics, FILE * fid,
                 io_read_line(fid, &buffer, filename, line, error_);
                 line++;
                 if (error_->code != PUMAS_RETURN_SUCCESS) break;
-                io_parse_dedx_row(
-                    physics, buffer, material, &row, filename, line, error_);
+                io_parse_dedx_row(physics, buffer, material, &row, filename,
+                    line, error_, notifier);
         }
 
         if (error_->code != PUMAS_RETURN_SUCCESS) {
@@ -7947,7 +8018,7 @@ enum pumas_return io_parse_dedx_file(struct pumas_physics * physics, FILE * fid,
  */
 enum pumas_return io_parse_dedx_row(struct pumas_physics * physics,
     char * buffer, int material, int * row, const char * filename, int line,
-    struct error_context * error_)
+    struct error_context * error_, struct pumas_physics_notifier * notifier)
 {
         /*
          * Skip the peculiar values since they differ from material to
@@ -7989,8 +8060,9 @@ enum pumas_return io_parse_dedx_row(struct pumas_physics * physics,
         static double * cel_table = NULL;
         if (material == 0) {
                 /* Precompute the per element terms. */
-                if ((cel_table = compute_cel_and_del(physics, *row)) == NULL)
-                        return ERROR_REGISTER_MEMORY();
+                enum pumas_return rc = compute_cel_and_del(
+                    physics, *row, &cel_table, error_, notifier);
+                if (rc != PUMAS_RETURN_SUCCESS) return rc;
         }
 
         struct material_component * component = physics->composition[material];
@@ -8768,7 +8840,8 @@ enum pumas_return mdf_parse_elements(const struct pumas_physics * physics,
  * path to the directory where the MDF is located.
  */
 enum pumas_return mdf_parse_materials(struct pumas_physics * physics,
-    struct mdf_buffer * mdf, struct error_context * error_)
+    struct mdf_buffer * mdf, struct error_context * error_,
+    struct pumas_physics_notifier * notifier)
 {
         /* Format the path directory name. */
         char * filename = NULL;
@@ -8778,6 +8851,14 @@ enum pumas_return mdf_parse_materials(struct pumas_physics * physics,
                         &filename, &offset_dir, &size_name, error_)) !=
                     PUMAS_RETURN_SUCCESS)
                         return error_->code;
+        }
+
+        if (notifier != NULL) {
+                int steps = physics->n_elements * (physics->n_energies - 1);
+                if (notifier->configure(notifier, "cross-section", steps) ==
+                    PUMAS_RETURN_INTERRUPT) {
+                        return ERROR_REGISTER_INTERRUPT();
+                }
         }
 
         /* Loop on the XML nodes. */
@@ -8819,8 +8900,8 @@ enum pumas_return mdf_parse_materials(struct pumas_physics * physics,
                                             filename);
                                         break;
                                 }
-                                io_parse_dedx_file(
-                                    physics, fid, imat, filename, error_);
+                                io_parse_dedx_file(physics, fid, imat, filename,
+                                    error_, notifier);
                                 fclose(fid);
                                 if (error_->code != PUMAS_RETURN_SUCCESS) break;
 
@@ -8946,6 +9027,13 @@ enum pumas_return mdf_parse_materials(struct pumas_physics * physics,
                         }
                         physics->composition[imat][i].fraction = f;
                         data++;
+                }
+        }
+
+        if ((error_->code == PUMAS_RETURN_SUCCESS) && (notifier != NULL)) {
+                if (notifier->configure(notifier, NULL, -1) ==
+                    PUMAS_RETURN_INTERRUPT) {
+                        ERROR_REGISTER_INTERRUPT();
                 }
         }
 
@@ -9580,7 +9668,7 @@ enum pumas_return compute_composite(
         compute_regularise_del(physics, material);
         compute_cel_integrals(physics, material);
         compute_csda_magnetic_transport(physics, material);
-        return compute_scattering(physics, material, error_);
+        return compute_scattering(physics, material, error_, NULL);
 }
 
 /**
@@ -9607,13 +9695,14 @@ void compute_cel_integrals(struct pumas_physics * physics, int material)
  * @param Physics  Handle for physics tables.
  * @param material The index of the material to tabulate.
  */
-enum pumas_return compute_scattering(
-    struct pumas_physics * physics, int material, struct error_context * error_)
+enum pumas_return compute_scattering(struct pumas_physics * physics,
+    int material, struct error_context * error_,
+    struct pumas_physics_notifier * notifier)
 {
         int ikin;
         for (ikin = 0; ikin < physics->n_energies; ikin++) {
                 const enum pumas_return rc = compute_scattering_parameters(
-                    physics, material, ikin, error_);
+                    physics, material, ikin, error_, notifier);
                 if (rc != PUMAS_RETURN_SUCCESS) return rc;
         }
         compute_pchip_scattering_coeffs(physics, material);
@@ -10342,7 +10431,8 @@ void compute_csda_magnetic_transport(
  * it with a negative *material* index causes the workspace memory to be freed.
  */
 enum pumas_return compute_scattering_parameters(struct pumas_physics * physics,
-    int material, int row, struct error_context * error_)
+    int material, int row, struct error_context * error_,
+    struct pumas_physics_notifier * notifier)
 {
         /* Handle the memory for the temporary workspace. */
         static struct coulomb_workspace * workspace = NULL;
@@ -10472,7 +10562,7 @@ enum pumas_return compute_scattering_parameters(struct pumas_physics * physics,
                         /* Precompute the per element soft scattering terms. */
                         enum pumas_return rc;
                         if ((rc = compute_msc_soft(physics, row, &ms1_table,
-                                 error_)) != PUMAS_RETURN_SUCCESS)
+                                 error_, notifier)) != PUMAS_RETURN_SUCCESS)
                                 return rc;
                 }
 
@@ -10582,7 +10672,8 @@ enum pumas_return compute_scattering_parameters(struct pumas_physics * physics,
  * *row* index is negative the table is freed.
  */
 enum pumas_return compute_msc_soft(struct pumas_physics * physics, int row,
-    double ** data, struct error_context * error_)
+    double ** data, struct error_context * error_,
+    struct pumas_physics_notifier * notifier)
 {
         static double * ms1_table = NULL;
         if (data != NULL) *data = NULL;
@@ -10627,6 +10718,11 @@ enum pumas_return compute_msc_soft(struct pumas_physics * physics, int row,
                 *table_get_ms1(
                     physics, PUMAS_MODE_MIXED, iel, row, ms1_table) =
                         invlb1_hybrid;
+
+                if ((notifier != NULL) &&
+                    (notifier->notify(notifier) == PUMAS_RETURN_INTERRUPT)) {
+                        return ERROR_REGISTER_INTERRUPT();
+                }
         }
 
         *data = ms1_table;
@@ -10701,23 +10797,30 @@ double compute_cutoff_objective(
  * **Note** This routine handles a static dynamically allocated table. If the
  * *row* index is negative the table is freed.
  */
-double * compute_cel_and_del(struct pumas_physics * physics, int row)
+enum pumas_return compute_cel_and_del(struct pumas_physics * physics, int row,
+    double ** table, struct error_context * error_,
+    struct pumas_physics_notifier * notifier)
 {
         static double * cel_table = NULL;
 
         if (row < 0) {
                 deallocate(cel_table);
-                return (cel_table = NULL);
+                cel_table = NULL;
+                return PUMAS_RETURN_SUCCESS;
         }
 
         /* Allocate the temporary table. */
         if (cel_table == NULL) {
                 cel_table = allocate(2 * N_DEL_PROCESSES * physics->n_elements *
                     physics->n_energies * sizeof(double));
-                if (cel_table == NULL) return NULL;
+                if (cel_table == NULL) {
+                        *table = NULL;
+                        return ERROR_REGISTER_MEMORY();
+                };
         }
 
         /* Loop over atomic elements. */
+        *table = cel_table;
         const double kinetic = *table_get_K(physics, row);
         int iel;
         for (iel = 0; iel < physics->n_elements; iel++) {
@@ -10738,9 +10841,14 @@ double * compute_cel_and_del(struct pumas_physics * physics, int row)
                                 dcs, 0, physics->cutoff, 180) : 0.;
                         *table_get_stg(physics, ip, iel, row, cel_table) = stg;
                 }
+
+                if ((notifier != NULL) &&
+                    (notifier->notify(notifier) == PUMAS_RETURN_INTERRUPT)) {
+                        return ERROR_REGISTER_INTERRUPT();
+                }
         }
 
-        return cel_table;
+        return PUMAS_RETURN_SUCCESS;
 }
 
 /**
@@ -11627,7 +11735,8 @@ static void dcs_tabulate_envelope_row(
  * using monotone cubic splines.
  */
 enum pumas_return compute_dcs_table(
-    struct pumas_physics * physics, int element, struct error_context * error_)
+    struct pumas_physics * physics, int element, struct error_context * error_,
+    struct pumas_physics_notifier * notifier)
 {
         static struct dcs_tabulate_work * work = NULL;
         if (element < 0) {
@@ -11679,6 +11788,12 @@ enum pumas_return compute_dcs_table(
                 int row;
                 for (row = 0; row < physics->n_energies; row++) {
                         dcs_tabulate_row(physics, ip, element, row, work);
+
+                        if ((notifier != NULL) &&
+                            (notifier->notify(notifier) ==
+                                PUMAS_RETURN_INTERRUPT)) {
+                                return ERROR_REGISTER_INTERRUPT();
+                        }
                 }
 
                 /* Set the envelope for low energy bins to a constant value */
@@ -13309,8 +13424,9 @@ struct tabulation_element {
         double data[];
 };
 
-static void tabulate_element(struct pumas_physics * physics,
-    struct tabulation_element * data, int n_energies, double * kinetic)
+static enum pumas_return tabulate_element(struct pumas_physics * physics,
+    struct tabulation_element * data, int n_energies, double * kinetic,
+    struct error_context * error_, struct pumas_physics_notifier * notifier)
 {
         const struct atomic_element * element =
             physics->element[data->api.index];
@@ -13326,7 +13442,12 @@ static void tabulate_element(struct pumas_physics * physics,
                 for (ip = 0; ip < N_DEL_PROCESSES - 1; ip++, v++)
                         *v = compute_dcs_integral(
                             physics, 1, element, k, dcs_get(ip), x, 1, n);
+                if ((notifier != NULL) &&
+                    (notifier->notify(notifier) == PUMAS_RETURN_INTERRUPT)) {
+                        return ERROR_REGISTER_INTERRUPT();
+                }
         }
+        return PUMAS_RETURN_SUCCESS;
 }
 
 /*
@@ -13412,7 +13533,8 @@ struct physics_element * tabulation_element_get(
  *
  */
 enum pumas_return physics_tabulate(struct pumas_physics * physics,
-    struct physics_tabulation_data * data, struct error_context * error_)
+    struct physics_tabulation_data * data, struct error_context * error_,
+    struct pumas_physics_notifier * notifier)
 {
         /* Check the material index */
         const int material = data->material;
@@ -13482,6 +13604,7 @@ enum pumas_return physics_tabulate(struct pumas_physics * physics,
          * elements, if not already done. Note that the element are also sorted
          * on top of the *data* stack.
          */
+        enum pumas_return rc;
         struct material_component * component;
         int iel;
         for (iel = 0, component = physics->composition[material];
@@ -13497,9 +13620,12 @@ enum pumas_return physics_tabulate(struct pumas_physics * physics,
                         /* Create and tabulate the new element. */
                         e = tabulation_element_create(data, component->element);
                         if (e == NULL) return PUMAS_RETURN_MEMORY_ERROR;
-                        tabulate_element(physics,
+                        rc = tabulate_element(physics,
                             (struct tabulation_element *)e, data->n_energies,
-                            data->energy);
+                            data->energy, error_, notifier);
+                        if (rc != PUMAS_RETURN_SUCCESS) {
+                                return rc;
+                        }
                 }
 
                 /* Set the fraction in the current material. */
@@ -13508,7 +13634,6 @@ enum pumas_return physics_tabulate(struct pumas_physics * physics,
 
         /* Check and open the output file. */
         int offset_dir, size_name;
-        enum pumas_return rc;
         if ((rc = mdf_format_path(data->outdir, physics->mdf_path,
             &data->path, &offset_dir, &size_name, error_)) !=
             PUMAS_RETURN_SUCCESS) {
@@ -13524,7 +13649,7 @@ enum pumas_return physics_tabulate(struct pumas_physics * physics,
                     physics->dedx_filename[material]);
         }
 
-        FILE * stream;
+        FILE * stream = NULL;
         if (data->overwrite == 0) {
                 /* Check if the file already exists. */
                 stream = fopen(data->path, "r");

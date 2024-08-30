@@ -47,7 +47,7 @@ int main(int argc, char * argv[])
         struct pumas_physics * physics;
         struct pumas_physics_settings settings = { .dry = 1, .update = 1};
         pumas_physics_create(
-            &physics, PUMAS_PARTICLE_MUON, mdf, dedx, &settings);
+            &physics, PUMAS_PARTICLE_MUON, mdf, dedx, &settings, NULL);
 
         /* Exit to the OS */
         exit(EXIT_SUCCESS);

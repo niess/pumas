@@ -191,6 +191,8 @@ enum pumas_return {
         PUMAS_RETURN_UNKNOWN_PARTICLE,
         /** Some input value is not valid. */
         PUMAS_RETURN_VALUE_ERROR,
+        /** An external interrupt was caught.  */
+        PUMAS_RETURN_INTERRUPT,
         /** The number of PUMAS return codes.  */
         PUMAS_N_RETURNS
 };
@@ -815,6 +817,25 @@ struct pumas_physics_settings {
 };
 
 /**
+ * Notifier interface for monitoring physics tabulation.
+ *
+ * The notifier callback functions must return one of `PUMAS_RETURN_SUCCESS` or
+ * `PUMAS_RETURN_INTERRUPT` (if physics computation shall be aborted).
+ *
+ * **Note** that this object might be overloaded by users, since it only defines
+ * an interface.
+ */
+struct pumas_physics_notifier {
+    /** Configuration callback. */
+    enum pumas_return (*configure)(
+        struct pumas_physics_notifier * self, const char * title, int steps);
+
+    /** Notification callback. */
+    enum pumas_return (*notify)(
+        struct pumas_physics_notifier * self);
+};
+
+/**
  * Create physics tables.
  *
  * @param physics      The physics tables.
@@ -898,7 +919,8 @@ struct pumas_physics_settings {
 PUMAS_API enum pumas_return pumas_physics_create(
     struct pumas_physics ** physics, enum pumas_particle particle,
     const char * mdf_path, const char * dedx_path,
-    const struct pumas_physics_settings * settings);
+    const struct pumas_physics_settings * settings,
+    struct pumas_physics_notifier * notifier);
 
 /**
  * Destroy a physics instance.
