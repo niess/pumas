@@ -455,14 +455,6 @@ struct simulation_context {
         double step_invlb1;
         /** Data for the default PRNG. */
         struct pumas_random_data * random_data;
-        /** Flag for the parity check of the Gaussian random generator.
-         *
-         * Gaussian variates are generated in pair using the Box-Muller
-         * transform.
-         */
-        int randn_done;
-        /** The next Gaussian variate. */
-        double randn_next;
         /**
          * Pointer to the worspace for the temporary storage of intermediary
          * computations.
@@ -2673,10 +2665,6 @@ enum pumas_return pumas_context_create(struct pumas_context ** context_,
         (*context_)->limit.time = 0.;      /* m/c */
 
         (*context_)->accuracy = DEFAULT_ACCURACY;
-
-        /* Initialise the Gaussian transform of the random stream. */
-        context->randn_done = 0;
-        context->randn_next = 0.;
 
         /* Initialise the work space. */
         context->workspace = (struct coulomb_workspace *)context->data;
@@ -7080,22 +7068,20 @@ static void step_fluctuate(const struct pumas_physics * physics,
  * @param context The simulation context.
  * @return a random number distributed according to a normal distribution.
  *
- * The Box-Muller algorithm is used. The random variates are generated in pairs.
- * The *context* is used as local storage.
+ * The Box-Muller algorithm is used. The random variates are generated in pairs,
+ * but the second result is discarded.
+ *
+ * Previously, the second value was cached within the context for later usage.
+ * However, this breaks reproducibility, since then the Monte Carlo history not
+ * only depends on the PRNG state, but also on the simulation context state.
+ * Moreover, this change patches an initialisation bug (the first Gaussian
+ * variate of a simulation context was always 0).
  */
 static double step_randn(struct pumas_context * context)
 {
-        struct simulation_context * const context_ =
-            (struct simulation_context *)context;
-        context_->randn_done = !context_->randn_done;
-        if (!context_->randn_done) return context_->randn_next;
-
         const double r = sqrt(-2. * log(context->random(context)));
         const double phi = 2. * M_PI * context->random(context);
-        const double c = cos(phi);
-        const double s = sin(phi);
-        context_->randn_next = r * c;
-        return r * s;
+        return r * sin(phi);
 }
 
 /**
